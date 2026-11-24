@@ -50,3 +50,14 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+
+# agents
+/.agent
+/.agents
+/.claude
+/.cursor
+/.gemini
+
+
+/docs
