@@ -66,5 +66,11 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Casama needs access to your camera to take QuickSnaps for your housemates.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Casama needs access to your microphone for video or audio recording.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Casama needs access to your photos to share moments with your household.</string>
 </dict>
 </plist>

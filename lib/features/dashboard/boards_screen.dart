@@ -62,8 +62,7 @@ class BoardsScreen extends StatelessWidget {
           const SizedBox(height: 16),
           _BoardHubCard(
             title: 'Bills & Payments',
-            subtitle:
-                'Track household bills, set reminders, and never miss a deadline',
+            subtitle: 'Track household bills, set reminders, and never miss a deadline',
             icon: Icons.receipt_long_outlined,
             iconColor: CasamaColors.tileBillsIcon,
             bgColor: context.isDark

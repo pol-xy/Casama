@@ -4,8 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../data/casama_repository.dart';
 import '../../data/models.dart';
-import '../../data/mock_repository.dart';
 import '../../data/repository_provider.dart';
 
 class HouseholdCalendarView extends ConsumerStatefulWidget {
@@ -331,7 +331,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     );
   }
 
-  Widget _buildMonthGrid(MockRepository repo) {
+  Widget _buildMonthGrid(CasamaRepository repo) {
     final firstDayOfMonth = DateTime(
       _focusedMonth.year,
       _focusedMonth.month,
@@ -388,7 +388,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     );
   }
 
-  Widget _buildWeekStrip(MockRepository repo) {
+  Widget _buildWeekStrip(CasamaRepository repo) {
     // 7 days centered on selected date
     final weekDays = List.generate(7, (i) {
       return DateTime(
@@ -406,7 +406,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     );
   }
 
-  Widget _buildDayCell(MockRepository repo, DateTime day, bool isCurrentMonth) {
+  Widget _buildDayCell(CasamaRepository repo, DateTime day, bool isCurrentMonth) {
     final isSelected = _isSameDay(day, _selectedDate);
     final isToday = _isSameDay(day, DateTime.now());
     final hasEvents = _hasEventsOnDate(repo, day);
@@ -632,12 +632,12 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  bool _hasEventsOnDate(MockRepository repo, DateTime date) {
+  bool _hasEventsOnDate(CasamaRepository repo, DateTime date) {
     return _getEventsForDate(repo, date).isNotEmpty;
   }
 
   List<_CalendarEventItem> _getEventsForDate(
-    MockRepository repo,
+    CasamaRepository repo,
     DateTime date,
   ) {
     final List<_CalendarEventItem> list = [];

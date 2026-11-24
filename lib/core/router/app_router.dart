@@ -24,6 +24,8 @@ import '../../features/onboarding/interactive_tutorial_screen.dart';
 import '../../features/onboarding/tutorial_screen.dart';
 import '../../features/parcels/parcels_screen.dart';
 import '../../features/points/leaderboard_screen.dart';
+import '../../features/quicksnap/quicksnap_camera_screen.dart';
+import '../../features/quicksnap/quicksnap_feed_screen.dart';
 import '../../features/settings/app_settings_screen.dart';
 import '../../features/tasks/maintenance_screen.dart';
 
@@ -118,6 +120,14 @@ final appRouter = GoRouter(
         final billId = state.uri.queryParameters['id'] ?? '';
         return BillDetailScreen(billId: billId);
       },
+    ),
+    GoRoute(
+      path: '/quicksnap',
+      builder: (context, state) => const QuickSnapCameraScreen(),
+    ),
+    GoRoute(
+      path: '/quicksnap-feed',
+      builder: (context, state) => const QuickSnapFeedScreen(),
     ),
     GoRoute(
       path: '/chat',

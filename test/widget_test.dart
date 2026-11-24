@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:casama/core/constants/colors.dart';
 import 'package:casama/features/auth/auth_screen.dart';
 import 'package:casama/features/auth/optional_profile_screen.dart';
 import 'package:casama/features/auth/splash_screen.dart';
@@ -14,6 +13,8 @@ import 'package:casama/features/settings/app_settings_screen.dart';
 import 'package:casama/features/profile/profile_screen.dart';
 import 'package:casama/features/profile/edit_profile_dialog.dart';
 import 'package:casama/features/bills/add_bill_screen.dart';
+import 'package:casama/features/quicksnap/quicksnap_feed_screen.dart';
+import 'package:casama/features/quicksnap/quicksnap_camera_screen.dart';
 import 'package:casama/features/dashboard/dashboard_screen.dart';
 import 'package:casama/features/dashboard/boards_screen.dart';
 import 'package:casama/features/dashboard/main_navigation_shell.dart';
@@ -28,12 +29,18 @@ import 'package:casama/features/chat/group_chat_screen.dart';
 import 'package:casama/features/chat/direct_chat_screen.dart';
 import 'package:casama/features/household/add_housemate_dialog.dart';
 import 'package:casama/shared/widgets/invite_housemate_sheet.dart';
+import 'package:casama/shared/widgets/profile_camera_sheet.dart';
 import 'package:casama/data/repository_provider.dart';
 import 'package:casama/data/mock_repository.dart';
 import 'package:casama/data/models.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:casama/main.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets(
     'Casama app boots to splash screen with brand mascot and tagline',
     (WidgetTester tester) async {
@@ -94,8 +101,8 @@ void main() {
       );
 
       expect(find.text('Tell Us About You 👋'), findsOneWidget);
-      expect(find.text('Full Name (Optional)'), findsOneWidget);
-      expect(find.text('Nickname (Optional)'), findsOneWidget);
+      expect(find.text('Full Name'), findsOneWidget);
+      expect(find.text('Nickname'), findsOneWidget);
       expect(find.text('Age (Optional)'), findsOneWidget);
       expect(find.text('Save & Continue'), findsOneWidget);
       expect(find.text('Skip Profile for Now'), findsOneWidget);
@@ -335,8 +342,9 @@ void main() {
   );
 
   testWidgets(
-    'Plus (+) button opens the quick-action bottom sheet with all five activities and dismisses on close',
+    'Center camera shutter button in bottom nav launches QuickSnapCameraScreen',
     (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
       final mockRepo = MockRepository();
 
       await tester.pumpWidget(
@@ -348,30 +356,27 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Find and tap the center Plus (+) action button
-      final plusFinder = find.byWidgetPredicate(
-        (widget) =>
-            widget is Container &&
-            widget.decoration is BoxDecoration &&
-            (widget.decoration as BoxDecoration).color ==
-                CasamaColors.primaryCoral,
+      // Find and tap the center camera shutter action button
+      final cameraBtn = find.byKey(const Key('center_quicksnap_shutter_button'));
+      expect(cameraBtn, findsOneWidget);
+      expect(
+        find.descendant(of: cameraBtn, matching: find.byIcon(Icons.camera_alt_rounded)),
+        findsNothing,
       );
-      expect(plusFinder, findsWidgets);
-      await tester.tap(find.byIcon(Icons.add).first);
+      await tester.tap(cameraBtn);
       await tester.pumpAndSettle();
 
-      // Verify all 5 quick actions in the sheet
-      expect(find.text('Quick Actions ⚡'), findsOneWidget);
-      expect(find.text('Add a Parcel'), findsOneWidget);
-      expect(find.text('Report an Item'), findsOneWidget);
-      expect(find.text('Add a Household Task'), findsOneWidget);
-      expect(find.text('Create a Meet-up'), findsOneWidget);
-      expect(find.text('Invite a Housemate'), findsOneWidget);
+      // Verify that permission request modal is shown first
+      expect(find.text('Enable Camera for QuickSnap'), findsOneWidget);
+      expect(find.byKey(const Key('allow_camera_permission_button')), findsOneWidget);
 
-      // Close button dismisses the bottom sheet
-      await tester.tap(find.byIcon(Icons.close_rounded));
+      // Tap allow to proceed to viewfinder
+      await tester.tap(find.byKey(const Key('allow_camera_permission_button')));
       await tester.pumpAndSettle();
-      expect(find.text('Quick Actions ⚡'), findsNothing);
+
+      // Verify QuickSnap Camera screen is displayed
+      expect(find.text('Everyone'), findsOneWidget);
+      expect(find.text('History'), findsOneWidget);
     },
   );
 
@@ -1078,7 +1083,7 @@ void main() {
 
       expect(find.text('Edit Profile'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
-      expect(find.text('Nickname (Optional)'), findsOneWidget);
+      expect(find.text('Nickname'), findsOneWidget);
       expect(find.text('Age (Optional)'), findsOneWidget);
 
       // Enter updated full name and nickname
@@ -1429,6 +1434,280 @@ void main() {
 
       // Verify dropdown rendered valid initial responsible member without crash
       expect(find.byType(DropdownButton<String>), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'DashboardScreen renders QuickSnapHomeWidget empty state initially and active snap when populated',
+    (tester) async {
+      final mockRepo = MockRepository();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: Scaffold(body: DashboardScreen())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Empty state verification: no photos taken yet
+      expect(find.text('No moments shared yet today'), findsOneWidget);
+      expect(find.text('Take QuickSnap'), findsOneWidget);
+
+      // Now add a snap and verify active state
+      mockRepo.sendQuickSnap(
+        imageUrl: 'https://images.unsplash.com/photo-test',
+        caption: 'Balcony sunrise',
+        recipientType: QuickSnapRecipientType.everyone,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Household QuickSnap'), findsOneWidget);
+      expect(find.text('Snap Back'), findsOneWidget);
+      expect(find.text('😍'), findsWidgets);
+      expect(find.text('🔥'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'QuickSnapFeedScreen renders empty state when no snaps and full tabs when populated',
+    (tester) async {
+      final mockRepo = MockRepository();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: QuickSnapFeedScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Empty state
+      expect(find.text('No QuickSnaps yet!'), findsOneWidget);
+      expect(find.text('Take QuickSnap'), findsOneWidget);
+
+      // Add snap and pump
+      mockRepo.sendQuickSnap(
+        imageUrl: 'https://images.unsplash.com/photo-test',
+        caption: 'First dorm moment',
+        recipientType: QuickSnapRecipientType.everyone,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: QuickSnapFeedScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Live Snaps'), findsOneWidget);
+      expect(find.text('Memories'), findsOneWidget);
+      expect(find.text('Send message... 💬'), findsOneWidget);
+
+      // Switch to Memories tab
+      await tester.tap(find.text('Memories'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('moments saved in household album'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Streak'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'QuickSnapCameraScreen prompts permission first and allows continuing with fallback when denied',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final mockRepo = MockRepository();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: QuickSnapCameraScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Check permission modal is present
+      expect(find.text('Enable Camera for QuickSnap'), findsOneWidget);
+      expect(find.byKey(const Key('deny_camera_permission_button')), findsOneWidget);
+
+      // Tap 'Not Now'
+      await tester.tap(find.byKey(const Key('deny_camera_permission_button')));
+      await tester.pumpAndSettle();
+
+      // Viewfinder displays with clean dark viewfinder and permission needed pill
+      expect(find.text('Permission Needed'), findsOneWidget);
+      expect(find.text('Camera Access Needed'), findsOneWidget);
+      expect(find.text('Everyone'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'QuickSnapCameraScreen skips permission prompt when already granted in SharedPreferences',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'quicksnap_camera_permission_granted': true,
+      });
+      final mockRepo = MockRepository();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: QuickSnapCameraScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Verified: No permission modal is shown!
+      expect(find.text('Enable Camera for QuickSnap'), findsNothing);
+      expect(find.byKey(const Key('quicksnap_shutter_button')), findsOneWidget);
+      expect(find.text('Everyone'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'QuickSnapCameraScreen takes snap with shutter and sends to household',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final mockRepo = MockRepository();
+      final initialCount = mockRepo.quickSnaps.length;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: QuickSnapCameraScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Allow permission
+      if (find.byKey(const Key('allow_camera_permission_button')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('allow_camera_permission_button')));
+        await tester.pumpAndSettle();
+      }
+
+      // Tap shutter button
+      await tester.tap(find.byKey(const Key('quicksnap_shutter_button')));
+      await tester.pumpAndSettle();
+
+      // Verify caption and send button appear
+      expect(find.text('Retake'), findsOneWidget);
+      expect(find.byKey(const Key('send_quicksnap_button')), findsOneWidget);
+
+      // Tap send
+      await tester.tap(find.byKey(const Key('send_quicksnap_button')));
+      await tester.pumpAndSettle();
+
+      // Repository count increased
+      expect(mockRepo.quickSnaps.length, equals(initialCount + 1));
+    },
+  );
+
+  testWidgets(
+    'QuickSnapCameraScreen allows retaking photo, restoring shutter and capturing again',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({'quicksnap_camera_permission_granted': true});
+      final mockRepo = MockRepository();
+      final initialCount = mockRepo.quickSnaps.length;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: QuickSnapCameraScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Tap shutter for first capture
+      expect(find.byKey(const Key('quicksnap_shutter_button')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('quicksnap_shutter_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // First capture: Retake and Send appear
+      expect(find.text('Retake'), findsOneWidget);
+      expect(find.byKey(const Key('send_quicksnap_button')), findsOneWidget);
+      expect(find.byKey(const Key('quicksnap_shutter_button')), findsNothing);
+
+      // Tap Retake
+      await tester.tap(find.text('Retake'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Shutter is restored, Retake and Send are gone
+      expect(find.byKey(const Key('quicksnap_shutter_button')), findsOneWidget);
+      expect(find.text('Retake'), findsNothing);
+      expect(find.byKey(const Key('send_quicksnap_button')), findsNothing);
+
+      // Tap shutter again to capture second photo
+      await tester.tap(find.byKey(const Key('quicksnap_shutter_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Second capture succeeds: Retake and Send reappear
+      expect(find.text('Retake'), findsOneWidget);
+      expect(find.byKey(const Key('send_quicksnap_button')), findsOneWidget);
+
+      // Send second photo
+      await tester.tap(find.byKey(const Key('send_quicksnap_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(mockRepo.quickSnaps.length, equals(initialCount + 1));
+    },
+  );
+
+  testWidgets(
+    'OptionalProfileScreen Take Photo opens ProfileCameraSheet and closes gracefully',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(child: MaterialApp(home: OptionalProfileScreen())),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Take Photo'), findsOneWidget);
+
+      await tester.tap(find.text('Take Photo'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Take Profile Photo'), findsOneWidget);
+      expect(find.byType(ProfileCameraSheet), findsOneWidget);
+      expect(find.text('Position your face in the circle'), findsOneWidget);
+      expect(find.byKey(const Key('profile_camera_close_button')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('profile_camera_close_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Take Profile Photo'), findsNothing);
+      expect(find.text('Tell Us About You 👋'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'EditProfileDialog Take Photo opens ProfileCameraSheet',
+    (WidgetTester tester) async {
+      final mockRepo = MockRepository();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: Scaffold(body: EditProfileDialog())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Take Photo'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Take Profile Photo'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('profile_camera_close_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit Profile'), findsOneWidget);
     },
   );
 }

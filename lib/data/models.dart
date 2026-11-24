@@ -93,6 +93,13 @@ class Household {
       createdBy: json['created_by'] as String?,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'invite_code': inviteCode,
+    'created_by': createdBy,
+  };
 }
 
 enum InvitationStatus { pending, accepted, declined }
@@ -182,6 +189,57 @@ class ParcelItem {
     this.availableMemberNames = const [],
     this.isAllUnavailable = false,
   });
+
+  factory ParcelItem.fromJson(Map<String, dynamic> json) {
+    ParcelStatus parseStatus(String? st) {
+      switch (st?.toLowerCase()) {
+        case 'arrived':
+          return ParcelStatus.arrived;
+        case 'received':
+          return ParcelStatus.received;
+        case 'cancelled':
+          return ParcelStatus.cancelled;
+        default:
+          return ParcelStatus.expected;
+      }
+    }
+
+    return ParcelItem(
+      id: json['id'] as String,
+      householdId: json['household_id'] as String? ?? '',
+      buyerId: json['buyer_id'] as String? ?? '',
+      buyerName: json['buyer_name'] as String? ?? 'Housemate',
+      courier: json['courier'] as String? ?? 'Courier',
+      expectedArrival: json['expected_arrival'] != null
+          ? DateTime.parse(json['expected_arrival'] as String)
+          : DateTime.now(),
+      paymentType: (json['payment_type'] as String?) == 'cod'
+          ? ParcelPaymentType.cod
+          : ParcelPaymentType.paid,
+      codAmount: (json['cod_amount'] as num?)?.toDouble(),
+      currency: json['currency'] as String? ?? 'PHP',
+      status: parseStatus(json['status'] as String?),
+      notes: json['notes'] as String?,
+      availableMemberNames: (json['available_members'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      isAllUnavailable: json['is_all_unavailable'] as bool? ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'household_id': householdId,
+    'buyer_id': buyerId,
+    'courier': courier,
+    'expected_arrival': expectedArrival.toIso8601String(),
+    'payment_type': paymentType == ParcelPaymentType.cod ? 'cod' : 'paid',
+    'cod_amount': codAmount,
+    'currency': currency,
+    'status': status.name,
+    'notes': notes,
+  };
 }
 
 enum ItemType { lost, found, shared }
@@ -212,6 +270,59 @@ class LostFoundItem {
     required this.reportedByName,
     required this.createdAt,
   });
+
+  factory LostFoundItem.fromJson(Map<String, dynamic> json) {
+    ItemType parseType(String? t) {
+      switch (t?.toLowerCase()) {
+        case 'found':
+          return ItemType.found;
+        case 'shared':
+          return ItemType.shared;
+        default:
+          return ItemType.lost;
+      }
+    }
+
+    ItemStatus parseStatus(String? s) {
+      switch (s?.toLowerCase()) {
+        case 'unclaimed':
+          return ItemStatus.unclaimed;
+        case 'claimed':
+          return ItemStatus.claimed;
+        case 'returned':
+          return ItemStatus.returned;
+        default:
+          return ItemStatus.open;
+      }
+    }
+
+    return LostFoundItem(
+      id: json['id'] as String,
+      householdId: json['household_id'] as String? ?? '',
+      type: parseType(json['type'] as String?),
+      title: json['title'] as String? ?? 'Untitled Item',
+      description: json['description'] as String?,
+      imageUrl: json['image_url'] as String?,
+      status: parseStatus(json['status'] as String?),
+      reportedBy: json['reported_by'] as String? ?? '',
+      reportedByName: json['reported_by_name'] as String? ?? 'Housemate',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'household_id': householdId,
+    'type': type.name,
+    'title': title,
+    'description': description,
+    'image_url': imageUrl,
+    'status': status.name,
+    'reported_by': reportedBy,
+    'created_at': createdAt.toIso8601String(),
+  };
 }
 
 enum TaskCategory { diy, landlord, restock }
@@ -272,6 +383,71 @@ class MaintenanceTask {
     required this.createdAt,
     this.dueDate,
   });
+
+  factory MaintenanceTask.fromJson(Map<String, dynamic> json) {
+    TaskCategory parseCat(String? c) {
+      switch (c?.toLowerCase()) {
+        case 'landlord':
+          return TaskCategory.landlord;
+        case 'restock':
+          return TaskCategory.restock;
+        default:
+          return TaskCategory.diy;
+      }
+    }
+
+    TaskUrgency parseUrg(String? u) {
+      switch (u?.toLowerCase()) {
+        case 'urgent':
+          return TaskUrgency.urgent;
+        case 'low':
+          return TaskUrgency.low;
+        default:
+          return TaskUrgency.medium;
+      }
+    }
+
+    TaskStatus parseStatus(String? s) {
+      switch (s?.toLowerCase()) {
+        case 'in_progress':
+        case 'inprogress':
+          return TaskStatus.inProgress;
+        case 'done':
+          return TaskStatus.done;
+        default:
+          return TaskStatus.open;
+      }
+    }
+
+    return MaintenanceTask(
+      id: json['id'] as String,
+      householdId: json['household_id'] as String? ?? '',
+      title: json['title'] as String? ?? 'Task',
+      category: parseCat(json['category'] as String?),
+      urgency: parseUrg(json['urgency'] as String?),
+      status: parseStatus(json['status'] as String?),
+      assigneeName: json['assignee_name'] as String?,
+      assigneeAvatar: json['assignee_avatar'] as String?,
+      createdByName: json['created_by_name'] as String? ?? 'Housemate',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      dueDate: json['due_date'] != null
+          ? DateTime.parse(json['due_date'] as String)
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'household_id': householdId,
+    'title': title,
+    'category': category.name,
+    'urgency': urgency.name,
+    'status': status == TaskStatus.inProgress ? 'in_progress' : status.name,
+    'created_at': createdAt.toIso8601String(),
+    'due_date': dueDate?.toIso8601String(),
+  };
 }
 
 class ChatMessage {
@@ -302,6 +478,34 @@ class ChatMessage {
     this.isRead = true,
     this.meetUpInvitation,
   });
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json, {String? currentUserId}) {
+    return ChatMessage(
+      id: json['id'] as String,
+      senderId: json['sender_id'] as String? ?? '',
+      senderName: json['sender_name'] as String? ?? 'Housemate',
+      senderAvatar: json['sender_avatar'] as String?,
+      content: json['content'] as String? ?? '',
+      mediaUrl: json['media_url'] as String?,
+      inviteCode: json['invite_code'] as String?,
+      inviteSpaceName: json['invite_space_name'] as String?,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      isCurrentUser: currentUserId != null && json['sender_id'] == currentUserId,
+      isRead: json['is_read'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'sender_id': senderId,
+    'content': content,
+    'media_url': mediaUrl,
+    'invite_code': inviteCode,
+    'invite_space_name': inviteSpaceName,
+    'created_at': createdAt.toIso8601String(),
+  };
 }
 
 class ChatSpace {
@@ -598,6 +802,182 @@ class HouseholdBill {
     return BillStatus.unpaid;
   }
 
+  factory HouseholdBill.fromJson(Map<String, dynamic> json) {
+    BillCategory parseCategory(String? cat) {
+      if (cat == null) return BillCategory.other;
+      switch (cat.toLowerCase()) {
+        case 'electricity':
+          return BillCategory.electricity;
+        case 'water':
+          return BillCategory.water;
+        case 'internet':
+          return BillCategory.internet;
+        case 'appliance':
+          return BillCategory.appliance;
+        case 'rent':
+          return BillCategory.rent;
+        case 'association_dues':
+        case 'associationdues':
+          return BillCategory.associationDues;
+        case 'gas':
+          return BillCategory.gas;
+        case 'maintenance_fee':
+        case 'maintenancefee':
+          return BillCategory.maintenanceFee;
+        default:
+          return BillCategory.other;
+      }
+    }
+
+    BillStatus parseStatus(String? st) {
+      switch (st?.toLowerCase()) {
+        case 'paid':
+          return BillStatus.paid;
+        case 'overdue':
+          return BillStatus.overdue;
+        default:
+          return BillStatus.unpaid;
+      }
+    }
+
+    ReminderTiming parseReminder(String? rem) {
+      switch (rem) {
+        case 'on_due_date':
+          return ReminderTiming.onDueDate;
+        case '1_day_before':
+          return ReminderTiming.oneDayBefore;
+        case '2_days_before':
+          return ReminderTiming.twoDaysBefore;
+        case '3_days_before':
+          return ReminderTiming.threeDaysBefore;
+        case '1_week_before':
+          return ReminderTiming.oneWeekBefore;
+        default:
+          return ReminderTiming.oneDayBefore;
+      }
+    }
+
+    BillRecipientType parseRecipient(String? rec) {
+      switch (rec) {
+        case 'only_me':
+          return BillRecipientType.onlyMe;
+        case 'selected_members':
+          return BillRecipientType.selectedMembers;
+        default:
+          return BillRecipientType.allMembers;
+      }
+    }
+
+    return HouseholdBill(
+      id: json['id'] as String,
+      householdId: json['household_id'] as String? ?? '',
+      creatorId: json['created_by'] as String? ?? '',
+      creatorName: json['creator_name'] as String? ?? 'Housemate',
+      category: parseCategory(json['category'] as String?),
+      customCategoryLabel: json['custom_category'] as String?,
+      billName: json['name'] as String?,
+      amount: (json['amount'] as num?)?.toDouble(),
+      deadline: json['deadline'] != null
+          ? DateTime.parse(json['deadline'] as String)
+          : DateTime.now(),
+      notes: json['notes'] as String?,
+      status: parseStatus(json['status'] as String?),
+      reminderEnabled: json['has_reminder'] as bool? ?? true,
+      reminderTiming: parseReminder(json['reminder_timing'] as String?),
+      recipientType: parseRecipient(json['reminder_recipients'] as String?),
+      responsibleMember: json['responsible_member_name'] as String? ??
+          json['responsible_member'] as String?,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      paidAt: json['paid_at'] != null
+          ? DateTime.parse(json['paid_at'] as String)
+          : null,
+      paidByName: json['paid_by_name'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    String categoryString() {
+      switch (category) {
+        case BillCategory.electricity:
+          return 'electricity';
+        case BillCategory.water:
+          return 'water';
+        case BillCategory.internet:
+          return 'internet';
+        case BillCategory.appliance:
+          return 'appliance';
+        case BillCategory.rent:
+          return 'rent';
+        case BillCategory.associationDues:
+          return 'association_dues';
+        case BillCategory.gas:
+          return 'gas';
+        case BillCategory.maintenanceFee:
+          return 'maintenance_fee';
+        case BillCategory.other:
+          return 'other';
+      }
+    }
+
+    String statusString() {
+      switch (status) {
+        case BillStatus.paid:
+          return 'paid';
+        case BillStatus.overdue:
+          return 'overdue';
+        case BillStatus.unpaid:
+          return 'unpaid';
+      }
+    }
+
+    String reminderString() {
+      switch (reminderTiming) {
+        case ReminderTiming.onDueDate:
+          return 'on_due_date';
+        case ReminderTiming.oneDayBefore:
+          return '1_day_before';
+        case ReminderTiming.twoDaysBefore:
+          return '2_days_before';
+        case ReminderTiming.threeDaysBefore:
+          return '3_days_before';
+        case ReminderTiming.oneWeekBefore:
+          return '1_week_before';
+      }
+    }
+
+    String recipientString() {
+      switch (recipientType) {
+        case BillRecipientType.onlyMe:
+          return 'only_me';
+        case BillRecipientType.allMembers:
+          return 'all_members';
+        case BillRecipientType.selectedMembers:
+          return 'selected_members';
+      }
+    }
+
+    return {
+      'id': id,
+      'household_id': householdId,
+      'name': billName ?? effectiveCategoryLabel,
+      'category': categoryString(),
+      'custom_category': customCategoryLabel,
+      'amount': amount ?? 0.0,
+      'currency': 'PHP',
+      'deadline': deadline.toIso8601String().split('T').first,
+      'status': statusString(),
+      'has_reminder': reminderEnabled,
+      'reminder_timing': reminderString(),
+      'reminder_recipients': recipientString(),
+      'notes': notes,
+      'created_by': creatorId,
+      'created_at': createdAt.toIso8601String(),
+      'paid_at': paidAt?.toIso8601String(),
+    };
+  }
+
   HouseholdBill copyWith({
     String? billName,
     double? amount,
@@ -637,6 +1017,225 @@ class HouseholdBill {
       paidByName: paidByName ?? this.paidByName,
     );
   }
+}
+
+// ==========================================
+// QUICKSNAP (LOCKET-STYLE) MODELS
+// ==========================================
+
+enum QuickSnapRecipientType { everyone, selectedHousemates }
+
+class QuickSnapReaction {
+  final String emoji;
+  final String userId;
+  final String userName;
+  final DateTime createdAt;
+
+  const QuickSnapReaction({
+    required this.emoji,
+    required this.userId,
+    required this.userName,
+    required this.createdAt,
+  });
+
+  factory QuickSnapReaction.fromJson(Map<String, dynamic> json) {
+    return QuickSnapReaction(
+      emoji: json['emoji'] as String? ?? '❤️',
+      userId: json['user_id'] as String? ?? '',
+      userName: json['user_name'] as String? ?? 'Housemate',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'emoji': emoji,
+    'user_id': userId,
+    'created_at': createdAt.toIso8601String(),
+  };
+}
+
+class QuickSnapComment {
+  final String id;
+  final String userId;
+  final String userName;
+  final String? userAvatar;
+  final String text;
+  final DateTime createdAt;
+
+  const QuickSnapComment({
+    required this.id,
+    required this.userId,
+    required this.userName,
+    this.userAvatar,
+    required this.text,
+    required this.createdAt,
+  });
+
+  factory QuickSnapComment.fromJson(Map<String, dynamic> json) {
+    return QuickSnapComment(
+      id: json['id'] as String? ?? '',
+      userId: json['user_id'] as String? ?? '',
+      userName: json['user_name'] as String? ?? 'Housemate',
+      userAvatar: json['user_avatar'] as String?,
+      text: json['text'] as String? ?? '',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'user_id': userId,
+    'text': text,
+    'created_at': createdAt.toIso8601String(),
+  };
+}
+
+class QuickSnap {
+  final String id;
+  final String householdId;
+  final String senderId;
+  final String senderName;
+  final String? senderAvatar;
+  final String imageUrl;
+  final String? caption;
+  final QuickSnapRecipientType recipientType;
+  final List<String> recipientNames;
+  final DateTime createdAt;
+  final List<QuickSnapReaction> reactions;
+  final List<QuickSnapComment> comments;
+
+  const QuickSnap({
+    required this.id,
+    required this.householdId,
+    required this.senderId,
+    required this.senderName,
+    this.senderAvatar,
+    required this.imageUrl,
+    this.caption,
+    this.recipientType = QuickSnapRecipientType.everyone,
+    this.recipientNames = const [],
+    required this.createdAt,
+    this.reactions = const [],
+    this.comments = const [],
+  });
+
+  factory QuickSnap.fromJson(Map<String, dynamic> json) {
+    return QuickSnap(
+      id: json['id'] as String,
+      householdId: json['household_id'] as String? ?? '',
+      senderId: json['creator_id'] as String? ?? json['sender_id'] as String? ?? '',
+      senderName: json['sender_name'] as String? ?? 'Housemate',
+      senderAvatar: json['sender_avatar'] as String?,
+      imageUrl: json['image_url'] as String,
+      caption: json['caption'] as String?,
+      recipientType: (json['recipient_type'] as String?) == 'selected'
+          ? QuickSnapRecipientType.selectedHousemates
+          : QuickSnapRecipientType.everyone,
+      recipientNames: (json['recipient_names'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      reactions: (json['reactions'] as List<dynamic>?)
+              ?.map((e) => QuickSnapReaction.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      comments: (json['comments'] as List<dynamic>?)
+              ?.map((e) => QuickSnapComment.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'household_id': householdId,
+    'creator_id': senderId,
+    'image_url': imageUrl,
+    'caption': caption,
+    'recipient_type':
+        recipientType == QuickSnapRecipientType.selectedHousemates
+            ? 'selected'
+            : 'everyone',
+    'created_at': createdAt.toIso8601String(),
+  };
+
+  QuickSnap copyWith({
+    String? caption,
+    List<QuickSnapReaction>? reactions,
+    List<QuickSnapComment>? comments,
+  }) {
+    return QuickSnap(
+      id: id,
+      householdId: householdId,
+      senderId: senderId,
+      senderName: senderName,
+      senderAvatar: senderAvatar,
+      imageUrl: imageUrl,
+      caption: caption ?? this.caption,
+      recipientType: recipientType,
+      recipientNames: recipientNames,
+      createdAt: createdAt,
+      reactions: reactions ?? this.reactions,
+      comments: comments ?? this.comments,
+    );
+  }
+}
+
+class ChoreRouletteRecord {
+  final String id;
+  final String householdId;
+  final String choreTitle;
+  final String assignedToName;
+  final String? assignedToId;
+  final String spunByName;
+  final String mode; // 'random_dormmate' or 'just_for_me'
+  final bool completed;
+  final DateTime createdAt;
+
+  const ChoreRouletteRecord({
+    required this.id,
+    required this.householdId,
+    required this.choreTitle,
+    required this.assignedToName,
+    this.assignedToId,
+    required this.spunByName,
+    required this.mode,
+    this.completed = false,
+    required this.createdAt,
+  });
+
+  factory ChoreRouletteRecord.fromJson(Map<String, dynamic> json) {
+    return ChoreRouletteRecord(
+      id: json['id'] as String,
+      householdId: json['household_id'] as String? ?? '',
+      choreTitle: json['chore_title'] as String? ?? 'Chore',
+      assignedToName: json['assigned_to_name'] as String? ?? 'Dormmate',
+      assignedToId: json['assigned_to'] as String?,
+      spunByName: json['spun_by_name'] as String? ?? 'Housemate',
+      mode: json['mode'] as String? ?? 'random_dormmate',
+      completed: json['completed'] as bool? ?? false,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'household_id': householdId,
+    'chore_title': choreTitle,
+    'assigned_to': assignedToId,
+    'mode': mode,
+    'completed': completed,
+    'created_at': createdAt.toIso8601String(),
+  };
 }
 
 class NotificationPreferences {

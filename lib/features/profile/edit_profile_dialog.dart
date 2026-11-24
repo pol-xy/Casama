@@ -10,6 +10,7 @@ import '../../data/repository_provider.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_text_field.dart';
+import '../../shared/widgets/profile_camera_sheet.dart';
 
 class EditProfileDialog extends ConsumerStatefulWidget {
   const EditProfileDialog({super.key});
@@ -58,7 +59,20 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
     super.dispose();
   }
 
+  Future<void> _openCameraCapture() async {
+    final photo = await showProfileCameraSheet(context);
+    if (photo != null && mounted) {
+      setState(() {
+        _selectedAvatar = photo;
+      });
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
+    if (source == ImageSource.camera) {
+      await _openCameraCapture();
+      return;
+    }
     setState(() => _isPickingImage = true);
     try {
       final picker = ImagePicker();
@@ -208,6 +222,7 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
                           radius: 46,
                           name: _nameController.text,
                           showEditBadge: true,
+                          onTap: _openCameraCapture,
                           borderWidth: 2,
                         ),
                         if (_isPickingImage)
@@ -264,7 +279,7 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                           ),
-                          onPressed: () => _pickImage(ImageSource.camera),
+                          onPressed: _openCameraCapture,
                         ),
                         const SizedBox(width: 10),
                         OutlinedButton.icon(
@@ -379,7 +394,7 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
               // Nickname Field
               CasamaTextField(
                 controller: _nicknameController,
-                label: 'Nickname (Optional)',
+                label: 'Nickname',
                 hint: 'e.g., JP',
                 prefixIcon: Icons.sentiment_satisfied_alt_rounded,
               ),

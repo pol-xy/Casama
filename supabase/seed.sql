@@ -304,6 +304,94 @@ BEGIN
     VALUES
         (v_household_id, v_user_jp, 'parcel_expected', '{"message": "Your parcel is expected today at 4 PM!"}'::jsonb);
 
+    -- 13. Seed Household Bills & Payments (Screen: Bills & Payments)
+    INSERT INTO bills (
+        id, household_id, title, category, amount, deadline, status,
+        reminder_enabled, reminder_timing, recipient_type, responsible_member, created_by, created_by_name, notes
+    ) VALUES
+    (
+        'b0000000-0000-0000-0000-000000000001',
+        v_household_id,
+        'Meralco Electricity Bill',
+        'electricity',
+        2450.00,
+        NOW() + INTERVAL '5 days',
+        'unpaid',
+        true,
+        'one_day_before',
+        'all_members',
+        'Maria Santos',
+        v_user_jp,
+        'Jon Paul Berana',
+        'Includes AC usage for November'
+    ),
+    (
+        'b0000000-0000-0000-0000-000000000002',
+        v_household_id,
+        'Maynilad Water Bill',
+        'water',
+        680.00,
+        NOW() + INTERVAL '8 days',
+        'unpaid',
+        true,
+        'one_day_before',
+        'all_members',
+        'Alex Rivera',
+        v_user_jp,
+        'Jon Paul Berana',
+        'Main line water consumption'
+    ),
+    (
+        'b0000000-0000-0000-0000-000000000003',
+        v_household_id,
+        'Converge Fiber Internet',
+        'internet',
+        1500.00,
+        NOW() - INTERVAL '2 days',
+        'paid',
+        true,
+        'one_day_before',
+        'all_members',
+        'Jon Paul Berana',
+        v_user_jp,
+        'Jon Paul Berana',
+        'Settled on time via GCash'
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    -- 14. Seed Chore Roulette History
+    INSERT INTO chore_roulette_records (
+        id, household_id, chore_title, assigned_user_id, assigned_user_name,
+        spun_by_user_id, spun_by_name, is_personal_mode, status, created_at, completed_at
+    ) VALUES
+    (
+        'f0000000-0000-0000-0000-000000000001',
+        v_household_id,
+        'Clean Kitchen Sink',
+        v_user_alex,
+        'Alex Rivera',
+        v_user_jp,
+        'Jon Paul Berana',
+        false,
+        'pending',
+        NOW() - INTERVAL '1 day',
+        NULL
+    ),
+    (
+        'f0000000-0000-0000-0000-000000000002',
+        v_household_id,
+        'Take Out Garbage',
+        v_user_jp,
+        'Jon Paul Berana',
+        v_user_jp,
+        'Jon Paul Berana',
+        true,
+        'completed',
+        NOW() - INTERVAL '2 days',
+        NOW() - INTERVAL '2 days' + INTERVAL '30 minutes'
+    )
+    ON CONFLICT (id) DO NOTHING;
+
 END;
 $$;
 

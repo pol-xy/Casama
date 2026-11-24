@@ -7,7 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
-import '../../data/mock_repository.dart';
+import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
@@ -415,7 +415,7 @@ class _LostFoundScreenState extends ConsumerState<LostFoundScreen>
   void _showItemDetailsSheet(
     BuildContext context,
     LostFoundItem item,
-    MockRepository repo,
+    CasamaRepository repo,
   ) {
     showModalBottomSheet(
       context: context,

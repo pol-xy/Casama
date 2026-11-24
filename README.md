@@ -6,7 +6,7 @@
 - Final Project For Application Development
 
 [![Android APK](https://img.shields.io/badge/Android-APK%20Ready%20(59.5MB)-3DDC84?logo=android&logoColor=white)](#-android-apk-build--installation)
-[![Tests](https://img.shields.io/badge/Tests-78%20Passed-success)](#-testing--analysis)
+[![Tests](https://img.shields.io/badge/Tests-95%20Passed-success)](#-testing--analysis)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20macOS%20%7C%20Web-navy)](#)
 
 ---
@@ -18,9 +18,11 @@ Casama solves everyday living coordination breakdowns in shared dorms, apartment
 * **Delivery & COD Board**: Track incoming couriers (Shopee, Lazada, etc.), roommate availability, conflict alerts, and Cash-on-Delivery owed records.
 * **Lost & Found / Shared Housewares**: Report lost items, claim found goods, and ping housemates ("Who has it?").
 * **Maintenance & Restock**: Categorized task tracking (DIY/Roommate, Landlord/Admin, Household Restock) with urgency prioritization.
+* **Household Bills & Payments**: Track upcoming utility & household expenses (Electricity, Water, Internet, Appliance, Rent, and custom categories) with PHP formatting, due dates, reminder intervals, and assigned members.
+* **Chore Roulette**: An interactive animated spinning wheel to fairly settle household chores with two modes ("Random Dormmate" or "Just For Me").
+* **QuickSnap (Locket-style)**: Center camera shutter button for real-time photo sharing with housemates, floating animated emoji reactions (`😍`, `🔥`, `❤️`), comments, monthly Memories calendar grid, streak counter (`🔥 3d streak`), and interactive Home dashboard widget.
 * **Good Kasama Points**: Idempotent event ledger rewarding helpful housemates, paired with a monthly leaderboard.
 * **Casama Connect**: In-app group chat, private direct messaging, and structured face-to-face meet-up invitations.
-* **Chore Roulette**: An interactive animated spinning wheel to fairly and playfully settle household chores.
 * **Brand Mascot (Cas the Owl)**: Friendly companion embedded across onboarding, empty states, and milestone celebrations.
 
 ---
@@ -71,7 +73,7 @@ flutter run -d chrome
    cp .env.example .env
    ```
 2. In your Supabase Dashboard:
-   * Execute the schema migration in `supabase/migrations/20261109000001_initial_schema.sql` via SQL Editor.
+   * Execute the consolidated schema in `supabase/setup_all.sql` (or sequentially run `supabase/migrations/01_initial_schema.sql` through `07_storage_buckets_setup.sql`) via the Supabase SQL Editor.
    * (Optional) Pre-seed the demo scenario by running `supabase/seed.sql`.
    * Set **Authentication > Settings > Confirm email = OFF** to allow instantaneous demo registrations.
 3. Launch the app with your Supabase credentials:
@@ -127,7 +129,7 @@ To share the APK via a direct download link:
 
 ## 🧪 Testing & Analysis
 
-Casama comes with a comprehensive suite of **78 automated tests** (30 unit tests + 48 widget/integration tests) verifying full application workflows, authorization rules, and state management:
+Casama comes with a comprehensive suite of **95 automated tests** (34 unit tests + 61 widget/integration tests) verifying full application workflows, authorization rules, and state management:
 
 ```bash
 # Run static analysis (zero warnings/errors enforced)
@@ -142,8 +144,9 @@ flutter test
 * **Auth & Profile Setup**: Account creation, one-tap demo login, and optional profile fields (Full Name, Nickname, Age, Avatar).
 * **Legal & Device Permissions**: Explicit zero-tracking location privacy statement and camera/photos explanations.
 * **Onboarding & Tutorial**: 3-step value carousel and interactive feature highlighting.
-* **Home Dashboard & Calendar**: Time-based greeting, live presence, 2x2 quick access, and month-navigating household calendar.
-* **Plus (+) Quick Actions**: Instant bottom sheet dispatching parcels, items, chores, meet-ups, and invites.
+* **Home Dashboard & Calendar**: Time-based greeting, live presence, 2x2 quick access, month-navigating household calendar, and interactive QuickSnap widget.
+* **QuickSnap (Locket-style)**: Shutter button bottom bar entry, full-screen camera with front/back flip, preset tester, captioning, Live Snaps feed with animated floating emoji reactions, comment sheet, and monthly Memories calendar with streak tracking.
+* **Household Boards & Bills**: Dedicated boards for Parcels, Lost & Found, Maintenance, Chore Roulette (Random Dormmate vs Just For Me), and Bills & Payments (with PHP currency formatting, due date pickers, reminders, and custom categories).
 * **Chat & Connect**: Group chat with RSVP cards, 1-on-1 private messaging with strict household membership authorization.
 * **Housemate Management**: Privacy-preserving user search, invite code sharing, and pending invite accept/decline.
 * **Profile & Settings**: Full name, nickname, age editing, avatar replacement/removal, points audit ledger, and 5-section settings with persistent Light, Dark, and System theme switching.
@@ -164,11 +167,11 @@ Casama/
 │   ├── core/
 │   │   ├── constants/            # Colors, spacing tokens (8pt rhythm), dimensions
 │   │   ├── theme/                # CasamaTheme (Light & Dark), Inter typography, ThemeProvider
-│   │   └── router/               # GoRouter configuration (18 routes)
+│   │   └── router/               # GoRouter configuration (20 routes)
 │   ├── shared/
 │   │   └── widgets/              # Reusable Casama buttons, chips, avatar cards, Cas mascot views
 │   ├── data/
-│   │   ├── models.dart           # Pure data models (UserProfile, MemberPresence, etc.)
+│   │   ├── models.dart           # Pure data models (UserProfile, QuickSnap, HouseholdBill, etc.)
 │   │   ├── mock_repository.dart  # High-fidelity mock repository with reactive StateNotifier
 │   │   ├── repository_provider.dart
 │   │   └── supabase_config.dart  # Supabase client integration & mock mode fallback
@@ -181,12 +184,15 @@ Casama/
 │       ├── parcels/              # Deliveries, COD accountability, Availability & Claims
 │       ├── items/                # Lost & Found, Borrowed items
 │       ├── tasks/                # Maintenance, Restock chores, Urgency badges
+│       ├── bills/                # Bills & Payments dashboard, Add Bill modal, filters, reminders
+│       ├── quicksnap/            # Locket-style QuickSnap: Camera, Feed, Memories, and Home Widget
 │       ├── chat/                 # Casama Connect: Directory, Group chat, DMs, Meet-ups
 │       ├── household/            # Add housemate modal (search, code, pending invites)
-│       ├── chore_roulette/       # Interactive animated spinning wheel mini-game
+│       ├── chore_roulette/       # Interactive animated spinning wheel mini-game (Random & Solo)
 │       ├── profile/              # User profile, Edit Profile modal, Points ledger
 │       └── settings/             # 5-section settings (Account, Appearance, Notifs, Privacy, About)
 └── test/
-    ├── unit_test.dart            # 27 comprehensive unit tests
-    └── widget_test.dart          # 36 comprehensive widget tests
+    ├── unit_test.dart            # Comprehensive unit tests
+    ├── widget_test.dart          # Comprehensive widget tests
+    └── e2e_integration_test.dart # Full end-to-end integration and QA tests
 ```

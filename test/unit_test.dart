@@ -644,4 +644,79 @@ void main() {
       },
     );
   });
+
+  group('QuickSnap (Locket-style) Feature Tests', () {
+    test(
+      'sendQuickSnap adds new snap to repository and broadcasts to chat',
+      () {
+        final repo = MockRepository();
+        final initialCount = repo.quickSnaps.length;
+        final initialMessages = repo.groupMessages.length;
+
+        repo.sendQuickSnap(
+          imageUrl: 'https://images.unsplash.com/photo-test',
+          caption: 'Balcony sunrise with dormmates 🌅',
+          recipientType: QuickSnapRecipientType.everyone,
+        );
+
+        expect(repo.quickSnaps.length, initialCount + 1);
+        final newSnap = repo.quickSnaps.first;
+        expect(newSnap.caption, 'Balcony sunrise with dormmates 🌅');
+        expect(newSnap.senderName, repo.currentUser.displayName);
+        expect(newSnap.recipientType, QuickSnapRecipientType.everyone);
+
+        // Verify broadcast to household chat
+        expect(repo.groupMessages.length, initialMessages + 1);
+        expect(repo.groupMessages.last.content, contains('Shared a QuickSnap'));
+      },
+    );
+
+    test('reactToQuickSnap adds reaction to the target snap', () {
+      final repo = MockRepository();
+      repo.sendQuickSnap(
+        imageUrl: 'https://images.unsplash.com/photo-test',
+        caption: 'First photo',
+        recipientType: QuickSnapRecipientType.everyone,
+      );
+      final snap = repo.quickSnaps.first;
+      final initialReactions = snap.reactions.length;
+
+      repo.reactToQuickSnap(snap.id, '🔥');
+
+      final updatedSnap = repo.quickSnaps.firstWhere((s) => s.id == snap.id);
+      expect(updatedSnap.reactions.length, initialReactions + 1);
+      expect(updatedSnap.reactions.last.emoji, '🔥');
+      expect(updatedSnap.reactions.last.userName, repo.currentUser.displayName);
+    });
+
+    test('commentOnQuickSnap adds comment to target snap', () {
+      final repo = MockRepository();
+      repo.sendQuickSnap(
+        imageUrl: 'https://images.unsplash.com/photo-test',
+        caption: 'First photo',
+        recipientType: QuickSnapRecipientType.everyone,
+      );
+      final snap = repo.quickSnaps.first;
+      final initialComments = snap.comments.length;
+
+      repo.commentOnQuickSnap(snap.id, 'Love this view!');
+
+      final updatedSnap = repo.quickSnaps.firstWhere((s) => s.id == snap.id);
+      expect(updatedSnap.comments.length, initialComments + 1);
+      expect(updatedSnap.comments.last.text, 'Love this view!');
+      expect(updatedSnap.comments.last.userName, repo.currentUser.displayName);
+    });
+
+    test('quickSnapStreak calculates consecutive day streaks', () {
+      final repo = MockRepository();
+      expect(repo.quickSnapStreak, 0);
+
+      repo.sendQuickSnap(
+        imageUrl: 'https://images.unsplash.com/photo-test',
+        caption: 'Today snap',
+        recipientType: QuickSnapRecipientType.everyone,
+      );
+      expect(repo.quickSnapStreak, 1);
+    });
+  });
 }

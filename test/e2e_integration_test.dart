@@ -24,6 +24,10 @@ import 'package:casama/features/tasks/maintenance_screen.dart';
 import 'package:casama/shared/widgets/cas_mascot_view.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('Part 7: Casama Final Integration & Quality Assurance Tests', () {
     // -------------------------------------------------------------------------
     // A. TEST THE COMPLETE USER JOURNEY
@@ -75,8 +79,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Tell Us About You 👋'), findsOneWidget);
-      expect(find.text('Full Name (Optional)'), findsOneWidget);
-      expect(find.text('Nickname (Optional)'), findsOneWidget);
+      expect(find.text('Full Name'), findsOneWidget);
+      expect(find.text('Nickname'), findsOneWidget);
       expect(find.text('Age (Optional)'), findsOneWidget);
       expect(find.text('Skip Profile for Now'), findsOneWidget);
 
@@ -204,7 +208,7 @@ void main() {
     // C. PLUS MENU TESTING
     // -------------------------------------------------------------------------
     testWidgets(
-      'C1. Plus quick-action menu opens bottom sheet with all 5 functional actions',
+      'C1. Center camera shutter button in bottom nav launches QuickSnapCameraScreen',
       (tester) async {
         tester.view.physicalSize = const Size(1080, 2400);
         tester.view.devicePixelRatio = 1.0;
@@ -223,16 +227,25 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Tap center plus button
-        await tester.tap(find.byIcon(Icons.add));
+        // Tap center camera shutter button (no camera icon inside)
+        final shutterBtn = find.byKey(const Key('center_quicksnap_shutter_button'));
+        expect(shutterBtn, findsOneWidget);
+        expect(
+          find.descendant(of: shutterBtn, matching: find.byIcon(Icons.camera_alt_rounded)),
+          findsNothing,
+        );
+        await tester.tap(shutterBtn);
         await tester.pumpAndSettle();
 
-        // Verify all 5 actions
-        expect(find.text('Add a Parcel'), findsOneWidget);
-        expect(find.text('Report an Item'), findsOneWidget);
-        expect(find.text('Add a Household Task'), findsOneWidget);
-        expect(find.text('Create a Meet-up'), findsOneWidget);
-        expect(find.text('Invite a Housemate'), findsOneWidget);
+        // Dismiss or allow permission dialog if visible
+        if (find.byKey(const Key('allow_camera_permission_button')).evaluate().isNotEmpty) {
+          await tester.tap(find.byKey(const Key('allow_camera_permission_button')));
+          await tester.pumpAndSettle();
+        }
+
+        // Verify QuickSnap Camera screen is displayed
+        expect(find.text('Everyone'), findsOneWidget);
+        expect(find.text('History'), findsOneWidget);
       },
     );
 

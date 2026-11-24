@@ -242,33 +242,41 @@ ALTER TABLE meet_up_responses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 -- 1. Profiles RLS
+DROP POLICY IF EXISTS "Profiles are viewable by authenticated users" ON profiles;
 CREATE POLICY "Profiles are viewable by authenticated users"
 ON profiles FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
 CREATE POLICY "Users can insert their own profile"
 ON profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
 CREATE POLICY "Users can update their own profile"
 ON profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
 
 -- 2. Households RLS
+DROP POLICY IF EXISTS "Users can view households they belong to" ON households;
 CREATE POLICY "Users can view households they belong to"
 ON households FOR SELECT TO authenticated
 USING (is_household_member(id) OR created_by = auth.uid());
 
+DROP POLICY IF EXISTS "Users can create a household" ON households;
 CREATE POLICY "Users can create a household"
 ON households FOR INSERT TO authenticated
 WITH CHECK (created_by = auth.uid());
 
+DROP POLICY IF EXISTS "Owners can update their household" ON households;
 CREATE POLICY "Owners can update their household"
 ON households FOR UPDATE TO authenticated
 USING (created_by = auth.uid());
 
 -- 3. Household Members RLS
+DROP POLICY IF EXISTS "Members can view household roster" ON household_members;
 CREATE POLICY "Members can view household roster"
 ON household_members FOR SELECT TO authenticated
 USING (is_household_member(household_id) OR user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can join households" ON household_members;
 CREATE POLICY "Users can join households"
 ON household_members FOR INSERT TO authenticated
 WITH CHECK (user_id = auth.uid());
@@ -285,6 +293,7 @@ BEGIN
             'conversations', 'notifications'
         ])
     LOOP
+        EXECUTE format('DROP POLICY IF EXISTS "%s_household_access" ON %I;', tbl, tbl);
         EXECUTE format('
             CREATE POLICY "%s_household_access"
             ON %I FOR ALL TO authenticated
@@ -296,24 +305,29 @@ END;
 $$;
 
 -- 5. Casama Connect Specific RLS
+DROP POLICY IF EXISTS "Members view their conversation memberships" ON conversation_members;
 CREATE POLICY "Members view their conversation memberships"
 ON conversation_members FOR SELECT TO authenticated
 USING (is_conversation_member(conversation_id) OR user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Members can join permitted conversations" ON conversation_members;
 CREATE POLICY "Members can join permitted conversations"
 ON conversation_members FOR INSERT TO authenticated
 WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Messages accessible to conversation members" ON messages;
 CREATE POLICY "Messages accessible to conversation members"
 ON messages FOR ALL TO authenticated
 USING (is_conversation_member(conversation_id))
 WITH CHECK (is_conversation_member(conversation_id) AND sender_id = auth.uid());
 
+DROP POLICY IF EXISTS "Meet-up invitations viewable by conversation members" ON meet_up_invitations;
 CREATE POLICY "Meet-up invitations viewable by conversation members"
 ON meet_up_invitations FOR ALL TO authenticated
 USING (is_conversation_member(conversation_id))
 WITH CHECK (is_conversation_member(conversation_id) AND creator_id = auth.uid());
 
+DROP POLICY IF EXISTS "Meet-up responses accessible by invitation participants" ON meet_up_responses;
 CREATE POLICY "Meet-up responses accessible by invitation participants"
 ON meet_up_responses FOR ALL TO authenticated
 USING (EXISTS (
@@ -461,16 +475,27 @@ END;
 $$;
 
 -- =========================================================================
--- REALTIME REPLICATION PUBLICATION
+-- REALTIME REPLICATION PUBLICATION (Idempotent)
 -- =========================================================================
-ALTER PUBLICATION supabase_realtime ADD TABLE presence_events;
-ALTER PUBLICATION supabase_realtime ADD TABLE parcels;
-ALTER PUBLICATION supabase_realtime ADD TABLE parcel_availability;
-ALTER PUBLICATION supabase_realtime ADD TABLE maintenance_tasks;
-ALTER PUBLICATION supabase_realtime ADD TABLE messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE meet_up_invitations;
-ALTER PUBLICATION supabase_realtime ADD TABLE meet_up_responses;
-ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+DO $$
+DECLARE
+    tbl text;
+BEGIN
+    FOR tbl IN
+        SELECT unnest(ARRAY[
+            'presence_events', 'parcels', 'parcel_availability', 'maintenance_tasks',
+            'messages', 'meet_up_invitations', 'meet_up_responses', 'notifications'
+        ])
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = tbl
+        ) THEN
+            EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I;', tbl);
+        END IF;
+    END LOOP;
+END;
+$$;
 
 -- =========================================================================
 -- STORAGE BUCKETS
@@ -482,15 +507,21 @@ VALUES
     ('brand_assets', 'brand_assets', true)
 ON CONFLICT (id) DO NOTHING;
 
+DROP POLICY IF EXISTS "Public Avatar Access" ON storage.objects;
+DROP POLICY IF EXISTS "Public avatar access" ON storage.objects;
 CREATE POLICY "Public Avatar Access"
 ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
 
+DROP POLICY IF EXISTS "Authenticated users can upload avatars" ON storage.objects;
 CREATE POLICY "Authenticated users can upload avatars"
 ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'avatars');
 
+DROP POLICY IF EXISTS "Public Item Photos Access" ON storage.objects;
+DROP POLICY IF EXISTS "Public item photos access" ON storage.objects;
 CREATE POLICY "Public Item Photos Access"
 ON storage.objects FOR SELECT USING (bucket_id = 'item_photos');
 
+DROP POLICY IF EXISTS "Authenticated users can upload item photos" ON storage.objects;
 CREATE POLICY "Authenticated users can upload item photos"
 ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'item_photos');
 

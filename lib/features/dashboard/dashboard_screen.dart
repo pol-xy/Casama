@@ -8,6 +8,7 @@ import '../../shared/widgets/avatar_chip.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../calendar/household_calendar_view.dart';
+import '../quicksnap/quicksnap_home_widget.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -187,6 +188,11 @@ class DashboardScreen extends ConsumerWidget {
 
               // 3. Household Interactive Calendar Feature (Directly Below Household Card)
               const HouseholdCalendarView(),
+
+              const SizedBox(height: CasamaSpacing.xl),
+
+              // 4. QuickSnap Moments Widget (Locket-style)
+              const QuickSnapHomeWidget(),
 
               const SizedBox(height: CasamaSpacing.xxl),
             ],

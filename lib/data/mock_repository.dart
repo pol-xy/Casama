@@ -1,11 +1,14 @@
+// ignore_for_file: annotate_overrides
+
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'casama_repository.dart';
 import 'models.dart';
 
 /// Pre-populated InMemory / Demo Repository matching Casama Mockup Ui.png
-class MockRepository extends ChangeNotifier {
+class MockRepository extends ChangeNotifier implements CasamaRepository {
   bool _isAuthenticated = true;
   bool get isAuthenticated => _isAuthenticated;
 
@@ -392,6 +395,9 @@ class MockRepository extends ChangeNotifier {
     ),
   ];
 
+  // QuickSnaps (Locket-style photo moments) - starts empty until users snap photos
+  final List<QuickSnap> _quickSnaps = [];
+
   // Household invitations
   final List<HouseholdInvitation> _invitations = [
     HouseholdInvitation(
@@ -481,6 +487,44 @@ class MockRepository extends ChangeNotifier {
   int get totalUnreadChatCount =>
       _groupChatUnreadCount +
       _chatSpaces.fold<int>(0, (sum, s) => sum + s.unreadCount);
+
+  // QuickSnap getters
+  List<QuickSnap> get quickSnaps => List.unmodifiable(_quickSnaps);
+  QuickSnap? get latestQuickSnap =>
+      _quickSnaps.isNotEmpty ? _quickSnaps.first : null;
+
+  int get quickSnapStreak {
+    if (_quickSnaps.isEmpty) return 0;
+    final days =
+        _quickSnaps
+            .map(
+              (s) => DateTime(
+                s.createdAt.year,
+                s.createdAt.month,
+                s.createdAt.day,
+              ),
+            )
+            .toSet()
+            .toList()
+          ..sort((a, b) => b.compareTo(a));
+    if (days.isEmpty) return 0;
+    final today = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    if (days.first.difference(today).inDays.abs() > 1) return 0;
+
+    int streak = 1;
+    for (int i = 0; i < days.length - 1; i++) {
+      if (days[i].difference(days[i + 1]).inDays == 1) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
 
   // Actions
   void login({String? email, String? password}) {
@@ -1420,6 +1464,95 @@ class MockRepository extends ChangeNotifier {
     if (idx == -1) return;
     if (_bills[idx].creatorId != _currentUser.id) return;
     _bills.removeAt(idx);
+    notifyListeners();
+  }
+
+  // ==========================================
+  // QUICKSNAPS (LOCKET-STYLE)
+  // ==========================================
+
+  void sendQuickSnap({
+    required String imageUrl,
+    String? caption,
+    QuickSnapRecipientType recipientType = QuickSnapRecipientType.everyone,
+    List<String> recipientNames = const [],
+  }) {
+    final snap = QuickSnap(
+      id: 'snap_${DateTime.now().millisecondsSinceEpoch}',
+      householdId: _currentHousehold.id,
+      senderId: _currentUser.id,
+      senderName: _currentUser.displayName,
+      senderAvatar: _currentUser.avatarUrl,
+      imageUrl: imageUrl,
+      caption: caption,
+      recipientType: recipientType,
+      recipientNames: recipientNames,
+      createdAt: DateTime.now(),
+      reactions: [],
+      comments: [],
+    );
+    _quickSnaps.insert(0, snap);
+
+    // Also share a quick notification/chat message so dormmates see it
+    final targetLabel = recipientType == QuickSnapRecipientType.everyone
+        ? 'everyone'
+        : recipientNames.join(', ');
+    _groupMessages.add(
+      ChatMessage(
+        id: 'msg_snap_${DateTime.now().millisecondsSinceEpoch}',
+        senderId: _currentUser.id,
+        senderName: _currentUser.displayName,
+        senderAvatar: _currentUser.avatarUrl,
+        content:
+            '📸 Shared a QuickSnap${caption != null && caption.isNotEmpty ? ': "$caption"' : ''} (to $targetLabel)',
+        mediaUrl: imageUrl,
+        createdAt: DateTime.now(),
+        isCurrentUser: true,
+      ),
+    );
+
+    notifyListeners();
+  }
+
+  void reactToQuickSnap(String snapId, String emoji) {
+    final idx = _quickSnaps.indexWhere((s) => s.id == snapId);
+    if (idx == -1) return;
+    final current = _quickSnaps[idx];
+    final newReaction = QuickSnapReaction(
+      emoji: emoji,
+      userId: _currentUser.id,
+      userName: _currentUser.displayName,
+      createdAt: DateTime.now(),
+    );
+    _quickSnaps[idx] = current.copyWith(
+      reactions: [...current.reactions, newReaction],
+    );
+    notifyListeners();
+  }
+
+  void commentOnQuickSnap(String snapId, String text) {
+    if (text.trim().isEmpty) return;
+    final idx = _quickSnaps.indexWhere((s) => s.id == snapId);
+    if (idx == -1) return;
+    final current = _quickSnaps[idx];
+    final newComment = QuickSnapComment(
+      id: 'sc_${DateTime.now().millisecondsSinceEpoch}',
+      userId: _currentUser.id,
+      userName: _currentUser.displayName,
+      userAvatar: _currentUser.avatarUrl,
+      text: text.trim(),
+      createdAt: DateTime.now(),
+    );
+    _quickSnaps[idx] = current.copyWith(
+      comments: [...current.comments, newComment],
+    );
+    notifyListeners();
+  }
+
+  void deleteQuickSnap(String snapId) {
+    _quickSnaps.removeWhere(
+      (s) => s.id == snapId && s.senderId == _currentUser.id,
+    );
     notifyListeners();
   }
 }
