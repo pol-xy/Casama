@@ -152,10 +152,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   prefixIcon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
-                    if (v == null || v.isEmpty) {
+                    final trimmed = (v ?? '').trim();
+                    if (trimmed.isEmpty) {
                       return 'Please enter your email';
                     }
-                    if (!v.contains('@')) {
+                    if (!trimmed.contains('@') || !trimmed.contains('.')) {
                       return 'Enter a valid email address';
                     }
                     return null;

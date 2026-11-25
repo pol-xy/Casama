@@ -90,7 +90,7 @@ void main() {
     await tester.tap(find.text('Log In'));
     await tester.pumpAndSettle();
     expect(find.text('Welcome Back! 👋'), findsOneWidget);
-    expect(find.text('One-Tap Demo Login (JP - Casa 204)'), findsOneWidget);
+    expect(find.text('Forgot password?'), findsOneWidget);
   });
 
   testWidgets(

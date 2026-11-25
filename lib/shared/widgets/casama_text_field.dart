@@ -16,6 +16,7 @@ class CasamaTextField extends StatelessWidget {
   final void Function(String)? onChanged;
   final bool readOnly;
   final VoidCallback? onTap;
+  final AutovalidateMode? autovalidateMode;
 
   const CasamaTextField({
     super.key,
@@ -31,6 +32,7 @@ class CasamaTextField extends StatelessWidget {
     this.onChanged,
     this.readOnly = false,
     this.onTap,
+    this.autovalidateMode,
   });
 
   @override
@@ -52,6 +54,8 @@ class CasamaTextField extends StatelessWidget {
           obscureText: isPassword,
           keyboardType: keyboardType,
           validator: validator,
+          autovalidateMode:
+              autovalidateMode ?? AutovalidateMode.onUserInteraction,
           maxLines: isPassword ? 1 : maxLines,
           onChanged: onChanged,
           readOnly: readOnly,

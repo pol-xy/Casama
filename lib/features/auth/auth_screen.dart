@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
@@ -24,8 +25,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
   // Login form controllers
   final _loginFormKey = GlobalKey<FormState>();
-  final _loginEmailController = TextEditingController(text: 'jp@casama.app');
-  final _loginPasswordController = TextEditingController(text: 'password123');
+  final _loginEmailController = TextEditingController();
+  final _loginPasswordController = TextEditingController();
   bool _loginObscurePassword = true;
   bool _isLoginLoading = false;
 
@@ -62,27 +63,35 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     if (!_loginFormKey.currentState!.validate()) return;
     setState(() => _isLoginLoading = true);
 
+    final email = _loginEmailController.text.trim();
+    final password = _loginPasswordController.text.trim();
+
     try {
       final client = SupabaseConfig.client;
       if (client != null) {
         await client.auth.signInWithPassword(
-          email: _loginEmailController.text.trim(),
-          password: _loginPasswordController.text.trim(),
+          email: email,
+          password: password,
         );
       } else {
         await Future.delayed(const Duration(milliseconds: 500));
       }
 
-      ref
-          .read(repositoryProvider)
-          .login(
-            email: _loginEmailController.text.trim(),
-            password: _loginPasswordController.text.trim(),
-          );
+      ref.read(repositoryProvider).login(email: email, password: password);
 
       if (mounted) {
         setState(() => _isLoginLoading = false);
         context.go('/dashboard');
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        setState(() => _isLoginLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: CasamaColors.errorRed,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -91,14 +100,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
           SnackBar(
             content: Text('Login notice: ${e.toString()}'),
             backgroundColor: CasamaColors.errorRed,
-            action: SnackBarAction(
-              label: 'Use Demo',
-              textColor: CasamaColors.white,
-              onPressed: () {
-                ref.read(repositoryProvider).login();
-                context.go('/dashboard');
-              },
-            ),
           ),
         );
       }
@@ -127,6 +128,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         // Direct new user to Step 2: Optional Profile Setup
         context.push('/profile-setup');
       }
+    } on AuthException catch (e) {
+      if (mounted) {
+        setState(() => _isRegisterLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: CasamaColors.errorRed,
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isRegisterLoading = false);
@@ -134,16 +145,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
           SnackBar(
             content: Text('Registration note: ${e.toString()}'),
             backgroundColor: CasamaColors.errorRed,
-            action: SnackBarAction(
-              label: 'Continue Demo',
-              textColor: CasamaColors.white,
-              onPressed: () {
-                ref
-                    .read(repositoryProvider)
-                    .register(email: email, password: password);
-                context.push('/profile-setup');
-              },
-            ),
           ),
         );
       }
@@ -329,10 +330,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
               prefixIcon: Icons.email_outlined,
               keyboardType: TextInputType.emailAddress,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) {
+                final trimmed = (v ?? '').trim();
+                if (trimmed.isEmpty) {
                   return 'Please enter your email';
                 }
-                if (!v.contains('@')) {
+                if (!trimmed.contains('@') || !trimmed.contains('.')) {
                   return 'Enter a valid email address';
                 }
                 return null;
@@ -438,10 +440,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
               prefixIcon: Icons.email_outlined,
               keyboardType: TextInputType.emailAddress,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) {
+                final trimmed = (v ?? '').trim();
+                if (trimmed.isEmpty) {
                   return 'Please enter your email';
                 }
-                if (!v.contains('@')) {
+                if (!trimmed.contains('@') || !trimmed.contains('.')) {
                   return 'Enter a valid email address';
                 }
                 return null;
@@ -503,19 +506,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
               isLoading: _isLoginLoading,
               isPill: true,
               height: 52,
-            ),
-            const SizedBox(height: CasamaSpacing.md),
-
-            // One-Tap Demo Login Button (JP - Casa 204)
-            CasamaButton(
-              label: 'One-Tap Demo Login (JP - Casa 204)',
-              style: CasamaButtonStyle.secondary,
-              onPressed: () {
-                ref.read(repositoryProvider).login();
-                context.go('/dashboard');
-              },
-              isPill: true,
-              height: 48,
             ),
             const SizedBox(height: CasamaSpacing.xxl),
           ],

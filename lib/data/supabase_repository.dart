@@ -370,7 +370,9 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   void login({String? email, String? password}) async {
     if (email != null && password != null) {
       try {
-        await _client.auth.signInWithPassword(email: email, password: password);
+        if (_client.auth.currentUser == null) {
+          await _client.auth.signInWithPassword(email: email, password: password);
+        }
         await _init();
       } catch (e) {
         debugPrint('Login error: $e');
@@ -384,7 +386,9 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   @override
   void register({required String email, required String password}) async {
     try {
-      await _client.auth.signUp(email: email, password: password);
+      if (_client.auth.currentUser == null) {
+        await _client.auth.signUp(email: email, password: password);
+      }
       await _init();
     } catch (e) {
       debugPrint('Registration error: $e');

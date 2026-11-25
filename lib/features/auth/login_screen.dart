@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
@@ -18,8 +19,8 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController(text: 'jp@casama.app');
-  final _passwordController = TextEditingController(text: 'password123');
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -34,28 +35,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
     try {
       final client = SupabaseConfig.client;
       if (client != null) {
         await client.auth.signInWithPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
+          email: email,
+          password: password,
         );
       } else {
-        // High-fidelity mock mode delay
         await Future.delayed(const Duration(milliseconds: 600));
       }
 
-      ref
-          .read(repositoryProvider)
-          .login(
-            email: _emailController.text.trim(),
-            password: _passwordController.text.trim(),
-          );
+      ref.read(repositoryProvider).login(email: email, password: password);
 
       if (mounted) {
         setState(() => _isLoading = false);
         context.go('/dashboard');
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: CasamaColors.errorRed,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -64,14 +72,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           SnackBar(
             content: Text('Login failed: ${e.toString()}'),
             backgroundColor: CasamaColors.errorRed,
-            action: SnackBarAction(
-              label: 'Use Demo',
-              textColor: CasamaColors.white,
-              onPressed: () {
-                ref.read(repositoryProvider).login();
-                context.go('/dashboard');
-              },
-            ),
           ),
         );
       }
@@ -208,10 +208,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   prefixIcon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
-                    if (v == null || v.isEmpty) {
+                    final trimmed = (v ?? '').trim();
+                    if (trimmed.isEmpty) {
                       return 'Please enter your email';
                     }
-                    if (!v.contains('@')) {
+                    if (!trimmed.contains('@') || !trimmed.contains('.')) {
                       return 'Enter a valid email address';
                     }
                     return null;
@@ -273,19 +274,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   isLoading: _isLoading,
                   isPill: true,
                   height: 52,
-                ),
-                const SizedBox(height: CasamaSpacing.md),
-
-                // Quick Demo Login Button (One-tap convenience)
-                CasamaButton(
-                  label: 'One-Tap Demo Login (JP - Casa 204)',
-                  style: CasamaButtonStyle.secondary,
-                  onPressed: () {
-                    ref.read(repositoryProvider).login();
-                    context.go('/dashboard');
-                  },
-                  isPill: true,
-                  height: 48,
                 ),
                 const SizedBox(height: CasamaSpacing.lg),
 
