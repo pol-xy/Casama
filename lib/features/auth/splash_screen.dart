@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../data/repository_provider.dart';
+import '../../data/supabase_config.dart';
 import '../../shared/widgets/casama_button.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -19,8 +20,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final repo = ref.watch(repositoryProvider);
-    final isReturningUser =
-        repo.isAuthenticated && repo.currentUser.hasCompletedOnboarding;
+    final client = SupabaseConfig.client;
+    final hasRealAuthUser = client?.auth.currentUser != null;
+    final isReturningUser = hasRealAuthUser &&
+        repo.isAuthenticated &&
+        repo.currentUser.hasCompletedOnboarding &&
+        repo.currentUser.id.isNotEmpty;
 
     return Scaffold(
       backgroundColor: context.scaffoldBg,

@@ -1471,8 +1471,10 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   // QUICKSNAPS (LOCKET-STYLE)
   // ==========================================
 
+  @override
   void sendQuickSnap({
     required String imageUrl,
+    Uint8List? imageBytes,
     String? caption,
     QuickSnapRecipientType recipientType = QuickSnapRecipientType.everyone,
     List<String> recipientNames = const [],

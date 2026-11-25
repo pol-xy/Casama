@@ -180,6 +180,7 @@ abstract class CasamaRepository extends ChangeNotifier {
   // QuickSnap Locket
   void sendQuickSnap({
     required String imageUrl,
+    Uint8List? imageBytes,
     String? caption,
     QuickSnapRecipientType recipientType = QuickSnapRecipientType.everyone,
     List<String> recipientNames = const [],

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import 'casama_repository.dart';
 import 'models.dart';
@@ -12,6 +13,7 @@ import 'models.dart';
 class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   final SupabaseClient _client;
   RealtimeChannel? _realtimeChannel;
+  StreamSubscription<AuthState>? _authSubscription;
 
   // Cached state
   bool _isAuthenticated = false;
@@ -51,10 +53,37 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
   SupabaseRepository(this._client) {
     _init();
+    _authSubscription = _client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.signedIn ||
+          data.event == AuthChangeEvent.tokenRefreshed ||
+          data.event == AuthChangeEvent.userUpdated) {
+        _init();
+      } else if (data.event == AuthChangeEvent.signedOut) {
+        _isAuthenticated = false;
+        _currentUser = const UserProfile(
+          id: '',
+          displayName: 'User',
+          handle: '@user',
+        );
+        _currentHousehold = const Household(
+          id: '',
+          name: 'Casa 204',
+          inviteCode: 'CASA204',
+        );
+        _quickSnaps = [];
+        _bills = [];
+        _items = [];
+        _members = [];
+        _groupMessages = [];
+        _realtimeChannel?.unsubscribe();
+        notifyListeners();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _realtimeChannel?.unsubscribe();
     super.dispose();
   }
@@ -151,6 +180,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final authUser = _client.auth.currentUser;
     if (authUser == null) {
       _isAuthenticated = false;
+      notifyListeners();
       return;
     }
 
@@ -167,11 +197,19 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       if (profileData != null) {
         _currentUser = UserProfile.fromJson(profileData);
       } else {
+        final emailPrefix = authUser.email?.split('@').first ?? 'Housemate';
         _currentUser = UserProfile(
           id: authUser.id,
-          displayName: authUser.email?.split('@').first ?? 'Housemate',
-          handle: '@${authUser.email?.split('@').first ?? 'member'}',
+          displayName: emailPrefix,
+          handle: '@$emailPrefix',
         );
+        try {
+          await _client.from('profiles').upsert({
+            'id': authUser.id,
+            'display_name': emailPrefix,
+            'handle': '@$emailPrefix',
+          });
+        } catch (_) {}
       }
 
       // 2. Fetch Household
@@ -185,6 +223,18 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         _currentHousehold = Household.fromJson(
           memberRecord['households'] as Map<String, dynamic>,
         );
+      } else {
+        try {
+          final existing = await _client.from('households').select().limit(1).maybeSingle();
+          if (existing != null) {
+            _currentHousehold = Household.fromJson(existing);
+            await _client.from('household_members').upsert({
+              'household_id': _currentHousehold.id,
+              'user_id': authUser.id,
+              'role': 'member',
+            });
+          }
+        } catch (_) {}
       }
 
       // 3. Hydrate Core Tables
@@ -631,17 +681,36 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   @override
   void sendQuickSnap({
     required String imageUrl,
+    Uint8List? imageBytes,
     String? caption,
     QuickSnapRecipientType recipientType = QuickSnapRecipientType.everyone,
     List<String> recipientNames = const [],
   }) async {
+    final snapId = const Uuid().v4();
+    String finalUrl = imageUrl;
+
+    // Upload to Supabase Storage if binary bytes available
+    if (_client.auth.currentUser != null && imageBytes != null && imageBytes.isNotEmpty) {
+      try {
+        final storagePath = '${_currentUser.id}/$snapId.jpg';
+        await _client.storage.from('quicksnaps').uploadBinary(
+          storagePath,
+          imageBytes,
+          fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+        );
+        finalUrl = _client.storage.from('quicksnaps').getPublicUrl(storagePath);
+      } catch (e) {
+        debugPrint('Supabase quicksnap upload error: $e');
+      }
+    }
+
     final newSnap = QuickSnap(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: snapId,
       householdId: _currentHousehold.id,
       senderId: _currentUser.id,
       senderName: _currentUser.effectiveGreetingName,
       senderAvatar: _currentUser.avatarUrl,
-      imageUrl: imageUrl,
+      imageUrl: finalUrl,
       caption: caption,
       recipientType: recipientType,
       recipientNames: recipientNames,
@@ -651,7 +720,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     _quickSnaps = [newSnap, ..._quickSnaps];
     notifyListeners();
 
-    if (_currentHousehold.id.isNotEmpty) {
+    if (_currentHousehold.id.isNotEmpty && _currentUser.id.isNotEmpty) {
       try {
         await _client.from('quick_snaps').insert(newSnap.toJson());
       } catch (e) {

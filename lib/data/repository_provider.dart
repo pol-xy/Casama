@@ -10,7 +10,7 @@ import 'supabase_repository.dart';
 /// or falls back to in-memory [MockRepository] for zero-setup offline development and automated testing.
 final repositoryProvider = ChangeNotifierProvider<CasamaRepository>((ref) {
   final client = SupabaseConfig.client;
-  if (client != null && client.auth.currentUser != null) {
+  if (client != null) {
     return SupabaseRepository(client);
   }
   return MockRepository();

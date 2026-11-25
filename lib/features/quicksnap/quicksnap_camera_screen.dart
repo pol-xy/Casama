@@ -427,6 +427,7 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
     final repo = ref.read(repositoryProvider);
     repo.sendQuickSnap(
       imageUrl: _capturedImageUrl!,
+      imageBytes: _capturedBytes,
       caption: _captionController.text.trim().isEmpty
           ? null
           : _captionController.text.trim(),

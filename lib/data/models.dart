@@ -1128,11 +1128,15 @@ class QuickSnap {
       id: json['id'] as String,
       householdId: json['household_id'] as String? ?? '',
       senderId: json['creator_id'] as String? ?? json['sender_id'] as String? ?? '',
-      senderName: json['sender_name'] as String? ?? 'Housemate',
-      senderAvatar: json['sender_avatar'] as String?,
+      senderName: json['creator_name'] as String? ??
+          json['sender_name'] as String? ??
+          'Housemate',
+      senderAvatar: json['creator_avatar'] as String? ??
+          json['sender_avatar'] as String?,
       imageUrl: json['image_url'] as String,
       caption: json['caption'] as String?,
-      recipientType: (json['recipient_type'] as String?) == 'selected'
+      recipientType: (json['recipient_type'] as String?) == 'selected' ||
+              (json['recipient_type'] as String?) == 'selected_friends'
           ? QuickSnapRecipientType.selectedHousemates
           : QuickSnapRecipientType.everyone,
       recipientNames: (json['recipient_names'] as List<dynamic>?)
@@ -1157,11 +1161,13 @@ class QuickSnap {
     'id': id,
     'household_id': householdId,
     'creator_id': senderId,
+    'creator_name': senderName,
+    'creator_avatar': senderAvatar,
     'image_url': imageUrl,
     'caption': caption,
     'recipient_type':
         recipientType == QuickSnapRecipientType.selectedHousemates
-            ? 'selected'
+            ? 'selected_friends'
             : 'everyone',
     'created_at': createdAt.toIso8601String(),
   };
