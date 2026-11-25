@@ -55,11 +55,17 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/terms',
-      builder: (context, state) => const TermsPrivacyScreen(),
+      builder: (context, state) {
+        final readOnly = state.uri.queryParameters['readOnly'] == 'true';
+        return TermsPrivacyScreen(readOnly: readOnly);
+      },
     ),
     GoRoute(
       path: '/permissions',
-      builder: (context, state) => const DevicePermissionsScreen(),
+      builder: (context, state) {
+        final fromSettings = state.uri.queryParameters['fromSettings'] == 'true';
+        return DevicePermissionsScreen(isOnboarding: !fromSettings);
+      },
     ),
     GoRoute(
       path: '/intro',
@@ -83,7 +89,20 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/boards',
-      builder: (context, state) => const MainNavigationShell(initialIndex: 1),
+      builder: (context, state) {
+        final tabParam = state.uri.queryParameters['tab'];
+        final initialBoardIndex = switch (tabParam) {
+          'parcels' || '0' => 0,
+          'tasks' || '1' => 1,
+          'bills' || '2' => 2,
+          'items' || '3' => 3,
+          _ => 0,
+        };
+        return MainNavigationShell(
+          initialIndex: 1,
+          initialBoardIndex: initialBoardIndex,
+        );
+      },
     ),
     GoRoute(
       path: '/parcels',

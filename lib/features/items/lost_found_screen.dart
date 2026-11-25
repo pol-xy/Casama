@@ -3,16 +3,21 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_filter_controls.dart';
+import '../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../shared/widgets/casama_wave_header.dart';
 import '../../shared/widgets/status_chip.dart';
+import 'widgets/report_item_sheet.dart';
 
 class LostFoundScreen extends ConsumerStatefulWidget {
   final bool initialOpenPostModal;
@@ -23,392 +28,197 @@ class LostFoundScreen extends ConsumerStatefulWidget {
   ConsumerState<LostFoundScreen> createState() => _LostFoundScreenState();
 }
 
-class _LostFoundScreenState extends ConsumerState<LostFoundScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
+class _LostFoundScreenState extends ConsumerState<LostFoundScreen> {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
     if (widget.initialOpenPostModal) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showPostItemModal(context);
+        if (mounted) showReportItemSheet(context);
       });
     }
   }
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final repo = ref.watch(repositoryProvider);
+
+    return Scaffold(
+      backgroundColor: pal.scaffoldBg,
+      body: CasamaAmbientCanvas(
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                CasamaWaveHeader(
+                  title: 'Lost & Found',
+                  subtitle:
+                      '${repo.currentHousehold.name} • Missing, found & shared items',
+                  compact: true,
+                  onBackTap: () =>
+                      context.canPop() ? context.pop() : context.go('/boards'),
+                  rightActions: [
+                    CasamaHeaderActionPill(
+                      icon: Icons.sell_outlined,
+                      label: 'Report item',
+                      onTap: () => showReportItemSheet(context),
+                    ),
+                  ],
+                ),
+                const Expanded(child: ItemsBoardView(bottomPadding: 96)),
+              ],
+            ),
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: MediaQuery.paddingOf(context).bottom + 18,
+              child: CasamaButton(
+                label: 'Post an Item',
+                icon: Icons.photo_camera_outlined,
+                onPressed: () => showReportItemSheet(context),
+                isPill: true,
+                height: 52,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
+}
+
+/// Reusable Lost / Found / Shared board tab body shared by [BoardsScreen] and standalone [LostFoundScreen].
+class ItemsBoardView extends ConsumerStatefulWidget {
+  final double bottomPadding;
+
+  const ItemsBoardView({super.key, this.bottomPadding = 120});
+
+  @override
+  ConsumerState<ItemsBoardView> createState() => _ItemsBoardViewState();
+}
+
+class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
+  int _selectedTab = 0; // 0 = Lost, 1 = Found, 2 = Shared
+  int _previousTab = 0;
 
   @override
   Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
-    final lostItems = repo.items.where((i) => i.type == ItemType.lost).toList();
-    final foundItems = repo.items
-        .where((i) => i.type == ItemType.found)
-        .toList();
-    final borrowedItems = repo.items
-        .where((i) => i.type == ItemType.shared)
-        .toList();
 
-    return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Lost & Found'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            child: TabBar(
-              controller: _tabController,
-              indicatorColor: CasamaColors.primaryCoral,
-              indicatorWeight: 3,
-              labelColor: CasamaColors.primaryCoral,
-              unselectedLabelColor: context.textSecondaryColor,
-              labelStyle: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-              tabs: const [
-                Tab(text: 'Lost'),
-                Tab(text: 'Found'),
-                Tab(text: 'Borrowed'),
-              ],
-            ),
-          ),
-        ),
-      ),
-      body: Stack(
+    final lostItems = repo.items.where((i) => i.type == ItemType.lost).toList();
+    final foundItems =
+        repo.items.where((i) => i.type == ItemType.found).toList();
+    final sharedItems =
+        repo.items.where((i) => i.type == ItemType.shared).toList();
+
+    final currentList = switch (_selectedTab) {
+      1 => foundItems,
+      2 => sharedItems,
+      _ => lostItems,
+    };
+
+    final openReports =
+        lostItems.where((i) => i.status == ItemStatus.open).length +
+        foundItems.where((i) => i.status == ItemStatus.unclaimed).length;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(top: 26, bottom: widget.bottomPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TabBarView(
-            controller: _tabController,
-            children: [
-              _buildItemList(lostItems, ItemType.lost),
-              _buildItemList(foundItems, ItemType.found),
-              _buildItemList(borrowedItems, ItemType.shared),
+          CasamaPeekingSummaryBar(
+            mascotPose: CasPose.together,
+            leftTitle: '$openReports Open Reports',
+            leftSubtitle: '${lostItems.length} Lost • ${foundItems.length} Found',
+            rightTitle: '${sharedItems.length} Shared Items',
+            rightSubtitle: 'Live household tracker',
+            rightTitleColor: pal.forestTeal,
+          ),
+          const SizedBox(height: CasamaSpacing.xs),
+
+          CasamaSegmentedTrack<int>(
+            selectedValue: _selectedTab,
+            onSelected: (next) => setState(() {
+              _previousTab = _selectedTab;
+              _selectedTab = next;
+            }),
+            segments: const [
+              CasamaFilterOption(value: 0, label: 'Lost'),
+              CasamaFilterOption(value: 1, label: 'Found'),
+              CasamaFilterOption(value: 2, label: 'Shared'),
             ],
           ),
 
-          // Pinned Bottom Button: "📷 Post an Item" (Matching Screen 4)
-          Positioned(
-            left: 20,
-            right: 20,
-            bottom: 24,
-            child: CasamaButton(
-              label: 'Post an Item',
-              icon: Icons.camera_alt_outlined,
-              onPressed: () => _showPostItemModal(context),
-              isPill: true,
-              height: 52,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildItemList(List<LostFoundItem> items, ItemType type) {
-    if (items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CasMascotView(
-              pose: CasPose.together,
-              width: 140,
-              height: 140,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              type == ItemType.lost
-                  ? 'No lost items reported'
-                  : (type == ItemType.found
-                        ? 'No found items waiting'
-                        : 'No borrowed items'),
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: context.textColor,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Tap "Post an Item" to alert your housemates.',
-              style: TextStyle(color: context.textSecondaryColor),
-            ),
-            const SizedBox(height: 80),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.only(
-        left: CasamaSpacing.lg,
-        right: CasamaSpacing.lg,
-        top: CasamaSpacing.lg,
-        bottom: 90, // Leave room for bottom button
-      ),
-      itemCount: items.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 14),
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return _ItemCard(item: item);
-      },
-    );
-  }
-
-  void _showPostItemModal(BuildContext context) {
-    ItemType type = ItemType.lost;
-    final titleController = TextEditingController();
-    final descController = TextEditingController();
-    String? selectedImageBase64;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            Future<void> pickImage(ImageSource source) async {
-              try {
-                final picker = ImagePicker();
-                final file = await picker.pickImage(
-                  source: source,
-                  maxWidth: 800,
-                  maxHeight: 800,
-                  imageQuality: 80,
-                );
-                if (file != null) {
-                  final bytes = await file.readAsBytes();
-                  setModalState(() {
-                    selectedImageBase64 =
-                        'data:image/jpeg;base64,${base64Encode(bytes)}';
-                  });
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error picking image: $e')),
-                  );
-                }
-              }
-            }
-
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: 24,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Post an Item',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: context.textColor,
-                      ),
+          CasamaDirectionalSwitcher(
+            index: _selectedTab,
+            previousIndex: _previousTab,
+            child: currentList.isEmpty
+                ? Padding(
+                    key: ValueKey('items_empty_$_selectedTab'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
+                      vertical: CasamaSpacing.xl,
                     ),
-                    const SizedBox(height: 14),
-
-                    // Type Selector (3 options: Lost, Found, Borrowed)
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
+                    child: CasamaCard(
+                      padding: const EdgeInsets.all(CasamaSpacing.xl),
+                      child: Column(
                         children: [
-                          ChoiceChip(
-                            label: const Text('Lost Item'),
-                            selected: type == ItemType.lost,
-                            onSelected: (_) =>
-                                setModalState(() => type = ItemType.lost),
-                            selectedColor: const Color(0xFFFFEBEE),
-                            labelStyle: TextStyle(
-                              color: type == ItemType.lost
-                                  ? CasamaColors.primaryCoral
-                                  : CasamaColors.ink,
-                              fontWeight: FontWeight.w600,
+                          const CasMascotView(
+                            pose: CasPose.together,
+                            width: 112,
+                            height: 112,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _selectedTab == 0
+                                ? 'No lost items reported'
+                                : (_selectedTab == 1
+                                      ? 'No found items waiting'
+                                      : 'No shared items listed'),
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: pal.textPrimary,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: const Text('Found Item'),
-                            selected: type == ItemType.found,
-                            onSelected: (_) =>
-                                setModalState(() => type = ItemType.found),
-                            selectedColor: const Color(0xFFFFF8E1),
-                            labelStyle: TextStyle(
-                              color: type == ItemType.found
-                                  ? const Color(0xFFF57F17)
-                                  : CasamaColors.ink,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: const Text('Borrowed / Shared'),
-                            selected: type == ItemType.shared,
-                            onSelected: (_) =>
-                                setModalState(() => type = ItemType.shared),
-                            selectedColor: const Color(0xFFE8F5E9),
-                            labelStyle: TextStyle(
-                              color: type == ItemType.shared
-                                  ? CasamaColors.homeGreen
-                                  : CasamaColors.ink,
-                              fontWeight: FontWeight.w600,
+                          const SizedBox(height: 6),
+                          Text(
+                            'Tap "Report item" whenever something goes missing or needs sharing.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: pal.textSecondary,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 14),
-
-                    TextField(
-                      controller: titleController,
-                      style: TextStyle(color: context.textColor),
-                      decoration: const InputDecoration(
-                        labelText: 'Item Title',
-                        hintText: 'e.g., AirPods, Keys, Blue Backpack',
-                      ),
+                  )
+                : Padding(
+                    key: ValueKey('items_list_$_selectedTab'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
                     ),
-                    const SizedBox(height: 14),
-
-                    TextField(
-                      controller: descController,
-                      style: TextStyle(color: context.textColor),
-                      decoration: const InputDecoration(
-                        labelText: 'Location / Details',
-                        hintText:
-                            'e.g., Common room counter, available to borrow',
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Photo Attachment Row
-                    Row(
+                    child: Column(
                       children: [
-                        if (selectedImageBase64 != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.memory(
-                              base64Decode(
-                                selectedImageBase64!.split(',').last,
-                              ),
-                              width: 56,
-                              height: 56,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        else
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: context.isDark
-                                  ? CasamaColors.darkSurface
-                                  : CasamaColors.softNeutral,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: context.borderColor),
-                            ),
-                            child: Icon(
-                              Icons.camera_alt_outlined,
-                              color: context.textMutedColor,
+                        for (var i = 0; i < currentList.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 12),
+                          _ItemCard(
+                            item: currentList[i],
+                            onOpenDetail: () => _showItemDetailsSheet(
+                              context,
+                              currentList[i],
+                              repo,
                             ),
                           ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Row(
-                            children: [
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.camera_alt, size: 16),
-                                label: const Text('Camera'),
-                                onPressed: () => pickImage(ImageSource.camera),
-                              ),
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
-                                icon: const Icon(
-                                  Icons.photo_library_outlined,
-                                  size: 16,
-                                ),
-                                label: const Text('Gallery'),
-                                onPressed: () => pickImage(ImageSource.gallery),
-                              ),
-                            ],
-                          ),
-                        ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 20),
-
-                    CasamaButton(
-                      label: 'Post to Housemates',
-                      onPressed: () {
-                        if (titleController.text.trim().isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please enter an item title.'),
-                            ),
-                          );
-                          return;
-                        }
-
-                        final fallbackImage = type == ItemType.lost
-                            ? 'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?auto=format&fit=crop&w=300&q=80'
-                            : (type == ItemType.found
-                                  ? 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=300&q=80'
-                                  : 'https://images.unsplash.com/photo-1558317374-067fb5f30001?auto=format&fit=crop&w=300&q=80');
-
-                        ref
-                            .read(repositoryProvider)
-                            .postItem(
-                              type: type,
-                              title: titleController.text.trim(),
-                              description: descController.text.trim(),
-                              imageUrl: selectedImageBase64 ?? fallbackImage,
-                            );
-
-                        Navigator.pop(context);
-
-                        // Switch to the target tab
-                        _tabController.animateTo(
-                          type == ItemType.lost
-                              ? 0
-                              : (type == ItemType.found ? 1 : 2),
-                        );
-
-                        final categoryName = type == ItemType.lost
-                            ? 'Lost'
-                            : (type == ItemType.found ? 'Found' : 'Borrowed');
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              '$categoryName item posted successfully!',
-                            ),
-                            backgroundColor: CasamaColors.midnightNavy,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -417,403 +227,338 @@ class _LostFoundScreenState extends ConsumerState<LostFoundScreen>
     LostFoundItem item,
     CasamaRepository repo,
   ) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    showCasamaSheet<void>(
+      context,
+      icon: Icons.sell_outlined,
+      title: item.title,
+      subtitle: 'Reported by ${item.reportedByName}',
       builder: (ctx) {
-        String typeLabel = 'Lost Item';
-        Color typeColor = CasamaColors.primaryCoral;
-        if (item.type == ItemType.found) {
-          typeLabel = 'Found Item';
-          typeColor = const Color(0xFFF57F17);
-        } else if (item.type == ItemType.shared) {
-          typeLabel = 'Borrowed / Shared';
-          typeColor = CasamaColors.homeGreen;
-        }
+        final pal = ctx.palette;
+        final theme = Theme.of(ctx);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: CasamaSpacing.roundedLg,
+              child: Container(
+                height: 180,
+                width: double.infinity,
+                color: pal.track,
+                child: _buildItemImage(item.imageUrl, pal.textMuted, iconSize: 48),
+              ),
+            ),
+            const SizedBox(height: CasamaSpacing.md),
+            Text(
+              item.description?.isNotEmpty == true
+                  ? item.description!
+                  : 'No additional details provided.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: pal.textPrimary,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: CasamaSpacing.lg),
 
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: context.borderColor,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Category pill & title
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: typeColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        typeLabel,
-                        style: TextStyle(
-                          color: typeColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '${DateTime.now().difference(item.createdAt).inHours}h ago',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textMutedColor,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                Text(
-                  item.title,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: context.textColor,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Image preview if present
-                if (item.imageUrl != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: item.imageUrl!.startsWith('data:image')
-                        ? Image.memory(
-                            base64Decode(item.imageUrl!.split(',').last),
-                            width: double.infinity,
-                            height: 180,
-                            fit: BoxFit.cover,
-                          )
-                        : Image.network(
-                            item.imageUrl!,
-                            width: double.infinity,
-                            height: 180,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
-                              height: 100,
-                              color: context.borderColor,
-                              child: const Icon(Icons.broken_image, size: 40),
-                            ),
-                          ),
-                  ),
-                const SizedBox(height: 14),
-
-                // Description
-                Text(
-                  'Details',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: context.textMutedColor,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.description ?? 'No details provided.',
-                  style: TextStyle(fontSize: 14, color: context.textColor),
-                ),
-                const SizedBox(height: 14),
-
-                // Reported By
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: CasamaColors.primaryCoral,
-                      child: Text(
-                        item.reportedByName.isNotEmpty
-                            ? item.reportedByName[0]
-                            : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Reported by ${item.reportedByName}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: context.textColor,
-                          ),
-                        ),
-                        Text(
-                          'Casa 204 Housemate',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // Interactive Action Buttons
-                if (item.type == ItemType.found &&
-                    item.status == ItemStatus.unclaimed) ...[
-                  CasamaButton(
-                    label: 'Claim Item (This is Mine!)',
+            if (item.type == ItemType.found &&
+                item.status == ItemStatus.unclaimed) ...[
+              CasamaButton(
+                label: "That's Mine (Claim)",
+                icon: Icons.check_circle_outline_rounded,
+                onPressed: () {
+                  repo.claimItem(item.id);
+                  Navigator.of(ctx).pop();
+                  showCasamaToast(
+                    context,
+                    'Item marked as claimed',
                     icon: Icons.check_circle_outline_rounded,
-                    onPressed: () {
-                      repo.claimItem(item.id);
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Item marked as claimed! 🎉'),
-                          backgroundColor: CasamaColors.homeGreen,
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                ] else if (item.type == ItemType.shared) ...[
-                  if (item.status == ItemStatus.open)
-                    CasamaButton(
-                      label: 'Borrow Item 🤝',
-                      icon: Icons.handshake_outlined,
-                      onPressed: () {
-                        repo.borrowItem(item.id);
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Item borrowed! Please return after use.',
-                            ),
-                            backgroundColor: CasamaColors.homeGreen,
-                          ),
-                        );
-                      },
-                    )
-                  else if (item.status == ItemStatus.claimed)
-                    CasamaButton(
-                      label: 'Return Item ✅',
-                      icon: Icons.assignment_return_outlined,
-                      onPressed: () {
-                        repo.returnItem(item.id);
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Item returned! Thank you!'),
-                            backgroundColor: CasamaColors.homeGreen,
-                          ),
-                        );
-                      },
-                    ),
-                  const SizedBox(height: 10),
-                ] else if (item.type == ItemType.lost &&
-                    item.status == ItemStatus.open) ...[
-                  CasamaButton(
-                    label: 'Mark as Found / Recovered',
-                    icon: Icons.check_rounded,
-                    onPressed: () {
-                      repo.claimItem(item.id);
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Item marked as recovered! ✨'),
-                          backgroundColor: CasamaColors.homeGreen,
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                ],
-
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                    side: BorderSide(color: context.borderColor),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  icon: const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    color: CasamaColors.primaryCoral,
-                  ),
-                  label: Text(
-                    'Message ${item.reportedByName}',
-                    style: TextStyle(
-                      color: context.textColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+            ] else if (item.type == ItemType.shared) ...[
+              if (item.status == ItemStatus.open)
+                CasamaButton(
+                  label: 'Borrow Item',
+                  icon: Icons.handshake_outlined,
                   onPressed: () {
-                    Navigator.pop(ctx);
-                    context.push(
-                      '/direct-chat?contact=${item.reportedByName.toLowerCase()}&name=${Uri.encodeComponent(item.reportedByName)}',
+                    repo.borrowItem(item.id);
+                    Navigator.of(ctx).pop();
+                    showCasamaToast(
+                      context,
+                      'Item marked as borrowed',
+                      icon: Icons.handshake_outlined,
+                    );
+                  },
+                )
+              else if (item.status == ItemStatus.claimed)
+                CasamaButton(
+                  label: 'Return Item',
+                  icon: Icons.assignment_return_outlined,
+                  onPressed: () {
+                    repo.returnItem(item.id);
+                    Navigator.of(ctx).pop();
+                    showCasamaToast(
+                      context,
+                      'Item returned — thank you',
+                      icon: Icons.check_circle_outline_rounded,
                     );
                   },
                 ),
-              ],
+              const SizedBox(height: 10),
+            ] else if (item.type == ItemType.lost &&
+                item.status == ItemStatus.open) ...[
+              CasamaButton(
+                label: 'I Found It',
+                icon: Icons.check_rounded,
+                onPressed: () {
+                  repo.claimItem(item.id);
+                  Navigator.of(ctx).pop();
+                  showCasamaToast(
+                    context,
+                    'Marked as found',
+                    icon: Icons.check_circle_outline_rounded,
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            CasamaButton(
+              label: 'Message ${item.reportedByName}',
+              icon: Icons.chat_bubble_outline_rounded,
+              style: CasamaButtonStyle.secondary,
+              height: 48,
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                if (GoRouter.maybeOf(context) != null) {
+                  context.push(
+                    '/direct-chat?contact=${item.reportedByName.toLowerCase()}&name=${Uri.encodeComponent(item.reportedByName)}',
+                  );
+                }
+              },
             ),
-          ),
+          ],
         );
       },
     );
   }
 }
 
-class _ItemCard extends StatelessWidget {
+class _ItemCard extends ConsumerWidget {
   final LostFoundItem item;
+  final VoidCallback onOpenDetail;
 
-  const _ItemCard({required this.item});
+  const _ItemCard({required this.item, required this.onOpenDetail});
 
   @override
-  Widget build(BuildContext context) {
-    ChipVariant chipVariant;
-    String statusLabel;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final repo = ref.read(repositoryProvider);
 
-    switch (item.status) {
-      case ItemStatus.open:
-        chipVariant = ChipVariant.open;
-        statusLabel = item.type == ItemType.shared ? 'Available' : 'Open';
-        break;
-      case ItemStatus.unclaimed:
-        chipVariant = ChipVariant.unclaimed;
-        statusLabel = 'Unclaimed';
-        break;
-      case ItemStatus.claimed:
-        chipVariant = ChipVariant.medium;
-        statusLabel = item.type == ItemType.shared ? 'In Use' : 'Claimed';
-        break;
-      case ItemStatus.returned:
-        chipVariant = ChipVariant.returned;
-        statusLabel = 'Returned';
-        break;
-    }
-
-    final repo = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(repositoryProvider);
-
-    return Material(
-      color: context.cardColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: CasamaSpacing.roundedLg,
-        side: BorderSide(color: context.borderColor),
+    final (ChipVariant variant, String statusLabel) = switch (item.status) {
+      ItemStatus.open => (
+        ChipVariant.open,
+        item.type == ItemType.shared ? 'Available' : 'Open',
       ),
-      child: InkWell(
-        borderRadius: CasamaSpacing.roundedLg,
-        onTap: () {
-          // Open interactive details bottom sheet
-          final state = context
-              .findAncestorStateOfType<_LostFoundScreenState>();
-          if (state != null) {
-            state._showItemDetailsSheet(context, item, repo);
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
+      ItemStatus.unclaimed => (ChipVariant.unclaimed, 'Unclaimed'),
+      ItemStatus.claimed => (
+        ChipVariant.medium,
+        item.type == ItemType.shared ? 'In Use' : 'Claimed',
+      ),
+      ItemStatus.returned => (ChipVariant.returned, 'Returned'),
+    };
+
+    final hoursAgo = DateTime.now().difference(item.createdAt).inHours;
+
+    return CasamaCard(
+      padding: const EdgeInsets.all(14),
+      onTap: onOpenDetail,
+      child: Column(
+        children: [
+          Row(
             children: [
-              // Item Image Thumbnail
               ClipRRect(
                 borderRadius: CasamaSpacing.roundedMd,
                 child: Container(
-                  width: 72,
-                  height: 72,
-                  color: context.isDark
-                      ? CasamaColors.darkSurface
-                      : CasamaColors.softNeutral,
-                  child: item.imageUrl != null
-                      ? (item.imageUrl!.startsWith('data:image')
-                            ? Image.memory(
-                                base64Decode(item.imageUrl!.split(',').last),
-                                fit: BoxFit.cover,
-                              )
-                            : Image.network(
-                                item.imageUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    Icon(
-                                      Icons.image_outlined,
-                                      color: context.textMutedColor,
-                                      size: 32,
-                                    ),
-                              ))
-                      : Icon(
-                          Icons.image_outlined,
-                          color: context.textMutedColor,
-                          size: 32,
-                        ),
+                  width: 64,
+                  height: 64,
+                  color: pal.track,
+                  child: _buildItemImage(item.imageUrl, pal.textMuted),
                 ),
               ),
-              const SizedBox(width: 14),
-
-              // Details Column
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       item.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: context.textColor,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: pal.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       item.description ?? 'No details provided',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: context.textSecondaryColor,
-                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: pal.textSecondary,
+                        fontSize: 12.5,
+                      ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
-                      '${DateTime.now().difference(item.createdAt).inHours}h ago • by ${item.reportedByName}',
-                      style: TextStyle(
+                      '${hoursAgo}h ago • by ${item.reportedByName}',
+                      style: theme.textTheme.labelSmall?.tabular.copyWith(
+                        color: pal.textMuted,
                         fontSize: 11,
-                        color: context.textMutedColor,
                       ),
                     ),
                   ],
                 ),
               ),
-
-              // Status Badge
-              StatusChip(label: statusLabel, variant: chipVariant),
+              const SizedBox(width: 8),
+              StatusChip(label: statusLabel, variant: variant),
             ],
+          ),
+          if ((item.type == ItemType.found &&
+                  item.status == ItemStatus.unclaimed) ||
+              (item.type == ItemType.lost && item.status == ItemStatus.open) ||
+              item.type == ItemType.shared) ...[
+            const SizedBox(height: 10),
+            Divider(height: 1, color: pal.border),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (item.type == ItemType.found &&
+                    item.status == ItemStatus.unclaimed)
+                  _QuickActionButton(
+                    label: "That's Mine",
+                    color: pal.primaryCoral,
+                    onTap: () {
+                      repo.claimItem(item.id);
+                      showCasamaToast(
+                        context,
+                        'Claimed ${item.title}',
+                        icon: Icons.check_circle_outline_rounded,
+                      );
+                    },
+                  )
+                else if (item.type == ItemType.lost &&
+                    item.status == ItemStatus.open)
+                  _QuickActionButton(
+                    label: 'I Found It',
+                    color: pal.forestTeal,
+                    onTap: () {
+                      repo.claimItem(item.id);
+                      showCasamaToast(
+                        context,
+                        'Marked ${item.title} found',
+                        icon: Icons.check_circle_outline_rounded,
+                      );
+                    },
+                  )
+                else if (item.type == ItemType.shared &&
+                    item.status == ItemStatus.open)
+                  _QuickActionButton(
+                    label: 'Borrow',
+                    color: pal.forestTeal,
+                    onTap: () {
+                      repo.borrowItem(item.id);
+                      showCasamaToast(
+                        context,
+                        'Borrowed ${item.title}',
+                        icon: Icons.handshake_outlined,
+                      );
+                    },
+                  )
+                else if (item.type == ItemType.shared &&
+                    item.status == ItemStatus.claimed)
+                  _QuickActionButton(
+                    label: 'Return',
+                    color: pal.primaryCoral,
+                    onTap: () {
+                      repo.returnItem(item.id);
+                      showCasamaToast(
+                        context,
+                        'Returned ${item.title}',
+                        icon: Icons.assignment_return_outlined,
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickActionButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickActionButton({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: CasamaPressable(
+        enableHaptic: true,
+        onTap: onTap,
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: CasamaSpacing.roundedPill,
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+Widget _buildItemImage(String? imageUrl, Color fallbackColor, {double iconSize = 28}) {
+  if (imageUrl == null || imageUrl.isEmpty) {
+    return Center(
+      child: Icon(Icons.image_outlined, color: fallbackColor, size: iconSize),
+    );
+  }
+  if (imageUrl.startsWith('data:image')) {
+    return Image.memory(
+      base64Decode(imageUrl.split(',').last),
+      fit: BoxFit.cover,
+    );
+  }
+  return Image.network(
+    imageUrl,
+    fit: BoxFit.cover,
+    errorBuilder: (_, _, _) => Center(
+      child: Icon(Icons.image_outlined, color: fallbackColor, size: iconSize),
+    ),
+  );
 }

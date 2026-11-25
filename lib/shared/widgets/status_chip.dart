@@ -40,83 +40,82 @@ class StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final pal = context.palette;
+    final effectiveFontSize = fontSize < 11 ? 11.0 : fontSize;
+
     Color bg;
     Color fg;
 
     switch (variant) {
       case ChipVariant.home:
-        bg = CasamaColors.homeBg;
-        fg = CasamaColors.homeGreen;
+      case ChipVariant.paid:
+      case ChipVariant.low:
+      case ChipVariant.returned:
+        bg = pal.successBg;
+        fg = pal.successFg;
         break;
       case ChipVariant.out:
-        bg = CasamaColors.outBg;
-        fg = CasamaColors.outGray;
-        break;
-      case ChipVariant.paid:
-        bg = const Color(0xFFE8F5E9);
-        fg = const Color(0xFF2E7D32);
+        bg = pal.neutralBg;
+        fg = pal.neutralFg;
         break;
       case ChipVariant.cod:
-        bg = const Color(0xFFFFECE8);
-        fg = CasamaColors.primaryCoral;
+        bg = pal.softBlush;
+        fg = pal.primaryCoral;
         break;
       case ChipVariant.urgent:
-        bg = const Color(0xFFFFEBEE);
-        fg = const Color(0xFFD32F2F);
+      case ChipVariant.open:
+        bg = pal.dangerBg;
+        fg = pal.dangerFg;
         break;
       case ChipVariant.medium:
-        bg = const Color(0xFFFFF3E0);
-        fg = const Color(0xFFE65100);
-        break;
-      case ChipVariant.low:
-        bg = const Color(0xFFE8F5E9);
-        fg = const Color(0xFF2E7D32);
+        bg = pal.warningBg;
+        fg = pal.warningFg;
         break;
       case ChipVariant.toBuy:
-        bg = const Color(0xFFE3F2FD);
-        fg = const Color(0xFF1976D2);
-        break;
-      case ChipVariant.open:
-        bg = const Color(0xFFFFEBEE);
-        fg = const Color(0xFFD32F2F);
+        bg = pal.infoBg;
+        fg = pal.infoFg;
         break;
       case ChipVariant.unclaimed:
-        bg = const Color(0xFFFFF8E1);
-        fg = const Color(0xFFF57F17);
-        break;
-      case ChipVariant.returned:
-        bg = const Color(0xFFE8F5E9);
-        fg = const Color(0xFF2E7D32);
+        bg = pal.amberBg;
+        fg = pal.amberFg;
         break;
       case ChipVariant.custom:
-        bg = customBgColor ?? CasamaColors.softNeutral;
-        fg = customTextColor ?? CasamaColors.ink;
+        bg = customBgColor ?? pal.track;
+        fg = customTextColor ?? pal.textPrimary;
         break;
     }
 
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: CasamaSpacing.roundedPill,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: fontSize + 2, color: fg),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              color: fg,
-              fontSize: fontSize,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.2,
+    return Semantics(
+      label: label,
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: CasamaSpacing.roundedPill,
+          border: Border.all(color: fg.withValues(alpha: 0.18), width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: effectiveFontSize + 2, color: fg),
+              const SizedBox(width: CasamaSpacing.xxs),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: effectiveFontSize,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

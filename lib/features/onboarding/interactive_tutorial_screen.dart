@@ -4,8 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_wave_header.dart';
 
 class InteractiveTutorialScreen extends ConsumerStatefulWidget {
   const InteractiveTutorialScreen({super.key});
@@ -18,55 +21,57 @@ class InteractiveTutorialScreen extends ConsumerStatefulWidget {
 class _InteractiveTutorialScreenState
     extends ConsumerState<InteractiveTutorialScreen> {
   int _currentStep = 0;
+  int _previousStep = 0;
 
-  final List<_TourStepData> _steps = const [
+  static const List<_TourStepData> _steps = [
     _TourStepData(
       navIndex: 0,
-      navLabel: 'Home',
-      title: '1. Home Dashboard & Calendar 🏠',
-      description: 'View live housemate presence at a glance, update your status with notes, inspect the interactive activity calendar, and track upcoming deliveries.',
-      mascotImage: 'assets/images/cas/cas_hero.png',
+      title: '1. Home Dashboard & Calendar',
+      description:
+          'Check live housemate presence, share quick status updates, inspect the household calendar, and catch upcoming parcels.',
+      pose: CasPose.hero,
       navIcon: Icons.home_rounded,
       highlightDetail:
-          'Active now: see who is home or out without background GPS',
+          'Active now: see who is home or out with zero background GPS',
     ),
     _TourStepData(
       navIndex: 1,
-      navLabel: 'Boards',
-      title: '2. Household Boards 📦',
-      description: 'Access all 3 core household boards in one organized view: Parcels & COD settlement, Lost & Found belongings, and Maintenance repairs.',
-      mascotImage: 'assets/images/cas/cas_deliveries.png',
-      navIcon: Icons.dashboard_outlined,
-      highlightDetail: 'Keep records authoritative and avoid awkward roommate money disputes',
+      title: '2. Unified Household Boards',
+      description:
+          'Swipe smoothly across Parcels, Tasks, Bills, and Lost & Found items in one organized household hub.',
+      pose: CasPose.deliveries,
+      navIcon: Icons.dashboard_rounded,
+      highlightDetail:
+          'Keep shared deliveries, chores, and split bills crystal clear',
     ),
     _TourStepData(
       navIndex: 2,
-      navLabel: 'Plus (+)',
-      title: '3. Plus (+) Quick Actions ➕',
-      description: 'The center button gives you one-tap access to schedule a parcel delivery, report a lost item, assign a maintenance task, or spin Chore Roulette!',
-      mascotImage: 'assets/images/cas/cas_roulette.png',
-      navIcon: Icons.add,
-      highlightDetail: 'Spin the Chore Roulette when duties are disputed for fair random turns',
+      title: '3. CASnap Household Moments',
+      description:
+          'Tap the raised center CASnap button anytime to snap a photo for housemates and browse the shared home gallery.',
+      pose: CasPose.jumping,
+      navIcon: Icons.photo_camera_rounded,
+      highlightDetail:
+          'Share parcel confirmations or cozy kitchen updates in one tap',
     ),
     _TourStepData(
       navIndex: 3,
-      navLabel: 'Chat',
-      title: '4. Household Chat & Connect 💬',
-      description: 'Stay connected in the Casa 204 household channel, message housemates 1-on-1 directly, and propose or RSVP to structured meet-ups.',
-      mascotImage: 'assets/images/cas/cas_together.png',
+      title: '4. Household Chat & Meet-ups',
+      description:
+          'Chat in household spaces, message housemates 1-on-1, and plan or RSVP to shared meet-ups seamlessly.',
+      pose: CasPose.chatting,
       navIcon: Icons.chat_bubble_outline_rounded,
       highlightDetail:
-          'Organize study sessions, meals, and general announcements smoothly',
+          'Organize study sessions, meals, and housemate check-ins',
     ),
     _TourStepData(
       navIndex: 4,
-      navLabel: 'Profile',
-      title: '5. Profile & Settings ⚙️',
-      description: 'View your earned Good Kasama points, check the monthly leaderboard podium, copy your household invite code, and toggle Light/Dark Mode.',
-      mascotImage: 'assets/images/cas/cas_jumping.png',
+      title: '5. Profile, Roulette & Points',
+      description:
+          'Track Good Kasama points, spin Task Roulette inside Household Tasks, copy your invite code, and toggle Light or Dark mode.',
+      pose: CasPose.roulette,
       navIcon: Icons.person_outline_rounded,
-      highlightDetail:
-          'Recognize helpful housemates with monthly Kasama rewards',
+      highlightDetail: 'Fair task turns and monthly recognition for roommates',
     ),
   ];
 
@@ -75,9 +80,17 @@ class _InteractiveTutorialScreenState
     context.go('/dashboard');
   }
 
+  void _goToStep(int next) {
+    if (next == _currentStep || next < 0 || next >= _steps.length) return;
+    setState(() {
+      _previousStep = _currentStep;
+      _currentStep = next;
+    });
+  }
+
   void _nextStep() {
     if (_currentStep < _steps.length - 1) {
-      setState(() => _currentStep++);
+      _goToStep(_currentStep + 1);
     } else {
       _finishTutorial();
     }
@@ -85,284 +98,351 @@ class _InteractiveTutorialScreenState
 
   @override
   Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
     final step = _steps[_currentStep];
+    final maxW = CasamaBreakpoints.isTablet(context)
+        ? CasamaBreakpoints.maxContentWidth
+        : double.infinity;
 
     return Scaffold(
-      backgroundColor: context.scaffoldBg,
+      backgroundColor: pal.scaffoldBg,
       appBar: AppBar(
+        backgroundColor: pal.scaffoldBg,
+        surfaceTintColor: Colors.transparent,
         title: Text('Tour (${_currentStep + 1} of ${_steps.length})'),
         leading: _currentStep > 0
             ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                onPressed: () => setState(() => _currentStep--),
+                icon: Icon(Icons.adaptive.arrow_back, size: 20),
+                tooltip: 'Previous step',
+                onPressed: () => _goToStep(_currentStep - 1),
               )
             : null,
         actions: [
           TextButton(
             onPressed: _finishTutorial,
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
             child: Text(
               'Skip',
               style: TextStyle(
-                color: context.textSecondaryColor,
-                fontWeight: FontWeight.bold,
+                color: pal.textSecondary,
+                fontWeight: FontWeight.w700,
                 fontSize: 14,
               ),
             ),
           ),
         ],
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top Progress Bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.lg),
-              child: Row(
-                children: List.generate(
-                  _steps.length,
-                  (i) => Expanded(
-                    child: Container(
-                      height: 4,
-                      margin: const EdgeInsets.symmetric(horizontal: 2),
-                      decoration: BoxDecoration(
-                        color: i <= _currentStep
-                            ? CasamaColors.primaryCoral
-                            : context.borderColor,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+      body: CasamaAmbientCanvas(
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxW),
+              child: Column(
+                children: [
+                  // Progress indicator bar
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.lg,
                     ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: CasamaSpacing.md),
-
-            // Card content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: CasamaSpacing.lg,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Mascot Illustration
-                    Container(
-                      height: 180,
-                      alignment: Alignment.center,
-                      child: Image.asset(
-                        step.mascotImage,
-                        height: 170,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => Icon(
-                          step.navIcon,
-                          size: 80,
-                          color: CasamaColors.primaryCoral,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: CasamaSpacing.md),
-
-                    // Title
-                    Text(
-                      step.title,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: context.textColor,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Description
-                    Text(
-                      step.description,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.45,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: CasamaSpacing.md),
-
-                    // Feature Highlight Badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: CasamaColors.tileParcels,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: CasamaColors.primaryCoral.withValues(
-                            alpha: 0.3,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.tips_and_updates_outlined,
-                            size: 16,
-                            color: CasamaColors.primaryCoral,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              step.highlightDetail,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: CasamaColors.primaryCoral,
-                              ),
-                              textAlign: TextAlign.center,
+                    child: Row(
+                      children: List.generate(
+                        _steps.length,
+                        (i) => Expanded(
+                          child: AnimatedContainer(
+                            duration: CasamaMotion.resolve(
+                              context,
+                              CasamaMotion.press,
+                            ),
+                            height: 4,
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
+                            decoration: BoxDecoration(
+                              color: i <= _currentStep
+                                  ? CasamaColors.primaryCoral
+                                  : pal.border,
+                              borderRadius: CasamaSpacing.roundedPill,
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Mock Navigation Bar with Highlighted Tab
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: CasamaSpacing.md),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: context.cardColor,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: context.borderColor),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 10,
-                    offset: const Offset(0, -2),
                   ),
+                  const SizedBox(height: CasamaSpacing.md),
+
+                  // Scrollable slide content (safe against smaller screens)
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: CasamaSpacing.lg,
+                        vertical: CasamaSpacing.sm,
+                      ),
+                      child: CasamaDirectionalSwitcher(
+                        index: _currentStep,
+                        previousIndex: _previousStep,
+                        child: Column(
+                          key: ValueKey('tour_step_$_currentStep'),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(height: CasamaSpacing.sm),
+                            CasMascotView(
+                              pose: step.pose,
+                              width: 156,
+                              height: 156,
+                            ),
+                            const SizedBox(height: CasamaSpacing.md),
+                            Text(
+                              step.title,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: pal.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              step.description,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontSize: 14,
+                                height: 1.45,
+                                color: pal.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: CasamaSpacing.md),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 9,
+                              ),
+                              decoration: BoxDecoration(
+                                color: pal.softBlush,
+                                borderRadius: CasamaSpacing.roundedPill,
+                                border: Border.all(
+                                  color: pal.primaryCoral.withValues(
+                                    alpha: 0.28,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.tips_and_updates_outlined,
+                                    size: 16,
+                                    color: pal.primaryCoral,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      step.highlightDetail,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: pal.primaryCoral,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Interactive Mock 5-Slot Navigation Shell Preview
+                  Container(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: pal.card,
+                      borderRadius: CasamaSpacing.roundedCard,
+                      border: Border.all(color: pal.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: context.isDark ? 0.28 : 0.06,
+                          ),
+                          blurRadius: 12,
+                          offset: const Offset(0, -2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildMockNavItem(
+                          context,
+                          0,
+                          Icons.home_rounded,
+                          'Home',
+                        ),
+                        _buildMockNavItem(
+                          context,
+                          1,
+                          Icons.dashboard_outlined,
+                          'Boards',
+                        ),
+                        _buildMockNavCenterFab(context, 2),
+                        _buildMockNavItem(
+                          context,
+                          3,
+                          Icons.chat_bubble_outline_rounded,
+                          'Chat',
+                        ),
+                        _buildMockNavItem(
+                          context,
+                          4,
+                          Icons.person_outline_rounded,
+                          'Profile',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: CasamaSpacing.md),
+
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.xl,
+                    ),
+                    child: CasamaButton(
+                      label: _currentStep == _steps.length - 1
+                          ? 'Enter Home Dashboard'
+                          : 'Next Navigation Element',
+                      isPill: true,
+                      height: 50,
+                      onPressed: _nextStep,
+                    ),
+                  ),
+                  const SizedBox(height: CasamaSpacing.lg),
                 ],
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildMockNavItem(0, Icons.home_rounded, 'Home'),
-                  _buildMockNavItem(1, Icons.dashboard_outlined, 'Boards'),
-                  _buildMockNavCenterFab(2),
-                  _buildMockNavItem(
-                    3,
-                    Icons.chat_bubble_outline_rounded,
-                    'Chat',
-                  ),
-                  _buildMockNavItem(4, Icons.person_outline_rounded, 'Profile'),
-                ],
-              ),
             ),
-            const SizedBox(height: CasamaSpacing.md),
-
-            // Bottom Continue / Finish Button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.xl),
-              child: CasamaButton(
-                label: _currentStep == _steps.length - 1
-                    ? 'Enter Home Dashboard'
-                    : 'Next Navigation Element',
-                isPill: true,
-                height: 52,
-                onPressed: _nextStep,
-              ),
-            ),
-            const SizedBox(height: CasamaSpacing.lg),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildMockNavItem(int index, IconData icon, String label) {
+  Widget _buildMockNavItem(
+    BuildContext context,
+    int index,
+    IconData icon,
+    String label,
+  ) {
+    final pal = context.palette;
     final isHighlighted = _steps[_currentStep].navIndex == index;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: isHighlighted ? CasamaColors.tileParcels : Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        border: isHighlighted
-            ? Border.all(color: CasamaColors.primaryCoral, width: 1.5)
-            : null,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 22,
-            color: isHighlighted
-                ? CasamaColors.primaryCoral
-                : CasamaColors.textMuted,
+    return Semantics(
+      button: true,
+      selected: isHighlighted,
+      label: 'Jump to $label preview',
+      child: CasamaPressable(
+        onTap: () => _goToStep(index),
+        child: AnimatedContainer(
+          duration: CasamaMotion.resolve(context, CasamaMotion.boardSlide),
+          constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isHighlighted ? pal.softBlush : Colors.transparent,
+            borderRadius: CasamaSpacing.roundedLg,
+            border: isHighlighted
+                ? Border.all(color: pal.primaryCoral, width: 1.5)
+                : null,
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: isHighlighted ? FontWeight.bold : FontWeight.w500,
-              color: isHighlighted
-                  ? CasamaColors.primaryCoral
-                  : CasamaColors.textMuted,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 21,
+                color: isHighlighted ? pal.primaryCoral : pal.textMuted,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isHighlighted ? FontWeight.w700 : FontWeight.w500,
+                  color: isHighlighted ? pal.primaryCoral : pal.textMuted,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildMockNavCenterFab(int index) {
+  Widget _buildMockNavCenterFab(BuildContext context, int index) {
+    final pal = context.palette;
     final isHighlighted = _steps[_currentStep].navIndex == index;
 
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: CasamaColors.primaryCoral,
-        shape: BoxShape.circle,
-        border: isHighlighted
-            ? Border.all(color: CasamaColors.midnightNavy, width: 3)
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: CasamaColors.primaryCoral.withValues(
-              alpha: isHighlighted ? 0.6 : 0.3,
+    return Semantics(
+      button: true,
+      selected: isHighlighted,
+      label: 'Jump to CASnap preview',
+      child: CasamaPressable.fab(
+        onTap: () => _goToStep(index),
+        child: SizedBox(
+          width: 52,
+          height: 48,
+          child: Center(
+            child: AnimatedContainer(
+              duration: CasamaMotion.resolve(context, CasamaMotion.boardSlide),
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: pal.coralFab,
+                shape: BoxShape.circle,
+                border: isHighlighted
+                    ? Border.all(color: pal.forestTeal, width: 3)
+                    : null,
+                boxShadow: [
+                  BoxShadow(
+                    color: pal.coralFab.withValues(
+                      alpha: isHighlighted ? 0.5 : 0.25,
+                    ),
+                    blurRadius: isHighlighted ? 10 : 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.photo_camera_rounded,
+                color: Colors.white,
+                size: 21,
+              ),
             ),
-            blurRadius: isHighlighted ? 8 : 4,
-            offset: const Offset(0, 2),
           ),
-        ],
+        ),
       ),
-      child: const Icon(Icons.add, color: Colors.white, size: 24),
     );
   }
 }
 
 class _TourStepData {
   final int navIndex;
-  final String navLabel;
   final String title;
   final String description;
-  final String mascotImage;
+  final CasPose pose;
   final IconData navIcon;
   final String highlightDetail;
 
   const _TourStepData({
     required this.navIndex,
-    required this.navLabel,
     required this.title,
     required this.description,
-    required this.mascotImage,
+    required this.pose,
     required this.navIcon,
     required this.highlightDetail,
   });

@@ -3,10 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_text_field.dart';
+import '../../shared/widgets/casama_wave_header.dart';
 
+/// Standalone route view (`/create-meetup`) complementing [showCreateMeetupSheet].
 class CreateMeetupScreen extends ConsumerStatefulWidget {
   const CreateMeetupScreen({super.key});
 
@@ -27,218 +32,202 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final repo = ref.watch(repositoryProvider);
+  void _sendInvitation() {
+    final activity = _activityController.text.trim();
+    final location = _locationController.text.trim();
+    final when = _timeController.text.trim();
 
-    return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Create Meet-up'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () {
-            if (Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          },
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.lg),
-          child: Column(
-            children: [
-              const SizedBox(height: CasamaSpacing.sm),
-
-              // Hero Illustration Container
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                decoration: BoxDecoration(
-                  color: context.isDark
-                      ? CasamaColors.darkTileParcels
-                      : const Color(0xFFFFECE8),
-                  borderRadius: CasamaSpacing.roundedXl,
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/images/cas/cas_together.png',
-                        height: 110,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Text(
-                              '🙌 ☕ 🍕',
-                              style: TextStyle(fontSize: 48),
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Bring the household together',
-                        style: TextStyle(
-                          color: context.textColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: CasamaSpacing.lg),
-
-              // Form fields
-              _buildFieldCard(
-                icon: Icons.calendar_today_outlined,
-                label: 'Activity',
-                child: TextField(
-                  controller: _activityController,
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: context.textColor,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              _buildFieldCard(
-                icon: Icons.location_on_outlined,
-                label: 'Location',
-                child: TextField(
-                  controller: _locationController,
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                    color: context.textColor,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              _buildFieldCard(
-                icon: Icons.access_time_rounded,
-                label: 'Time',
-                child: TextField(
-                  controller: _timeController,
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                    color: context.textColor,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Invitees
-              _buildFieldCard(
-                icon: Icons.people_outline_rounded,
-                label: 'Invitees',
-                child: Row(
-                  children: repo.members.map((m) {
-                    return Container(
-                      margin: const EdgeInsets.only(right: 8, top: 4),
-                      child: CasamaAvatar(
-                        radius: 16,
-                        avatarUrl: m.profile.avatarUrl,
-                        name: m.profile.displayName,
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-
-              const SizedBox(height: CasamaSpacing.xl),
-
-              // Action button
-              CasamaButton(
-                label: 'Send Invitation',
-                onPressed: () {
-                  ref
-                      .read(repositoryProvider)
-                      .sendChatMessage(
-                        '📢 Meet-up Invitation: ${_activityController.text.trim()} at ${_locationController.text.trim()} (${_timeController.text.trim()})',
-                      );
-                  if (Navigator.canPop(context)) {
-                    Navigator.pop(context);
-                  }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Meet-up invitation sent to housemates!'),
-                    ),
-                  );
-                },
-                isPill: true,
-                height: 52,
-              ),
-
-              const SizedBox(height: CasamaSpacing.xl),
-            ],
-          ),
-        ),
-      ),
+    ref.read(repositoryProvider).sendChatMessage(
+      '📢 Meet-up Invitation: $activity at $location ($when)',
+    );
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+    showCasamaToast(
+      context,
+      'Meet-up invitation sent to housemates!',
+      icon: Icons.check_circle_outline_rounded,
     );
   }
 
-  Widget _buildFieldCard({
-    required IconData icon,
-    required String label,
-    required Widget child,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: CasamaSpacing.roundedLg,
-        border: Border.all(color: context.borderColor),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: context.textSecondaryColor, size: 22),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final repo = ref.watch(repositoryProvider);
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final maxW = CasamaBreakpoints.isTablet(context)
+        ? CasamaBreakpoints.maxContentWidth
+        : double.infinity;
+
+    return Scaffold(
+      backgroundColor: pal.scaffoldBg,
+      body: CasamaAmbientCanvas(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(bottom: bottomInset + CasamaSpacing.xxl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              CasamaWaveHeader(
+                title: 'Create Meet-up',
+                subtitle: 'Suggest a time & spot for ${repo.currentHousehold.name}',
+                compact: true,
+                onBackTap: () {
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+              Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxW),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Transparent PNG Mascot Split Hero
+                        Transform.translate(
+                          offset: const Offset(0, -14),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const SizedBox(
+                                width: 104,
+                                height: 104,
+                                child: CasMascotView(
+                                  pose: CasPose.together,
+                                  width: 104,
+                                  height: 104,
+                                ),
+                              ),
+                              const SizedBox(width: CasamaSpacing.sm),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: CasamaCard(
+                                    padding: const EdgeInsets.all(14),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'HOUSEHOLD HANGOUT',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                                color: pal.textSecondary,
+                                                letterSpacing: 0.5,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          'Bring the household together',
+                                          style: theme.textTheme.titleMedium
+                                              ?.copyWith(
+                                                color: pal.textPrimary,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        CasamaCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              CasamaTextField(
+                                controller: _activityController,
+                                label: 'Activity',
+                                prefixIcon: Icons.calendar_today_outlined,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                              ),
+                              const SizedBox(height: CasamaSpacing.md),
+                              CasamaTextField(
+                                controller: _locationController,
+                                label: 'Location',
+                                prefixIcon: Icons.location_on_outlined,
+                                textCapitalization: TextCapitalization.words,
+                              ),
+                              const SizedBox(height: CasamaSpacing.md),
+                              CasamaTextField(
+                                controller: _timeController,
+                                label: 'Time',
+                                prefixIcon: Icons.access_time_rounded,
+                              ),
+                              const SizedBox(height: CasamaSpacing.md),
+                              Text(
+                                'INVITEES (${repo.members.length})',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: pal.textSecondary,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                              const SizedBox(height: CasamaSpacing.xs),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: repo.members.map((m) {
+                                  return Container(
+                                    padding: const EdgeInsets.only(
+                                      left: 4,
+                                      right: 10,
+                                      top: 4,
+                                      bottom: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: pal.track,
+                                      borderRadius: CasamaSpacing.roundedPill,
+                                      border: Border.all(color: pal.border),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        CasamaAvatar(
+                                          radius: 13,
+                                          avatarUrl: m.profile.avatarUrl,
+                                          name: m.profile.displayName,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          m.profile.displayName,
+                                          style: theme.textTheme.labelMedium
+                                              ?.copyWith(
+                                                color: pal.textPrimary,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: CasamaSpacing.lg),
+
+                        CasamaButton(
+                          label: 'Send Invitation',
+                          icon: Icons.send_rounded,
+                          onPressed: _sendInvitation,
+                          height: 52,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                child,
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -1,17 +1,21 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_text_field.dart';
 import '../../shared/widgets/profile_camera_sheet.dart';
+import 'widgets/auth_wave_header.dart';
 
 class OptionalProfileScreen extends ConsumerStatefulWidget {
   const OptionalProfileScreen({super.key});
@@ -22,14 +26,18 @@ class OptionalProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _fullNameController = TextEditingController();
   final _nicknameController = TextEditingController();
   final _ageController = TextEditingController();
+  final _nicknameFocus = FocusNode();
+  final _ageFocus = FocusNode();
+
   String? _selectedAvatar;
   bool _isPickingImage = false;
 
-  // Preset avatar choices for easy one-tap selection
-  final List<String> _avatarPresets = [
+  // Preset avatar choices for quick one-tap selection
+  final List<String> _avatarPresets = const [
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
     'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
     'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
@@ -41,15 +49,15 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
     _fullNameController.dispose();
     _nicknameController.dispose();
     _ageController.dispose();
+    _nicknameFocus.dispose();
+    _ageFocus.dispose();
     super.dispose();
   }
 
   Future<void> _openCameraCapture() async {
     final photo = await showProfileCameraSheet(context);
     if (photo != null && mounted) {
-      setState(() {
-        _selectedAvatar = photo;
-      });
+      setState(() => _selectedAvatar = photo);
     }
   }
 
@@ -70,17 +78,16 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
       if (picked != null) {
         final bytes = await picked.readAsBytes();
         final base64String = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-        setState(() {
-          _selectedAvatar = base64String;
-        });
+        if (mounted) {
+          setState(() => _selectedAvatar = base64String);
+        }
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not access image: $e'),
-            backgroundColor: CasamaColors.errorRed,
-          ),
+        showCasamaToast(
+          context,
+          'Could not access that photo. Please try again.',
+          icon: Icons.info_outline_rounded,
         );
       }
     } finally {
@@ -91,10 +98,14 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
   }
 
   void _saveAndContinue() {
+    if (!(_formKey.currentState?.validate() ?? true)) {
+      return;
+    }
+
     final fullName = _fullNameController.text.trim();
     final nickname = _nicknameController.text.trim();
     final ageText = _ageController.text.trim();
-    final age = int.tryParse(ageText);
+    final age = ageText.isEmpty ? null : int.tryParse(ageText);
 
     ref
         .read(repositoryProvider)
@@ -108,242 +119,250 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
           avatarUrl: _selectedAvatar,
         );
 
-    context.push('/terms-consent');
+    context.push('/household-setup');
   }
 
   void _skipForNow() {
-    context.push('/terms-consent');
+    context.push('/household-setup');
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Optional Profile'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => context.pop(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: _skipForNow,
-            child: Text(
-              'Skip',
-              style: TextStyle(
-                color: context.textSecondaryColor,
-                fontWeight: FontWeight.w600,
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return CasamaAuthShell(
+      stepLabel: 'Step 2 of 4',
+      onBack: () => context.canPop() ? context.pop() : context.go('/auth'),
+      skipLabel: 'Skip',
+      onSkip: _skipForNow,
+      mascotPose: CasPose.standing,
+      mascotAlignment: Alignment.bottomRight,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Tell Us About You',
+              style: theme.textTheme.headlineLarge?.copyWith(
+                color: pal.textPrimary,
               ),
             ),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.xl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: CasamaSpacing.sm),
-              Text(
-                'Tell Us About You 👋',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: context.textColor,
-                ),
+            const SizedBox(height: 6),
+            Text(
+              'These details are completely optional. Add a photo or name now, or update anytime from Profile.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: pal.textSecondary,
+                height: 1.45,
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Step 2 of 4: These four details are completely optional. You can skip any or all of them and update later.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: context.textSecondaryColor,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: CasamaSpacing.lg),
+            ),
+            const SizedBox(height: CasamaSpacing.lg),
 
-              // Profile Picture (Optional)
-              Center(
-                child: Column(
-                  children: [
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        CasamaAvatar(
-                          avatarUrl: _selectedAvatar,
-                          radius: 46,
-                          name: _fullNameController.text,
-                          showEditBadge: true,
-                          onTap: _openCameraCapture,
-                          borderWidth: 2,
-                        ),
-                        if (_isPickingImage)
-                          const Positioned.fill(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: CasamaColors.primaryCoral,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Camera & Gallery Buttons
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        OutlinedButton.icon(
-                          icon: const Icon(
-                            Icons.photo_camera_rounded,
-                            size: 16,
+            // Avatar + quick photo actions
+            Center(
+              child: Column(
+                children: [
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CasamaAvatar(
+                        avatarUrl: _selectedAvatar,
+                        radius: 44,
+                        name: _fullNameController.text.isNotEmpty
+                            ? _fullNameController.text
+                            : 'Casama',
+                        showEditBadge: true,
+                        onTap: _openCameraCapture,
+                        borderWidth: 2,
+                      ),
+                      if (_isPickingImage)
+                        const Positioned.fill(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
                             color: CasamaColors.primaryCoral,
                           ),
-                          label: const Text(
-                            'Take Photo',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: CasamaColors.primaryCoral,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            side: const BorderSide(
-                              color: CasamaColors.primaryCoral,
-                              width: 1.2,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          onPressed: _openCameraCapture,
                         ),
-                        const SizedBox(width: 10),
-                        OutlinedButton.icon(
-                          icon: const Icon(
-                            Icons.photo_library_rounded,
-                            size: 16,
-                            color: CasamaColors.deepTeal,
-                          ),
-                          label: const Text(
-                            'Gallery',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: CasamaColors.deepTeal,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            side: const BorderSide(
-                              color: CasamaColors.deepTeal,
-                              width: 1.2,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          onPressed: () => _pickImage(ImageSource.gallery),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(
+                          Icons.photo_camera_rounded,
+                          size: 17,
+                          color: CasamaColors.primaryCoral,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    Text(
-                      'Or choose a preset:',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
-                        fontWeight: FontWeight.w500,
+                        label: const Text(
+                          'Take Photo',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: CasamaColors.primaryCoral,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          side: const BorderSide(
+                            color: CasamaColors.primaryCoral,
+                            width: 1.2,
+                          ),
+                          shape: const StadiumBorder(),
+                        ),
+                        onPressed: _openCameraCapture,
                       ),
+                      OutlinedButton.icon(
+                        icon: Icon(
+                          Icons.photo_library_rounded,
+                          size: 17,
+                          color: pal.forestTeal,
+                        ),
+                        label: Text(
+                          'Gallery',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: pal.forestTeal,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          side: BorderSide(color: pal.forestTeal, width: 1.2),
+                          shape: const StadiumBorder(),
+                        ),
+                        onPressed: () => _pickImage(ImageSource.gallery),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Or choose a preset',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: pal.textSecondary,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(height: 8),
-
-                    // Quick Preset Chips
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: _avatarPresets.map((url) {
-                        final isSelected = _selectedAvatar == url;
-                        return GestureDetector(
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(_avatarPresets.length, (i) {
+                      final url = _avatarPresets[i];
+                      final isSelected = _selectedAvatar == url;
+                      return Semantics(
+                        button: true,
+                        selected: isSelected,
+                        label: 'Preset avatar ${i + 1}',
+                        child: CasamaPressable(
                           onTap: () => setState(
                             () => _selectedAvatar = isSelected ? null : url,
                           ),
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 6),
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isSelected
-                                    ? CasamaColors.primaryCoral
-                                    : Colors.transparent,
-                                width: 2.5,
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Center(
+                              child: AnimatedContainer(
+                                duration: CasamaMotion.resolve(
+                                  context,
+                                  CasamaMotion.press,
+                                ),
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? CasamaColors.primaryCoral
+                                        : pal.border,
+                                    width: isSelected ? 2.5 : 1,
+                                  ),
+                                ),
+                                child: CasamaAvatar(avatarUrl: url, radius: 18),
                               ),
                             ),
-                            child: CasamaAvatar(avatarUrl: url, radius: 18),
                           ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
+                        ),
+                      );
+                    }),
+                  ),
+                ],
               ),
-              const SizedBox(height: CasamaSpacing.xl),
+            ),
+            const SizedBox(height: CasamaSpacing.lg),
 
-              // Full Name
-              CasamaTextField(
-                controller: _fullNameController,
-                label: 'Full Name',
-                hint: 'e.g., Jon Paul Berana',
-                prefixIcon: Icons.badge_outlined,
-              ),
-              const SizedBox(height: CasamaSpacing.md),
+            CasamaTextField(
+              controller: _fullNameController,
+              label: 'Full Name',
+              hint: 'e.g., Jon Paul Berana',
+              prefixIcon: Icons.badge_outlined,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.name],
+              onChanged: (_) => setState(() {}),
+              onFieldSubmitted: (_) =>
+                  FocusScope.of(context).requestFocus(_nicknameFocus),
+            ),
+            const SizedBox(height: CasamaSpacing.md),
 
-              // Nickname
-              CasamaTextField(
-                controller: _nicknameController,
-                label: 'Nickname',
-                hint: 'e.g., JP',
-                prefixIcon: Icons.sentiment_satisfied_alt_rounded,
-              ),
-              const SizedBox(height: CasamaSpacing.md),
+            CasamaTextField(
+              controller: _nicknameController,
+              label: 'Nickname',
+              hint: 'e.g., JP',
+              prefixIcon: Icons.sentiment_satisfied_alt_rounded,
+              focusNode: _nicknameFocus,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              onFieldSubmitted: (_) =>
+                  FocusScope.of(context).requestFocus(_ageFocus),
+            ),
+            const SizedBox(height: CasamaSpacing.md),
 
-              // Age (Optional)
-              CasamaTextField(
-                controller: _ageController,
-                label: 'Age (Optional)',
-                hint: 'e.g., 21',
-                keyboardType: TextInputType.number,
-                prefixIcon: Icons.calendar_today_outlined,
-              ),
-              const SizedBox(height: CasamaSpacing.xl),
+            CasamaTextField(
+              controller: _ageController,
+              label: 'Age (Optional)',
+              hint: 'e.g., 21',
+              prefixIcon: Icons.calendar_today_outlined,
+              focusNode: _ageFocus,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(3),
+              ],
+              textInputAction: TextInputAction.done,
+              validator: (val) {
+                final trimmed = val?.trim() ?? '';
+                if (trimmed.isEmpty) return null;
+                final parsed = int.tryParse(trimmed);
+                if (parsed == null || parsed < 1 || parsed > 120) {
+                  return 'Please enter an age between 1 and 120';
+                }
+                return null;
+              },
+              onFieldSubmitted: (_) => _saveAndContinue(),
+            ),
+            const SizedBox(height: CasamaSpacing.xl),
 
-              // Action Buttons
-              CasamaButton(
-                label: 'Save & Continue',
-                isPill: true,
-                height: 52,
-                onPressed: _saveAndContinue,
-              ),
-              const SizedBox(height: CasamaSpacing.sm),
+            CasamaButton(
+              label: 'Save & Continue',
+              isPill: true,
+              height: 50,
+              onPressed: _saveAndContinue,
+            ),
+            const SizedBox(height: CasamaSpacing.xs),
 
-              CasamaButton(
-                label: 'Skip Profile for Now',
-                style: CasamaButtonStyle.ghost,
-                onPressed: _skipForNow,
-                height: 44,
-              ),
-              const SizedBox(height: CasamaSpacing.xxl),
-            ],
-          ),
+            CasamaButton(
+              label: 'Skip Profile for Now',
+              style: CasamaButtonStyle.ghost,
+              onPressed: _skipForNow,
+              height: 48,
+            ),
+          ],
         ),
       ),
     );

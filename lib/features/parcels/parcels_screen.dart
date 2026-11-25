@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_filter_controls.dart';
+import '../../shared/widgets/casama_wave_header.dart';
 import '../../shared/widgets/status_chip.dart';
+import 'widgets/add_parcel_sheet.dart';
 
 class ParcelsScreen extends ConsumerStatefulWidget {
   final bool initialOpenAddModal;
@@ -19,29 +25,70 @@ class ParcelsScreen extends ConsumerStatefulWidget {
   ConsumerState<ParcelsScreen> createState() => _ParcelsScreenState();
 }
 
-class _ParcelsScreenState extends ConsumerState<ParcelsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
+class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     if (widget.initialOpenAddModal) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showAddParcelModal(context);
+        if (mounted) showAddParcelSheet(context);
       });
     }
   }
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final repo = ref.watch(repositoryProvider);
+
+    return Scaffold(
+      backgroundColor: pal.scaffoldBg,
+      body: CasamaAmbientCanvas(
+        child: Column(
+          children: [
+            CasamaWaveHeader(
+              title: 'Parcels & Deliveries',
+              subtitle:
+                  '${repo.currentHousehold.name} • Coordinate arrivals & COD',
+              compact: true,
+              onBackTap: () =>
+                  context.canPop() ? context.pop() : context.go('/boards'),
+              rightActions: [
+                CasamaHeaderActionPill(
+                  icon: Icons.add_box_outlined,
+                  label: 'Add parcel',
+                  onTap: () => showAddParcelSheet(context),
+                ),
+              ],
+            ),
+            const Expanded(
+              child: ParcelsBoardView(bottomPadding: 28),
+            ),
+          ],
+        ),
+      ),
+    );
   }
+}
+
+/// Reusable Parcels board tab body shared by [BoardsScreen] and standalone [ParcelsScreen].
+class ParcelsBoardView extends ConsumerStatefulWidget {
+  final double bottomPadding;
+
+  const ParcelsBoardView({super.key, this.bottomPadding = 120});
+
+  @override
+  ConsumerState<ParcelsBoardView> createState() => _ParcelsBoardViewState();
+}
+
+class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
+  int _selectedSegment = 0; // 0 = Upcoming, 1 = History
+  int _previousSegment = 0;
 
   @override
   Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
     final upcomingParcels = repo.parcels
         .where((p) => p.status == ParcelStatus.expected)
@@ -50,299 +97,109 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen>
         .where((p) => p.status == ParcelStatus.received)
         .toList();
 
-    return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Parcels'),
-        actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.add,
-              color: CasamaColors.primaryCoral,
-              size: 28,
-            ),
-            onPressed: () => _showAddParcelModal(context),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            child: TabBar(
-              controller: _tabController,
-              indicatorColor: CasamaColors.primaryCoral,
-              indicatorWeight: 3,
-              labelColor: CasamaColors.primaryCoral,
-              unselectedLabelColor: context.textSecondaryColor,
-              labelStyle: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-              tabs: const [
-                Tab(text: 'Upcoming'),
-                Tab(text: 'History'),
-              ],
-            ),
-          ),
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
+    final codTotal = upcomingParcels.fold<double>(
+      0,
+      (sum, p) =>
+          p.paymentType == ParcelPaymentType.cod ? sum + (p.codAmount ?? 0) : sum,
+    );
+    final arrivingToday = upcomingParcels.where((p) {
+      final now = DateTime.now();
+      return p.expectedArrival.year == now.year &&
+          p.expectedArrival.month == now.month &&
+          p.expectedArrival.day == now.day;
+    }).length;
+
+    final currentList = _selectedSegment == 0 ? upcomingParcels : historyParcels;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(top: 26, bottom: widget.bottomPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildParcelList(upcomingParcels, isHistory: false),
-          _buildParcelList(historyParcels, isHistory: true),
+          // Peeking summary card w/ unframed transparent mascot tucked behind edge
+          CasamaPeekingSummaryBar(
+            mascotPose: CasPose.deliveries,
+            leftTitle: '${upcomingParcels.length} Expected',
+            leftSubtitle: '$arrivingToday arriving today',
+            rightTitle: '₱${NumberFormat('#,##0.00').format(codTotal)} COD',
+            rightSubtitle: codTotal > 0 ? 'Cash needed today' : 'All prepaid',
+            rightTitleColor: codTotal > 0 ? pal.dangerFg : pal.forestTeal,
+          ),
+          const SizedBox(height: CasamaSpacing.xs),
+
+          CasamaSegmentedTrack<int>(
+            selectedValue: _selectedSegment,
+            onSelected: (next) => setState(() {
+              _previousSegment = _selectedSegment;
+              _selectedSegment = next;
+            }),
+            segments: const [
+              CasamaFilterOption(value: 0, label: 'Upcoming'),
+              CasamaFilterOption(value: 1, label: 'History'),
+            ],
+          ),
+
+          CasamaDirectionalSwitcher(
+            index: _selectedSegment,
+            previousIndex: _previousSegment,
+            child: currentList.isEmpty
+                ? Padding(
+                    key: ValueKey('parcels_empty_$_selectedSegment'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
+                      vertical: CasamaSpacing.xl,
+                    ),
+                    child: CasamaCard(
+                      padding: const EdgeInsets.all(CasamaSpacing.xl),
+                      child: Column(
+                        children: [
+                          const CasMascotView(
+                            pose: CasPose.deliveries,
+                            width: 112,
+                            height: 112,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _selectedSegment == 1
+                                ? 'No past parcels'
+                                : 'No upcoming deliveries',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: pal.textPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Add a delivery when expecting a package.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: pal.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : Padding(
+                    key: ValueKey('parcels_list_$_selectedSegment'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
+                    ),
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < currentList.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 12),
+                          _ParcelCard(
+                            parcel: currentList[i],
+                            isHistory: _selectedSegment == 1,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+          ),
         ],
       ),
-    );
-  }
-
-  Widget _buildParcelList(List<ParcelItem> parcels, {required bool isHistory}) {
-    if (parcels.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CasMascotView(
-              pose: CasPose.deliveries,
-              width: 140,
-              height: 140,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isHistory ? 'No past parcels' : 'No upcoming deliveries!',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: context.textColor,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Add a delivery when expecting a package.',
-              style: TextStyle(color: context.textSecondaryColor),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(CasamaSpacing.lg),
-      itemCount: parcels.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 16),
-      itemBuilder: (context, index) {
-        final parcel = parcels[index];
-        return _ParcelCard(parcel: parcel, isHistory: isHistory);
-      },
-    );
-  }
-
-  void _showAddParcelModal(BuildContext context) {
-    String courier = 'Shopee';
-    DateTime selectedDate = DateTime.now();
-    TimeOfDay selectedTime = const TimeOfDay(hour: 16, minute: 0);
-    ParcelPaymentType paymentType = ParcelPaymentType.cod;
-    final codController = TextEditingController(text: '350');
-    final notesController = TextEditingController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: 24,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Add Expected Parcel',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: context.textColor,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Courier Dropdown
-                    DropdownButtonFormField<String>(
-                      initialValue: courier,
-                      decoration: const InputDecoration(labelText: 'Courier'),
-                      items:
-                          ['Shopee', 'Lazada', 'TikTok Shop', 'FedEx', 'Other']
-                              .map(
-                                (c) =>
-                                    DropdownMenuItem(value: c, child: Text(c)),
-                              )
-                              .toList(),
-                      onChanged: (val) {
-                        if (val != null) setModalState(() => courier = val);
-                      },
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Date & Time Row
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.calendar_today, size: 16),
-                            label: Text(
-                              DateFormat('MMM dd').format(selectedDate),
-                            ),
-                            onPressed: () async {
-                              final d = await showDatePicker(
-                                context: context,
-                                initialDate: selectedDate,
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(
-                                  const Duration(days: 60),
-                                ),
-                              );
-                              if (d != null) {
-                                setModalState(() => selectedDate = d);
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.access_time, size: 16),
-                            label: Text(selectedTime.format(context)),
-                            onPressed: () async {
-                              final t = await showTimePicker(
-                                context: context,
-                                initialTime: selectedTime,
-                              );
-                              if (t != null) {
-                                setModalState(() => selectedTime = t);
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Payment Type
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ChoiceChip(
-                            label: const Text('Cash on Delivery (COD)'),
-                            selected: paymentType == ParcelPaymentType.cod,
-                            onSelected: (_) => setModalState(
-                              () => paymentType = ParcelPaymentType.cod,
-                            ),
-                            selectedColor: CasamaColors.tileParcels,
-                            labelStyle: TextStyle(
-                              color: paymentType == ParcelPaymentType.cod
-                                  ? CasamaColors.primaryCoral
-                                  : CasamaColors.ink,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ChoiceChip(
-                            label: const Text('Paid Online'),
-                            selected: paymentType == ParcelPaymentType.paid,
-                            onSelected: (_) => setModalState(
-                              () => paymentType = ParcelPaymentType.paid,
-                            ),
-                            selectedColor: CasamaColors.homeBg,
-                            labelStyle: TextStyle(
-                              color: paymentType == ParcelPaymentType.paid
-                                  ? CasamaColors.homeGreen
-                                  : CasamaColors.ink,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    if (paymentType == ParcelPaymentType.cod) ...[
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: codController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'COD Amount (₱)',
-                          prefixText: '₱ ',
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: notesController,
-                      decoration: const InputDecoration(
-                        labelText: 'Instructions / Notes',
-                        hintText:
-                            'e.g., Fragile, Leave at guard, Call on arrival',
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-                    CasamaButton(
-                      label: 'Save Parcel',
-                      onPressed: () {
-                        final arrival = DateTime(
-                          selectedDate.year,
-                          selectedDate.month,
-                          selectedDate.day,
-                          selectedTime.hour,
-                          selectedTime.minute,
-                        );
-                        final cod = paymentType == ParcelPaymentType.cod
-                            ? double.tryParse(codController.text) ?? 0.0
-                            : null;
-
-                        ref
-                            .read(repositoryProvider)
-                            .addParcel(
-                              courier: courier,
-                              arrival: arrival,
-                              paymentType: paymentType,
-                              codAmount: cod,
-                              notes: notesController.text.trim(),
-                            );
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Added expected delivery from $courier!',
-                            ),
-                            backgroundColor: CasamaColors.midnightNavy,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 }
@@ -355,83 +212,78 @@ class _ParcelCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
     final isShopee = parcel.courier.toLowerCase().contains('shopee');
     final isLazada = parcel.courier.toLowerCase().contains('lazada');
 
-    final courierBg = isShopee
-        ? const Color(0xFFFFF0EE)
-        : (isLazada ? const Color(0xFFF0EFFF) : CasamaColors.softNeutral);
-    final courierColor = isShopee
-        ? const Color(0xFFEE4D2D)
-        : (isLazada ? const Color(0xFF0F156D) : CasamaColors.ink);
+    final Color courierBg;
+    final Color courierColor;
+    if (isShopee) {
+      courierBg = pal.softBlush;
+      courierColor = pal.primaryCoral;
+    } else if (isLazada) {
+      courierBg = pal.infoBg;
+      courierColor = pal.infoFg;
+    } else {
+      courierBg = pal.softSage;
+      courierColor = pal.forestTeal;
+    }
 
     final isCod = parcel.paymentType == ParcelPaymentType.cod;
     final paymentText = isCod
         ? 'COD • ₱${parcel.codAmount?.toStringAsFixed(0) ?? '0'}'
         : 'Paid';
 
-    return Container(
+    return CasamaCard(
       padding: const EdgeInsets.all(CasamaSpacing.md),
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: CasamaSpacing.roundedLg,
-        border: Border.all(color: context.borderColor),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Courier Icon / Badge
               Container(
-                width: 50,
-                height: 50,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: context.isDark
-                      ? courierBg.withValues(alpha: 0.25)
-                      : courierBg,
+                  color: courierBg,
                   borderRadius: CasamaSpacing.roundedMd,
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   parcel.courier.isNotEmpty ? parcel.courier[0] : 'P',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
                     color: courierColor,
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
-
-              // Courier Name & Expected arrival
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       parcel.courier,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
                         color: courierColor,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Expected ${_formatArrival(parcel.expectedArrival)}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: context.textColor,
+                      'For ${parcel.buyerName} • ${_formatArrival(parcel.expectedArrival)}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: pal.textSecondary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
               ),
-
-              // Payment Status Chip
+              const SizedBox(width: 8),
               StatusChip(
                 label: paymentText,
                 variant: isCod ? ChipVariant.cod : ChipVariant.paid,
@@ -440,42 +292,41 @@ class _ParcelCard extends ConsumerWidget {
           ),
 
           if (parcel.notes != null && parcel.notes!.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
               parcel.notes!,
-              style: TextStyle(fontSize: 13, color: context.textSecondaryColor),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 13,
+                color: pal.textSecondary,
+              ),
             ),
           ],
 
-          const SizedBox(height: 14),
-          Divider(height: 1, color: context.borderColor),
           const SizedBox(height: 12),
+          Divider(height: 1, color: pal.border),
+          const SizedBox(height: 10),
 
-          // Bottom Row: Availability avatars & Action Button
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Roommate Avatars Row
               Row(
                 children: [
-                  ...parcel.availableMemberNames
-                      .take(3)
-                      .map(
+                  ...parcel.availableMemberNames.take(3).map(
                         (name) => Container(
                           margin: const EdgeInsets.only(right: 4),
-                          width: 26,
-                          height: 26,
-                          decoration: const BoxDecoration(
-                            color: CasamaColors.dustyBlue,
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: pal.forestTeal,
                             shape: BoxShape.circle,
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            name.isNotEmpty ? name[0] : '?',
+                            name.isNotEmpty ? name[0].toUpperCase() : '?',
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -483,28 +334,22 @@ class _ParcelCard extends ConsumerWidget {
                   if (parcel.availableMemberNames.length > 3)
                     Text(
                       '+${parcel.availableMemberNames.length - 3}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: CasamaColors.textSecondary,
-                        fontWeight: FontWeight.bold,
+                      style: theme.textTheme.labelSmall?.tabular.copyWith(
+                        color: pal.textSecondary,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                 ],
               ),
-
-              // Action button (Matching Mockup Screen 3)
-              if (!isHistory) ...[
+              if (!isHistory)
                 if (isShopee)
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: CasamaColors.primaryCoral,
+                      backgroundColor: pal.primaryCoral,
                       foregroundColor: Colors.white,
                       shape: const StadiumBorder(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      minimumSize: Size.zero,
+                      minimumSize: const Size(0, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
                     ),
                     onPressed: () {
                       ref.read(repositoryProvider).receiveParcel(parcel.id);
@@ -516,35 +361,40 @@ class _ParcelCard extends ConsumerWidget {
                     },
                     child: const Text(
                       'I Got It',
-                      style: TextStyle(fontSize: 13),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   )
                 else
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: CasamaColors.ink,
+                      foregroundColor: pal.textPrimary,
+                      side: BorderSide(color: pal.border),
                       shape: const StadiumBorder(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      minimumSize: Size.zero,
+                      minimumSize: const Size(0, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
                     ),
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Marked as unavailable for this delivery',
-                          ),
-                        ),
+                      ref
+                          .read(repositoryProvider)
+                          .toggleParcelAvailability(parcel.id);
+                      showCasamaToast(
+                        context,
+                        'Updated delivery availability',
+                        icon: Icons.check_circle_outline_rounded,
                       );
                     },
                     child: const Text(
                       'Mark Unavailable',
-                      style: TextStyle(fontSize: 13),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-              ] else
+                  )
+              else
                 const StatusChip(
                   label: 'Received',
                   variant: ChipVariant.returned,
@@ -569,36 +419,36 @@ class _ParcelCard extends ConsumerWidget {
     int points,
     String reason,
   ) {
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) {
+        final pal = ctx.palette;
+        final theme = Theme.of(ctx);
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: CasamaSpacing.roundedXl),
-          backgroundColor: CasamaColors.white,
+          backgroundColor: pal.surface,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const CasMascotView(
                 pose: CasPose.jumping,
-                width: 120,
-                height: 120,
+                width: 118,
+                height: 118,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
-                '+$points Good Kasama Points! 🎉',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: CasamaColors.ink,
+                '+$points Good Kasama Points!',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: pal.textPrimary,
+                  fontWeight: FontWeight.w700,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 'Thank you for receiving the delivery: $reason',
-                style: const TextStyle(
-                  color: CasamaColors.textSecondary,
-                  fontSize: 13,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: pal.textSecondary,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -606,7 +456,7 @@ class _ParcelCard extends ConsumerWidget {
               CasamaButton(
                 label: 'Awesome!',
                 onPressed: () => Navigator.pop(ctx),
-                height: 44,
+                height: 46,
               ),
             ],
           ),

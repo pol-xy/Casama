@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_wave_header.dart';
+import '../dashboard/main_navigation_shell.dart';
+import '../dashboard/widgets/casama_household_drawer.dart';
 import '../household/add_housemate_dialog.dart';
+import 'widgets/create_chat_space_sheet.dart';
+import 'widgets/create_meetup_sheet.dart';
 
 class ChatDirectoryScreen extends ConsumerStatefulWidget {
   const ChatDirectoryScreen({super.key});
@@ -29,19 +35,44 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
     super.dispose();
   }
 
+  void _openDrawer(BuildContext context) {
+    final shell = CasamaShellScope.maybeOf(context);
+    if (shell != null) {
+      shell.openDrawer();
+      return;
+    }
+    showCasamaHouseholdDrawer(context);
+  }
+
+  void _openRoute(BuildContext context, String location) {
+    GoRouter.maybeOf(context)?.push(location);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
     final meetup = repo.activeMeetUp;
-    final otherMembers = repo.members
+    final members = repo.members;
+    final activeCount = members.where((m) => m.isHome).length;
+    final otherMembers = members
         .where((m) => m.profile.id != repo.currentUser.id)
         .toList();
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final maxW = CasamaBreakpoints.isTablet(context)
+        ? CasamaBreakpoints.maxContentWidth
+        : double.infinity;
 
     // Group chat details
     final groupLastMsg = repo.groupMessages.isNotEmpty
         ? repo.groupMessages.last
         : null;
-    final groupPreview = groupLastMsg?.content ?? "Let's plan for the meetup!";
+    final groupPreview = groupLastMsg != null
+        ? (groupLastMsg.isCurrentUser
+              ? 'You: ${groupLastMsg.content}'
+              : '${groupLastMsg.senderName}: ${groupLastMsg.content}')
+        : "Let's plan for the meetup!";
     final groupTime = groupLastMsg != null
         ? DateFormat('h:mm a').format(groupLastMsg.createdAt)
         : '8:24 PM';
@@ -81,466 +112,514 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Chat'),
-        actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.person_add_alt_1_outlined,
-              color: CasamaColors.primaryCoral,
-            ),
-            tooltip: 'Add Housemate',
-            onPressed: () => showAddHousemateDialog(context),
-          ),
-          IconButton(
-            icon: Icon(Icons.edit_square, color: context.textColor),
-            tooltip: 'Create Meet-up',
-            onPressed: () => context.push('/create-meetup'),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.lg),
-        children: [
-          const SizedBox(height: CasamaSpacing.xs),
-
-          // Search Bar
-          TextField(
-            controller: _searchController,
-            style: TextStyle(color: context.textColor, fontSize: 14),
-            onChanged: (val) => setState(() => _searchQuery = val),
-            decoration: InputDecoration(
-              hintText: 'Search conversations or housemates...',
-              hintStyle: TextStyle(fontSize: 13, color: context.textMutedColor),
-              prefixIcon: Icon(
-                Icons.search_rounded,
-                color: context.textSecondaryColor,
-                size: 20,
-              ),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: Icon(
-                        Icons.clear,
-                        size: 18,
-                        color: context.textSecondaryColor,
-                      ),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                      },
-                    )
-                  : null,
-              filled: true,
-              fillColor: context.cardColor,
-              border: OutlineInputBorder(
-                borderRadius: CasamaSpacing.roundedPill,
-                borderSide: BorderSide(color: context.borderColor),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: CasamaSpacing.roundedPill,
-                borderSide: BorderSide(color: context.borderColor),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
-            ),
-          ),
-          const SizedBox(height: CasamaSpacing.md),
-
-          // Pinned Household Group Chat Section
-          if (matchesGroup) ...[
-            Text(
-              'Household Group Chat',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-                color: context.textSecondaryColor,
-              ),
-            ),
-            const SizedBox(height: 6),
-            _ChatListItem(
-              isGroup: true,
-              title: repo.currentHousehold.name,
-              preview: groupPreview,
-              time: groupTime,
-              unreadCount: repo.groupChatUnreadCount,
-              onTap: () {
-                ref.read(repositoryProvider).markGroupChatAsRead();
-                context.push('/group-chat');
-              },
-            ),
-            const SizedBox(height: CasamaSpacing.lg),
-          ],
-
-          // Custom Chat Spaces Section
-          if (filteredSpaces.isNotEmpty || query.isEmpty) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Custom Chat Spaces',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.isDark
-                            ? CasamaColors.darkSurface
-                            : CasamaColors.softNeutral,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${repo.chatSpaces.length}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: context.textColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      icon: const Icon(
-                        Icons.vpn_key_rounded,
-                        size: 14,
-                        color: CasamaColors.primaryCoral,
-                      ),
-                      label: const Text(
-                        'Join Code',
-                        style: TextStyle(
-                          color: CasamaColors.primaryCoral,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      onPressed: () => _showJoinWithCodeDialog(context),
-                    ),
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      icon: const Icon(
-                        Icons.add_circle_outline_rounded,
-                        size: 14,
-                        color: CasamaColors.deepTeal,
-                      ),
-                      label: const Text(
-                        '+ Space',
-                        style: TextStyle(
-                          color: CasamaColors.deepTeal,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                      onPressed: () => _showCreateSpaceDialog(context),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            if (filteredSpaces.isEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: context.cardColor,
-                  borderRadius: CasamaSpacing.roundedLg,
-                  border: Border.all(color: context.borderColor),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.chat_bubble_outline_rounded,
-                      size: 20,
-                      color: CasamaColors.textMuted,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'No chat spaces yet. Create one or join with a code!',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else
-              ...filteredSpaces.map((s) {
-                final lastMsg = s.messages.lastOrNull;
-                final preview = lastMsg != null
-                    ? (lastMsg.isCurrentUser
-                          ? 'You: ${lastMsg.content}'
-                          : '${lastMsg.senderName}: ${lastMsg.content}')
-                    : s.description;
-                final timeStr = lastMsg != null
-                    ? DateFormat('h:mm a').format(lastMsg.createdAt)
-                    : DateFormat('h:mm a').format(s.createdAt);
-
-                return _ChatListItem(
-                  isSpace: true,
-                  iconEmoji: s.iconEmoji,
-                  title: s.name,
-                  preview: preview,
-                  time: timeStr,
-                  codeTag: s.inviteCode,
-                  memberCount: s.memberNames.length,
-                  unreadCount: s.unreadCount,
-                  onTap: () {
-                    ref.read(repositoryProvider).markSpaceChatAsRead(s.id);
-                    context.push('/space-chat?id=${s.id}');
-                  },
-                );
-              }),
-            const SizedBox(height: CasamaSpacing.lg),
-          ],
-
-          // Section 2: Individual Conversations
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      backgroundColor: pal.scaffoldBg,
+      body: CasamaAmbientCanvas(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(bottom: bottomInset + 104),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Individual Conversations',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                  color: context.textSecondaryColor,
-                ),
-              ),
-              TextButton.icon(
-                icon: const Icon(
-                  Icons.person_add_alt_1_rounded,
-                  size: 16,
-                  color: CasamaColors.primaryCoral,
-                ),
-                label: const Text(
-                  'Add Housemate',
-                  style: TextStyle(
-                    color: CasamaColors.primaryCoral,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
+              // 1. Stepped Forest Teal Wave Header
+              CasamaWaveHeader(
+                title: 'Chat',
+                subtitle: '${repo.currentHousehold.name} • ${members.length} members',
+                onMenuTap: () => _openDrawer(context),
+                rightActions: [
+                  CasamaCircleIconButton(
+                    icon: Icons.person_add_alt_1_outlined,
+                    semanticLabel: 'Add Housemate',
+                    onTap: () => showAddHousemateDialog(context),
                   ),
-                ),
-                onPressed: () => showAddHousemateDialog(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: CasamaSpacing.xs),
-
-          // Empty state when user has no other housemates
-          if (otherMembers.isEmpty)
-            _buildEmptyHousematesState(context)
-          else if (filteredMembers.isEmpty && _searchQuery.isNotEmpty)
-            _buildNoSearchResultsState()
-          else
-            ...filteredMembers.map((m) {
-              final contactKey = m.profile.displayName.toLowerCase();
-              final dmMessages = repo.getDirectMessages(contactKey);
-              final lastMsg = dmMessages.isNotEmpty ? dmMessages.last : null;
-              final preview = lastMsg != null
-                  ? (lastMsg.isCurrentUser
-                        ? 'You: ${lastMsg.content}'
-                        : lastMsg.content)
-                  : (m.note != null
-                        ? 'Status: ${m.note}'
-                        : 'Tap to message ${m.profile.displayName}');
-              final timeStr = lastMsg != null
-                  ? DateFormat('h:mm a').format(lastMsg.createdAt)
-                  : DateFormat('h:mm a').format(m.updatedAt);
-
-              return _ChatListItem(
-                title: m.profile.displayName,
-                preview: preview,
-                time: timeStr,
-                avatarUrl: m.profile.avatarUrl,
-                isHome: m.isHome,
-                note: m.note,
-                onTap: () => context.push(
-                  '/direct-chat?contact=$contactKey&name=${Uri.encodeComponent(m.profile.displayName)}&avatar=${Uri.encodeComponent(m.profile.avatarUrl ?? '')}',
-                ),
-              );
-            }),
-
-          const SizedBox(height: CasamaSpacing.xl),
-
-          // Section 3: Meet-up Invitations
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Meet-up Invitations',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                  color: context.textSecondaryColor,
-                ),
-              ),
-              TextButton(
-                onPressed: () => context.push('/create-meetup'),
-                child: const Text(
-                  '+ New',
-                  style: TextStyle(
-                    color: CasamaColors.primaryCoral,
-                    fontWeight: FontWeight.bold,
+                  CasamaCircleIconButton(
+                    icon: Icons.calendar_month_outlined,
+                    semanticLabel: 'Plan a Meet-up',
+                    onTap: () => showCreateMeetupSheet(context),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: CasamaSpacing.xs),
 
-          // Meet-up Quick Card
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: context.cardColor,
-              borderRadius: CasamaSpacing.roundedLg,
-              border: Border.all(color: context.borderColor),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: context.isDark
-                        ? CasamaColors.darkTileChat
-                        : const Color(0xFFE8F1F5),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.school_outlined,
-                    color: CasamaColors.deepTeal,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
+              Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxW),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        meetup.activity,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: context.textColor,
+                      // 2. Overlapping Split Hero (Transparent PNG Mascot + Connect Card)
+                      Transform.translate(
+                        offset: const Offset(0, -18),
+                        child: CasamaSplitHero(
+                          mascotPose: CasPose.chatting,
+                          kicker: '${repo.currentHousehold.name} Connect',
+                          kickerDotColor: activeCount > 0
+                              ? pal.successFg
+                              : pal.neutralFg,
+                          headline:
+                              '${repo.totalUnreadChatCount} Unread • ${repo.chatSpaces.length} ${repo.chatSpaces.length == 1 ? 'Space' : 'Spaces'}',
+                          subtitle:
+                              '$activeCount ${activeCount == 1 ? 'housemate' : 'housemates'} Home right now',
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${meetup.location} • ${meetup.goingCount} going',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: context.textSecondaryColor,
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: CasamaSpacing.md,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 3. Search Bar Pill
+                            TextField(
+                              controller: _searchController,
+                              style: TextStyle(
+                                color: pal.textPrimary,
+                                fontSize: 14,
+                              ),
+                              onChanged: (val) =>
+                                  setState(() => _searchQuery = val),
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Search conversations or housemates...',
+                                hintStyle: TextStyle(
+                                  fontSize: 13.5,
+                                  color: pal.textMuted,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.search_rounded,
+                                  color: pal.textSecondary,
+                                  size: 20,
+                                ),
+                                suffixIcon: _searchQuery.isNotEmpty
+                                    ? IconButton(
+                                        icon: Icon(
+                                          Icons.clear_rounded,
+                                          size: 18,
+                                          color: pal.textSecondary,
+                                        ),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          setState(() => _searchQuery = '');
+                                        },
+                                      )
+                                    : null,
+                                filled: true,
+                                fillColor: pal.card,
+                                border: OutlineInputBorder(
+                                  borderRadius: CasamaSpacing.roundedPill,
+                                  borderSide: BorderSide(color: pal.border),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: CasamaSpacing.roundedPill,
+                                  borderSide: BorderSide(color: pal.border),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: CasamaSpacing.roundedPill,
+                                  borderSide: BorderSide(
+                                    color: pal.forestTeal,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: CasamaSpacing.lg),
+
+                            // 4. Pinned Household Group Chat Hero Card
+                            if (matchesGroup) ...[
+                              Text(
+                                'Household Group Chat',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.6,
+                                  color: pal.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: CasamaSpacing.xs),
+                              _PinnedHouseholdCard(
+                                title: repo.currentHousehold.name,
+                                preview: groupPreview,
+                                time: groupTime,
+                                unreadCount: repo.groupChatUnreadCount,
+                                onTap: () {
+                                  ref
+                                      .read(repositoryProvider)
+                                      .markGroupChatAsRead();
+                                  _openRoute(context, '/group-chat');
+                                },
+                              ),
+                              const SizedBox(height: CasamaSpacing.lg),
+                            ],
+
+                            // 5. Custom Chat Spaces Section
+                            if (filteredSpaces.isNotEmpty || query.isEmpty) ...[
+                              SizedBox(
+                                width: double.infinity,
+                                child: Wrap(
+                                  alignment: WrapAlignment.spaceBetween,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Custom Chat Spaces',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 0.6,
+                                                color: pal.textSecondary,
+                                              ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: pal.track,
+                                            borderRadius:
+                                                CasamaSpacing.roundedPill,
+                                          ),
+                                          child: Text(
+                                            '${repo.chatSpaces.length}',
+                                            style: theme.textTheme.labelSmall
+                                                ?.copyWith(
+                                                  color: pal.textPrimary,
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _MiniHeaderPill(
+                                          icon: Icons.vpn_key_rounded,
+                                          label: 'Join Code',
+                                          color: pal.primaryCoral,
+                                          onTap: () =>
+                                              showJoinWithCodeSheet(context),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        _MiniHeaderPill(
+                                          icon: Icons.add_rounded,
+                                          label: '+ Space',
+                                          color: pal.forestTeal,
+                                          onTap: () =>
+                                              showCreateChatSpaceSheet(context),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: CasamaSpacing.xs),
+                              if (filteredSpaces.isEmpty)
+                                CasamaCard(
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.chat_bubble_outline_rounded,
+                                        size: 20,
+                                        color: pal.textMuted,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          'No chat spaces yet. Create one or join with a code!',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: pal.textSecondary,
+                                              ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                Column(
+                                  children: [
+                                    for (final s in filteredSpaces) ...[
+                                      _SpaceCard(
+                                        emoji: s.iconEmoji,
+                                        name: s.name,
+                                        code: s.inviteCode,
+                                        memberCount: s.memberNames.length,
+                                        preview: s.messages.lastOrNull != null
+                                            ? (s.messages.last.isCurrentUser
+                                                  ? 'You: ${s.messages.last.content}'
+                                                  : '${s.messages.last.senderName}: ${s.messages.last.content}')
+                                            : s.description,
+                                        time: DateFormat('h:mm a').format(
+                                          s.messages.lastOrNull?.createdAt ??
+                                              s.createdAt,
+                                        ),
+                                        unreadCount: s.unreadCount,
+                                        onTap: () {
+                                          ref
+                                              .read(repositoryProvider)
+                                              .markSpaceChatAsRead(s.id);
+                                          _openRoute(
+                                            context,
+                                            '/space-chat?id=${s.id}',
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(height: CasamaSpacing.xs),
+                                    ],
+                                  ],
+                                ),
+                              const SizedBox(height: CasamaSpacing.md),
+                            ],
+
+                            // 6. Individual Conversations (Housemates)
+                            SizedBox(
+                              width: double.infinity,
+                              child: Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  Text(
+                                    'Individual Conversations',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.6,
+                                      color: pal.textSecondary,
+                                    ),
+                                  ),
+                                  _MiniHeaderPill(
+                                    icon: Icons.person_add_alt_1_rounded,
+                                    label: 'Add Housemate',
+                                    color: pal.primaryCoral,
+                                    onTap: () =>
+                                        showAddHousemateDialog(context),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: CasamaSpacing.xs),
+
+                            if (otherMembers.isEmpty)
+                              _buildEmptyHousematesState(context, pal, theme)
+                            else if (filteredMembers.isEmpty &&
+                                _searchQuery.isNotEmpty)
+                              _buildNoSearchResultsState(pal, theme)
+                            else
+                              CasamaCard(
+                                padding: EdgeInsets.zero,
+                                child: Column(
+                                  children: [
+                                    for (
+                                      var i = 0;
+                                      i < filteredMembers.length;
+                                      i++
+                                    ) ...[
+                                      if (i > 0)
+                                        Divider(height: 1, color: pal.divider),
+                                      Builder(
+                                        builder: (context) {
+                                          final m = filteredMembers[i];
+                                          final contactKey = m
+                                              .profile
+                                              .displayName
+                                              .toLowerCase();
+                                          final dmMessages = repo
+                                              .getDirectMessages(contactKey);
+                                          final lastMsg = dmMessages.isNotEmpty
+                                              ? dmMessages.last
+                                              : null;
+                                          final preview = lastMsg != null
+                                              ? (lastMsg.isCurrentUser
+                                                    ? 'You: ${lastMsg.content}'
+                                                    : lastMsg.content)
+                                              : (m.note != null
+                                                    ? 'Status: ${m.note}'
+                                                    : 'Tap to message ${m.profile.displayName}');
+                                          final timeStr = DateFormat('h:mm a')
+                                              .format(
+                                                lastMsg?.createdAt ??
+                                                    m.updatedAt,
+                                              );
+
+                                          return _HousemateConversationRow(
+                                            name: m.profile.displayName,
+                                            avatarUrl: m.profile.avatarUrl,
+                                            isHome: m.isHome,
+                                            preview: preview,
+                                            time: timeStr,
+                                            onTap: () => _openRoute(
+                                              context,
+                                              '/direct-chat?contact=$contactKey&name=${Uri.encodeComponent(m.profile.displayName)}&avatar=${Uri.encodeComponent(m.profile.avatarUrl ?? '')}',
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+
+                            const SizedBox(height: CasamaSpacing.lg),
+
+                            // 7. Meet-up Invitations Card
+                            SizedBox(
+                              width: double.infinity,
+                              child: Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  Text(
+                                    'Meet-up Invitations',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.6,
+                                      color: pal.textSecondary,
+                                    ),
+                                  ),
+                                  _MiniHeaderPill(
+                                    icon: Icons.add_rounded,
+                                    label: '+ New',
+                                    color: pal.primaryCoral,
+                                    onTap: () => showCreateMeetupSheet(context),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: CasamaSpacing.xs),
+                            CasamaCard(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: pal.softSage,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.groups_rounded,
+                                      color: pal.forestTeal,
+                                      size: 22,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          meetup.activity,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.titleMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                                color: pal.textPrimary,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '${meetup.location} • ${meetup.goingCount} going',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: pal.textSecondary,
+                                                fontSize: 12.5,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  CasamaPressable(
+                                    onTap: () =>
+                                        _openRoute(context, '/group-chat'),
+                                    child: Container(
+                                      height: 44,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: pal.track,
+                                        borderRadius:
+                                            CasamaSpacing.roundedPill,
+                                        border: Border.all(color: pal.border),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        'View',
+                                        style: theme.textTheme.labelMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: pal.textPrimary,
+                                            ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: context.isDark
-                        ? context.surfaceColor
-                        : CasamaColors.softNeutral,
-                    foregroundColor: context.textColor,
-                    elevation: 0,
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    minimumSize: Size.zero,
-                  ),
-                  onPressed: () => context.push('/group-chat'),
-                  child: const Text(
-                    'View',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: CasamaSpacing.xxl),
-        ],
+        ),
       ),
     );
   }
 
-  // Helpful empty state for new users with no housemates yet
-  Widget _buildEmptyHousematesState(BuildContext context) {
-    return Container(
-      width: double.infinity,
+  Widget _buildEmptyHousematesState(
+    BuildContext context,
+    CasamaPalette pal,
+    ThemeData theme,
+  ) {
+    return CasamaCard(
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: CasamaSpacing.roundedLg,
-        border: Border.all(color: context.borderColor),
-      ),
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: context.isDark
-                  ? CasamaColors.darkTileParcels
-                  : CasamaColors.tileParcels,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.group_add_rounded,
-              color: CasamaColors.primaryCoral,
-              size: 32,
-            ),
+          const CasMascotView(
+            pose: CasPose.together,
+            width: 84,
+            height: 84,
           ),
-          const SizedBox(height: 12),
-          const Text(
+          const SizedBox(height: 10),
+          Text(
             'Your household is better together! 🏡',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: CasamaColors.ink,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: pal.textPrimary,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Invite your housemates to start communicating and coordinating.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: CasamaColors.textSecondary,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: pal.textSecondary,
               height: 1.4,
             ),
           ),
@@ -549,606 +628,84 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
             label: 'Invite Housemate',
             icon: Icons.person_add_alt_1_rounded,
             onPressed: () => showAddHousemateDialog(context),
-            height: 46,
+            height: 48,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildNoSearchResultsState() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      alignment: Alignment.center,
+  Widget _buildNoSearchResultsState(CasamaPalette pal, ThemeData theme) {
+    return CasamaCard(
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
       child: Column(
         children: [
-          const Icon(
-            Icons.search_off_rounded,
-            size: 36,
-            color: CasamaColors.textMuted,
-          ),
+          Icon(Icons.search_off_rounded, size: 36, color: pal.textMuted),
           const SizedBox(height: 8),
           Text(
             'No conversations found matching "$_searchQuery"',
-            style: const TextStyle(
-              fontSize: 13,
-              color: CasamaColors.textSecondary,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: pal.textSecondary,
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showCreateSpaceDialog(BuildContext context) {
-    final repo = ref.read(repositoryProvider);
-    final otherMembers = repo.members
-        .where((m) => m.profile.id != repo.currentUser.id)
-        .toList();
-
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    String selectedEmoji = '🛒';
-    final selectedMembers = <String>{};
-
-    final emojis = ['🛒', '🧹', '🍿', '📚', '🍕', '💬', '🎮', '🌿'];
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          return Padding(
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 16,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: context.borderColor,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: context.isDark
-                                  ? CasamaColors.darkSurface
-                                  : const Color(0xFFFFECE8),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Text(
-                              selectedEmoji,
-                              style: const TextStyle(fontSize: 22),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Create Chat Space',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
-                                  color: context.textColor,
-                                ),
-                              ),
-                              Text(
-                                'Generates an invite code & adds housemates',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: context.textSecondaryColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Emoji picker row
-                  Text(
-                    'Choose an icon',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: context.textColor,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: emojis.map((emoji) {
-                        final isSel = selectedEmoji == emoji;
-                        return GestureDetector(
-                          onTap: () =>
-                              setModalState(() => selectedEmoji = emoji),
-                          child: Container(
-                            margin: const EdgeInsets.only(right: 8),
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: isSel
-                                  ? (context.isDark
-                                        ? CasamaColors.darkSurface
-                                        : const Color(0xFFFFECE8))
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isSel
-                                    ? CasamaColors.primaryCoral
-                                    : context.borderColor,
-                                width: isSel ? 2 : 1,
-                              ),
-                            ),
-                            child: Text(
-                              emoji,
-                              style: const TextStyle(fontSize: 22),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Space Name field
-                  TextField(
-                    controller: nameController,
-                    style: TextStyle(color: context.textColor, fontSize: 14),
-                    decoration: InputDecoration(
-                      labelText: 'Space Name',
-                      hintText: 'e.g. Grocery & Supplies',
-                      filled: true,
-                      fillColor: context.cardColor,
-                      border: OutlineInputBorder(
-                        borderRadius: CasamaSpacing.roundedMd,
-                        borderSide: BorderSide(color: context.borderColor),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: CasamaSpacing.roundedMd,
-                        borderSide: BorderSide(color: context.borderColor),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Description field
-                  TextField(
-                    controller: descController,
-                    style: TextStyle(color: context.textColor, fontSize: 14),
-                    decoration: InputDecoration(
-                      labelText: 'Description / Purpose',
-                      hintText:
-                          'e.g. Shopping lists, shared bills & food requests',
-                      filled: true,
-                      fillColor: context.cardColor,
-                      border: OutlineInputBorder(
-                        borderRadius: CasamaSpacing.roundedMd,
-                        borderSide: BorderSide(color: context.borderColor),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: CasamaSpacing.roundedMd,
-                        borderSide: BorderSide(color: context.borderColor),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Creator can add housemates directly
-                  if (otherMembers.isNotEmpty) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Add Housemates Directly:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: context.textColor,
-                          ),
-                        ),
-                        Text(
-                          '${selectedMembers.length} selected',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: CasamaColors.primaryCoral,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    ...otherMembers.map((m) {
-                      final name = m.profile.displayName;
-                      final isChecked = selectedMembers.contains(name);
-                      return CheckboxListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        value: isChecked,
-                        activeColor: CasamaColors.primaryCoral,
-                        title: Text(
-                          name,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: context.textColor,
-                          ),
-                        ),
-                        subtitle: Text(
-                          m.profile.handle,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                        secondary: CasamaAvatar(
-                          avatarUrl: m.profile.avatarUrl,
-                          radius: 16,
-                          name: name,
-                        ),
-                        onChanged: (val) {
-                          setModalState(() {
-                            if (val == true) {
-                              selectedMembers.add(name);
-                            } else {
-                              selectedMembers.remove(name);
-                            }
-                          });
-                        },
-                      );
-                    }),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // Create button
-                  CasamaButton(
-                    label: 'Create Space & Generate Code',
-                    icon: Icons.check_circle_outline,
-                    onPressed: () {
-                      final name = nameController.text.trim();
-                      if (name.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please enter a space name.'),
-                          ),
-                        );
-                        return;
-                      }
-                      final desc = descController.text.trim();
-                      final newSpace = ref
-                          .read(repositoryProvider)
-                          .createChatSpace(
-                            name: name,
-                            description: desc.isNotEmpty
-                                ? desc
-                                : 'Household Chat Space',
-                            iconEmoji: selectedEmoji,
-                            initialMembers: selectedMembers.toList(),
-                          );
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Space "${newSpace.name}" created! Code: ${newSpace.inviteCode}',
-                          ),
-                          backgroundColor: CasamaColors.midnightNavy,
-                        ),
-                      );
-                      context.push('/space-chat?id=${newSpace.id}');
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  void _showJoinWithCodeDialog(BuildContext context) {
-    final codeController = TextEditingController();
-    String? errorText;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          return Padding(
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 16,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: context.borderColor,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFFECE8),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.vpn_key_rounded,
-                        color: CasamaColors.primaryCoral,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Join Space with Code',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            color: context.textColor,
-                          ),
-                        ),
-                        Text(
-                          'Enter a code shared by your housemate',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: codeController,
-                  textCapitalization: TextCapitalization.characters,
-                  style: TextStyle(
-                    color: context.textColor,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'e.g. SPC-101 or CASA204',
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      letterSpacing: 1,
-                      color: context.textMutedColor,
-                      fontWeight: FontWeight.normal,
-                    ),
-                    errorText: errorText,
-                    suffixIcon: TextButton(
-                      onPressed: () async {
-                        final data = await Clipboard.getData('text/plain');
-                        if (data != null && data.text != null) {
-                          codeController.text = data.text!.trim().toUpperCase();
-                          setModalState(() => errorText = null);
-                        }
-                      },
-                      child: const Text(
-                        'PASTE',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: CasamaColors.primaryCoral,
-                        ),
-                      ),
-                    ),
-                    filled: true,
-                    fillColor: context.cardColor,
-                    border: OutlineInputBorder(
-                      borderRadius: CasamaSpacing.roundedMd,
-                      borderSide: BorderSide(color: context.borderColor),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: CasamaSpacing.roundedMd,
-                      borderSide: BorderSide(color: context.borderColor),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                CasamaButton(
-                  label: 'Join Space',
-                  icon: Icons.login_rounded,
-                  onPressed: () {
-                    final code = codeController.text.trim().toUpperCase();
-                    if (code.isEmpty) {
-                      setModalState(
-                        () => errorText = 'Please enter an invite code.',
-                      );
-                      return;
-                    }
-                    final repo = ref.read(repositoryProvider);
-                    // Check if it's the household code
-                    if (code ==
-                        repo.currentHousehold.inviteCode.toUpperCase()) {
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'You are already a verified member of ${repo.currentHousehold.name}!',
-                          ),
-                        ),
-                      );
-                      context.push('/group-chat');
-                      return;
-                    }
-
-                    final joinedSpace = repo.joinChatSpaceByCode(code);
-                    if (joinedSpace != null) {
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Joined "${joinedSpace.name}"! 🎉'),
-                          backgroundColor: CasamaColors.midnightNavy,
-                        ),
-                      );
-                      context.push('/space-chat?id=${joinedSpace.id}');
-                    } else {
-                      setModalState(() {
-                        errorText =
-                            'No space found with code "$code". Check and retry.';
-                      });
-                    }
-                  },
-                ),
-              ],
-            ),
-          );
-        },
       ),
     );
   }
 }
 
-class _ChatListItem extends StatelessWidget {
+class _PinnedHouseholdCard extends StatelessWidget {
   final String title;
   final String preview;
   final String time;
-  final String? avatarUrl;
-  final bool isGroup;
-  final bool isSpace;
-  final String? iconEmoji;
-  final String? codeTag;
-  final int? memberCount;
-  final bool isHome;
-  final String? note;
   final int unreadCount;
   final VoidCallback onTap;
 
-  const _ChatListItem({
+  const _PinnedHouseholdCard({
     required this.title,
     required this.preview,
     required this.time,
-    this.avatarUrl,
-    this.isGroup = false,
-    this.isSpace = false,
-    this.iconEmoji,
-    this.codeTag,
-    this.memberCount,
-    this.isHome = false,
-    this.note,
-    this.unreadCount = 0,
+    required this.unreadCount,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return CasamaPressable.card(
       onTap: onTap,
-      borderRadius: CasamaSpacing.roundedLg,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: pal.headerDeep,
+          borderRadius: CasamaSpacing.roundedCard,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: context.isDark ? 0.25 : 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
         child: Row(
           children: [
-            // Avatar, Group House Icon, or Space Emoji Icon
-            if (isGroup)
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: CasamaColors.midnightNavy,
-                  borderRadius: CasamaSpacing.roundedMd,
-                ),
-                child: const Icon(
-                  Icons.home_rounded,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              )
-            else if (isSpace)
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: context.isDark
-                      ? CasamaColors.darkSurface
-                      : const Color(0xFFFFECE8),
-                  borderRadius: CasamaSpacing.roundedMd,
-                  border: Border.all(
-                    color: context.isDark
-                        ? context.borderColor
-                        : const Color(0xFFFFD5CE),
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  iconEmoji ?? '💬',
-                  style: const TextStyle(fontSize: 24),
-                ),
-              )
-            else
-              Stack(
-                children: [
-                  CasamaAvatar(avatarUrl: avatarUrl, radius: 24, name: title),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: isHome
-                            ? CasamaColors.homeGreen
-                            : CasamaColors.outGray,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: CasamaColors.white, width: 2),
-                      ),
-                    ),
-                  ),
-                ],
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.16),
+                borderRadius: CasamaSpacing.roundedMd,
               ),
-            const SizedBox(width: 14),
-
-            // Content
+              child: const Icon(
+                Icons.cottage_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1156,93 +713,52 @@ class _ChatListItem extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                title,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: context.textColor,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (codeTag != null) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: context.isDark
-                                      ? CasamaColors.darkSurface
-                                      : CasamaColors.softNeutral,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: context.borderColor,
-                                    width: 0.5,
-                                  ),
-                                ),
-                                child: Text(
-                                  codeTag!,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                    color: CasamaColors.primaryCoral,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (time.isNotEmpty)
-                        Text(
-                          time,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textMutedColor,
+                      Flexible(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        time,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 3),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
                         child: Text(
-                          memberCount != null
-                              ? '$memberCount members • $preview'
-                              : preview,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: unreadCount > 0
-                                ? context.textColor
-                                : context.textSecondaryColor,
-                            fontWeight: unreadCount > 0
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
+                          preview,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            fontSize: 13,
+                          ),
                         ),
                       ),
-                      if (unreadCount > 0)
+                      if (unreadCount > 0) ...[
+                        const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+                          constraints: const BoxConstraints(
+                            minWidth: 22,
+                            minHeight: 22,
                           ),
-                          decoration: const BoxDecoration(
-                            color: CasamaColors.primaryCoral,
-                            borderRadius: BorderRadius.all(Radius.circular(10)),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            color: pal.coralFab,
+                            borderRadius: CasamaSpacing.roundedPill,
                           ),
                           alignment: Alignment.center,
                           child: Text(
@@ -1250,16 +766,305 @@ class _ChatListItem extends StatelessWidget {
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
+                      ],
                     ],
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SpaceCard extends StatelessWidget {
+  final String emoji;
+  final String name;
+  final String code;
+  final int memberCount;
+  final String preview;
+  final String time;
+  final int unreadCount;
+  final VoidCallback onTap;
+
+  const _SpaceCard({
+    required this.emoji,
+    required this.name,
+    required this.code,
+    required this.memberCount,
+    required this.preview,
+    required this.time,
+    required this.unreadCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return CasamaCard(
+      padding: const EdgeInsets.all(12),
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: pal.softSage,
+              borderRadius: CasamaSpacing.roundedMd,
+              border: Border.all(color: pal.border),
+            ),
+            alignment: Alignment.center,
+            child: Text(emoji, style: const TextStyle(fontSize: 22)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: pal.textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: pal.infoBg,
+                        borderRadius: CasamaSpacing.roundedPill,
+                      ),
+                      child: Text(
+                        code,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: pal.infoFg,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      time,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: pal.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '$memberCount members • $preview',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: unreadCount > 0
+                              ? pal.textPrimary
+                              : pal.textSecondary,
+                          fontWeight: unreadCount > 0
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                    if (unreadCount > 0) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 20,
+                          minHeight: 20,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        decoration: BoxDecoration(
+                          color: pal.coralFab,
+                          borderRadius: CasamaSpacing.roundedPill,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '$unreadCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HousemateConversationRow extends StatelessWidget {
+  final String name;
+  final String? avatarUrl;
+  final bool isHome;
+  final String preview;
+  final String time;
+  final VoidCallback onTap;
+
+  const _HousemateConversationRow({
+    required this.name,
+    required this.avatarUrl,
+    required this.isHome,
+    required this.preview,
+    required this.time,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return CasamaPressable(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Stack(
+              children: [
+                CasamaAvatar(avatarUrl: avatarUrl, radius: 22, name: name),
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: isHome ? pal.successFg : pal.neutralFg,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: pal.card, width: 2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: pal.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        time,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: pal.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    preview,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: pal.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniHeaderPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _MiniHeaderPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: CasamaPressable(
+        onTap: onTap,
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          decoration: BoxDecoration(
+            color: pal.surface,
+            borderRadius: CasamaSpacing.roundedPill,
+            border: Border.all(color: pal.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

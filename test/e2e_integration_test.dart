@@ -65,7 +65,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Create an Account'), findsOneWidget);
-      expect(find.text('Continue to Profile Details'), findsOneWidget);
+      expect(find.text('Create Account'), findsOneWidget);
 
       // Register new user
       mockRepo.register(email: 'newuser@casama.app', password: 'password123');
@@ -78,7 +78,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Tell Us About You 👋'), findsOneWidget);
+      expect(find.text('Tell Us About You'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
       expect(find.text('Nickname'), findsOneWidget);
       expect(find.text('Age (Optional)'), findsOneWidget);
@@ -105,7 +105,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Device Permissions 📱'), findsOneWidget);
+      expect(find.text('Device Permissions'), findsOneWidget);
       expect(find.text('Push Notifications'), findsOneWidget);
       expect(find.text('Camera & Photo Library'), findsOneWidget);
       expect(find.text('Save & Continue'), findsOneWidget);
@@ -131,14 +131,14 @@ void main() {
       );
       await tester.pumpAndSettle();
       // Initial step: Home
-      expect(find.text('1. Home Dashboard & Calendar 🏠'), findsOneWidget);
+      expect(find.text('1. Home Dashboard & Calendar'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
       expect(find.text('Next Navigation Element'), findsOneWidget);
 
       // Advance to Step 2: Boards
       await tester.tap(find.text('Next Navigation Element'));
       await tester.pumpAndSettle();
-      expect(find.text('2. Household Boards 📦'), findsOneWidget);
+      expect(find.text('2. Unified Household Boards'), findsOneWidget);
 
       // 8. Reaching the Home Dashboard
       await tester.pumpWidget(
@@ -449,7 +449,7 @@ void main() {
         expect(imageFinder, findsOneWidget);
         final image = tester.widget<Image>(imageFinder);
         final assetImage = image.image as AssetImage;
-        expect(assetImage.assetName, 'assets/images/cas/cas_hero.png');
+        expect(assetImage.assetName, 'assets/images/cas/together_cards.png');
       },
     );
 

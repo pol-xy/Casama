@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/colors.dart';
+import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 
 class CasamaAvatar extends StatelessWidget {
   final String? avatarUrl;
@@ -15,6 +18,12 @@ class CasamaAvatar extends StatelessWidget {
   final Color? backgroundColor;
   final Color? borderColor;
   final double borderWidth;
+  final String? semanticLabel;
+
+  // Bounded LRU cache to prevent synchronous base64Decode inside scroll frames.
+  static final LinkedHashMap<String, Uint8List> _base64Cache =
+      LinkedHashMap<String, Uint8List>();
+  static const int _maxCacheEntries = 48;
 
   const CasamaAvatar({
     super.key,
@@ -26,34 +35,55 @@ class CasamaAvatar extends StatelessWidget {
     this.backgroundColor,
     this.borderColor,
     this.borderWidth = 0,
+    this.semanticLabel,
   });
+
+  static Uint8List? _decodeBase64Cached(String dataUrl) {
+    final existing = _base64Cache.remove(dataUrl);
+    if (existing != null) {
+      _base64Cache[dataUrl] = existing;
+      return existing;
+    }
+    try {
+      final commaIndex = dataUrl.indexOf(',');
+      final base64Str = commaIndex != -1
+          ? dataUrl.substring(commaIndex + 1)
+          : dataUrl;
+      final bytes = base64Decode(base64Str);
+      if (_base64Cache.length >= _maxCacheEntries) {
+        _base64Cache.remove(_base64Cache.keys.first);
+      }
+      _base64Cache[dataUrl] = bytes;
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final effectiveBg =
-        backgroundColor ??
-        (context.isDark ? CasamaColors.darkCard : CasamaColors.dustyBlue);
+    final pal = context.palette;
+    final effectiveBg = backgroundColor ?? pal.forestTeal;
     final size = radius * 2;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cachePx = (size * dpr).round().clamp(32, 512);
 
     Widget avatarContent;
     final url = avatarUrl?.trim();
 
     if (url != null && url.isNotEmpty) {
       if (url.startsWith('data:image')) {
-        try {
-          final commaIndex = url.indexOf(',');
-          final base64Str = commaIndex != -1
-              ? url.substring(commaIndex + 1)
-              : url;
-          final bytes = base64Decode(base64Str);
+        final bytes = _decodeBase64Cached(url);
+        if (bytes != null) {
           avatarContent = Image.memory(
             bytes,
             width: size,
             height: size,
+            cacheWidth: cachePx,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => _buildFallback(context),
           );
-        } catch (_) {
+        } else {
           avatarContent = _buildFallback(context);
         }
       } else if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -61,7 +91,12 @@ class CasamaAvatar extends StatelessWidget {
           url,
           width: size,
           height: size,
+          cacheWidth: cachePx,
           fit: BoxFit.cover,
+          loadingBuilder: (ctx, child, progress) {
+            if (progress == null) return child;
+            return _buildFallback(context);
+          },
           errorBuilder: (_, _, _) => _buildFallback(context),
         );
       } else if (!kIsWeb && (url.startsWith('/') || url.startsWith('file:'))) {
@@ -74,6 +109,7 @@ class CasamaAvatar extends StatelessWidget {
             file,
             width: size,
             height: size,
+            cacheWidth: cachePx,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => _buildFallback(context),
           );
@@ -94,12 +130,7 @@ class CasamaAvatar extends StatelessWidget {
         color: effectiveBg,
         shape: BoxShape.circle,
         border: borderWidth > 0
-            ? Border.all(
-                color:
-                    borderColor ??
-                    (context.isDark ? CasamaColors.darkBorder : Colors.white),
-                width: borderWidth,
-              )
+            ? Border.all(color: borderColor ?? pal.surface, width: borderWidth)
             : null,
       ),
       child: ClipOval(child: avatarContent),
@@ -114,27 +145,17 @@ class CasamaAvatar extends StatelessWidget {
             bottom: 0,
             right: 0,
             child: Container(
-              padding: const EdgeInsets.all(6),
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
-                color: CasamaColors.primaryCoral,
+                color: pal.primaryCoral,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: context.isDark
-                      ? CasamaColors.darkSurface
-                      : Colors.white,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 4,
-                  ),
-                ],
+                border: Border.all(color: pal.surface, width: 2),
               ),
-              child: const Icon(
-                Icons.camera_alt_rounded,
-                color: Colors.white,
-                size: 14,
+              child: Icon(
+                Icons.photo_camera_rounded,
+                color: pal.onPrimaryCoral,
+                size: 15,
               ),
             ),
           ),
@@ -143,24 +164,45 @@ class CasamaAvatar extends StatelessWidget {
     }
 
     if (onTap != null) {
-      return GestureDetector(onTap: onTap, child: mainAvatar);
+      return Semantics(
+        button: true,
+        label: semanticLabel ?? (name != null ? '$name avatar' : 'Change photo'),
+        child: CasamaPressable(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: CasamaSpacing.minTouchTarget,
+              minHeight: CasamaSpacing.minTouchTarget,
+            ),
+            child: Center(child: mainAvatar),
+          ),
+        ),
+      );
     }
 
     return mainAvatar;
   }
 
   Widget _buildFallback(BuildContext context) {
-    final letter = (name != null && name!.trim().isNotEmpty)
-        ? name!.trim()[0].toUpperCase()
-        : '?';
+    final trimmed = name?.trim() ?? '';
+    final letter = trimmed.isNotEmpty ? trimmed[0].toUpperCase() : '?';
 
     return Center(
-      child: Text(
-        letter,
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: radius * 0.85,
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.2,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.all(2),
+            child: Text(
+              letter,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: radius * 0.85,
+              ),
+            ),
+          ),
         ),
       ),
     );

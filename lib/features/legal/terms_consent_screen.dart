@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_wave_header.dart';
 
 class TermsConsentScreen extends ConsumerStatefulWidget {
   const TermsConsentScreen({super.key});
@@ -20,171 +22,203 @@ class _TermsConsentScreenState extends ConsumerState<TermsConsentScreen> {
 
   void _acknowledgeAndContinue() {
     if (!_agreedToTerms || !_agreedToPrivacy) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please acknowledge both agreements to proceed.'),
-          backgroundColor: CasamaColors.errorRed,
-        ),
+      showCasamaToast(
+        context,
+        'Please acknowledge both agreements to proceed.',
+        icon: Icons.info_outline_rounded,
       );
       return;
     }
 
     ref.read(repositoryProvider).recordTermsConsent();
-    context.push('/permissions');
+    GoRouter.maybeOf(context)?.push('/permissions');
   }
 
   @override
   Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final maxW = CasamaBreakpoints.isTablet(context)
+        ? CasamaBreakpoints.maxContentWidth
+        : double.infinity;
+
     return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Terms & Privacy'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: SafeArea(
+      backgroundColor: pal.scaffoldBg,
+      body: CasamaAmbientCanvas(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.xl),
+          padding: EdgeInsets.only(bottom: bottomInset + CasamaSpacing.xxl),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: CasamaSpacing.sm),
-              Text(
-                'Household Agreements 📋',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: context.textColor,
-                ),
+              CasamaWaveHeader(
+                title: 'Terms & Privacy',
+                subtitle: 'Step 3 of 4 • Household guidelines & protections',
+                compact: true,
+                onBackTap: () {
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
+                  } else {
+                    GoRouter.maybeOf(context)?.pop();
+                  }
+                },
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Step 3 of 4: Review and acknowledge our household guidelines and privacy commitments before entering your home.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: context.textSecondaryColor,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: CasamaSpacing.lg),
-
-              // Summary Card 1: Terms of Service
-              _buildAgreementCard(
-                icon: Icons.gavel_rounded,
-                title: 'Terms of Service',
-                summary: 'Covers household mutual respect, prompt COD parcel reimbursements, shared resource borrowing, and fair chore obligations.',
-                onReadMore: () => context.push('/terms'),
-                isChecked: _agreedToTerms,
-                checkboxLabel: 'I accept the Terms of Service',
-                onChanged: (val) =>
-                    setState(() => _agreedToTerms = val ?? false),
-              ),
-              const SizedBox(height: CasamaSpacing.md),
-
-              // Summary Card 2: Privacy Policy
-              _buildAgreementCard(
-                icon: Icons.shield_outlined,
-                title: 'Privacy Policy',
-                badge: 'Zero GPS Tracking',
-                summary: 'Your presence is 100% manually updated by you. Casama NEVER monitors background GPS. Household records are isolated strictly to your housemates via Supabase RLS.',
-                onReadMore: () => context.push('/terms'),
-                isChecked: _agreedToPrivacy,
-                checkboxLabel:
-                    'I acknowledge the Privacy Policy & Data Protections',
-                onChanged: (val) =>
-                    setState(() => _agreedToPrivacy = val ?? false),
-              ),
-              const SizedBox(height: CasamaSpacing.xl),
-
-              // Accept & Continue
-              CasamaButton(
-                label: 'Acknowledge & Continue',
-                isPill: true,
-                height: 52,
-                onPressed: _acknowledgeAndContinue,
-              ),
-              const SizedBox(height: CasamaSpacing.md),
 
               Center(
-                child: Text(
-                  'Next: Relevant device permissions',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: CasamaColors.textSecondary.withValues(alpha: 0.8),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxW),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Household Agreements 📋',
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontSize: 23,
+                            fontWeight: FontWeight.w700,
+                            color: pal.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Step 3 of 4: Review and acknowledge our household guidelines and privacy commitments before entering your home.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 13,
+                            color: pal.textSecondary,
+                            height: 1.45,
+                          ),
+                        ),
+                        const SizedBox(height: CasamaSpacing.md),
+
+                        _AgreementCard(
+                          icon: Icons.gavel_rounded,
+                          title: 'Terms of Service',
+                          summary:
+                              'Covers household mutual respect, prompt COD parcel reimbursements, shared resource borrowing, and fair chore obligations.',
+                          onReadMore: () =>
+                              GoRouter.maybeOf(context)?.push('/terms'),
+                          isChecked: _agreedToTerms,
+                          checkboxLabel: 'I accept the Terms of Service',
+                          onChanged: (val) =>
+                              setState(() => _agreedToTerms = val),
+                        ),
+                        const SizedBox(height: CasamaSpacing.md),
+
+                        _AgreementCard(
+                          icon: Icons.shield_outlined,
+                          title: 'Privacy Policy',
+                          badge: 'Zero GPS Tracking',
+                          summary:
+                              'Your presence is 100% manually updated by you. Casama NEVER monitors background GPS. Household records are isolated strictly to your housemates via Supabase RLS.',
+                          onReadMore: () =>
+                              GoRouter.maybeOf(context)?.push('/terms'),
+                          isChecked: _agreedToPrivacy,
+                          checkboxLabel:
+                              'I acknowledge the Privacy Policy & Data Protections',
+                          onChanged: (val) =>
+                              setState(() => _agreedToPrivacy = val),
+                        ),
+                        const SizedBox(height: CasamaSpacing.xl),
+
+                        CasamaButton(
+                          label: 'Acknowledge & Continue',
+                          icon: Icons.check_circle_outline_rounded,
+                          height: 52,
+                          onPressed: _acknowledgeAndContinue,
+                        ),
+                        const SizedBox(height: CasamaSpacing.md),
+
+                        Center(
+                          child: Text(
+                            'Next: Relevant device permissions',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: 12,
+                              color: pal.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: CasamaSpacing.xxl),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildAgreementCard({
-    required IconData icon,
-    required String title,
-    String? badge,
-    required String summary,
-    required VoidCallback onReadMore,
-    required bool isChecked,
-    required String checkboxLabel,
-    required ValueChanged<bool?> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(CasamaSpacing.md),
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: CasamaSpacing.roundedLg,
-        border: Border.all(color: context.borderColor),
-      ),
+class _AgreementCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? badge;
+  final String summary;
+  final VoidCallback onReadMore;
+  final bool isChecked;
+  final String checkboxLabel;
+  final ValueChanged<bool> onChanged;
+
+  const _AgreementCard({
+    required this.icon,
+    required this.title,
+    this.badge,
+    required this.summary,
+    required this.onReadMore,
+    required this.isChecked,
+    required this.checkboxLabel,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return CasamaCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: context.tileParcelsColor,
+                  color: pal.softBlush,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: CasamaColors.primaryCoral, size: 20),
+                child: Icon(icon, color: pal.primaryCoral, size: 19),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: context.textColor,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: pal.textPrimary,
                   ),
                 ),
               ),
               if (badge != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
+                    horizontal: 9,
+                    vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: context.isDark
-                        ? const Color(0xFF1B3B2B)
-                        : CasamaColors.successBg,
-                    borderRadius: BorderRadius.circular(12),
+                    color: pal.successBg,
+                    borderRadius: CasamaSpacing.roundedPill,
                   ),
                   child: Text(
-                    badge,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: context.isDark
-                          ? const Color(0xFF81C784)
-                          : CasamaColors.successGreen,
+                    badge!,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: pal.successFg,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -193,53 +227,59 @@ class _TermsConsentScreenState extends ConsumerState<TermsConsentScreen> {
           const SizedBox(height: 10),
           Text(
             summary,
-            style: TextStyle(
+            style: theme.textTheme.bodySmall?.copyWith(
               fontSize: 13,
-              color: context.textSecondaryColor,
-              height: 1.4,
+              color: pal.textSecondary,
+              height: 1.45,
             ),
           ),
           const SizedBox(height: 8),
-          GestureDetector(
+          CasamaPressable(
             onTap: onReadMore,
-            child: const Text(
-              'Read Full Document ➔',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: CasamaColors.primaryCoral,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                'Read Full Document ➔',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: pal.primaryCoral,
+                ),
               ),
             ),
           ),
           const SizedBox(height: 8),
-          Divider(height: 1, color: context.borderColor),
+          Divider(height: 1, color: pal.divider),
           const SizedBox(height: 6),
-          Row(
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: Checkbox(
-                  value: isChecked,
-                  activeColor: CasamaColors.primaryCoral,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  onChanged: onChanged,
-                ),
+          CasamaPressable(
+            onTap: () => onChanged(!isChecked),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: CasamaSpacing.minTouchTarget,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  checkboxLabel,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: context.textColor,
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: isChecked,
+                    activeColor: pal.primaryCoral,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    onChanged: (v) => onChanged(v ?? false),
                   ),
-                ),
+                  Expanded(
+                    child: Text(
+                      checkboxLabel,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: pal.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),

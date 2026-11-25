@@ -52,7 +52,7 @@ void main() {
       expect(find.text('Casama'), findsWidgets);
       expect(
         find.text(
-          'Making shared living\nsimpler, warmer, and more coordinated.',
+          'Making shared living simpler, warmer, and more coordinated.',
         ),
         findsOneWidget,
       );
@@ -69,7 +69,7 @@ void main() {
     await tester.pump();
     expect(find.text('Casama'), findsWidgets);
     expect(
-      find.text('Making shared living\nsimpler, warmer, and more coordinated.'),
+      find.text('Making shared living simpler, warmer, and more coordinated.'),
       findsOneWidget,
     );
   });
@@ -82,15 +82,15 @@ void main() {
     );
 
     expect(find.text('Create an Account'), findsOneWidget);
-    expect(find.text('Log In'), findsOneWidget);
+    expect(find.text('Log In'), findsWidgets);
     expect(find.text('Email Address'), findsOneWidget);
-    expect(find.text('Continue to Profile Details'), findsOneWidget);
+    expect(find.text('Create Account'), findsOneWidget);
 
     // Switch to Log In tab
-    await tester.tap(find.text('Log In'));
+    await tester.tap(find.text('Log In').first);
     await tester.pumpAndSettle();
-    expect(find.text('Welcome Back! 👋'), findsOneWidget);
-    expect(find.text('One-Tap Demo Login (JP - Casa 204)'), findsOneWidget);
+    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('One-Tap Demo Login'), findsOneWidget);
   });
 
   testWidgets(
@@ -100,7 +100,7 @@ void main() {
         const ProviderScope(child: MaterialApp(home: OptionalProfileScreen())),
       );
 
-      expect(find.text('Tell Us About You 👋'), findsOneWidget);
+      expect(find.text('Tell Us About You'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
       expect(find.text('Nickname'), findsOneWidget);
       expect(find.text('Age (Optional)'), findsOneWidget);
@@ -134,10 +134,10 @@ void main() {
     'DevicePermissionsScreen explains relevant permissions with skippable options',
     (WidgetTester tester) async {
       await tester.pumpWidget(
-        const MaterialApp(home: DevicePermissionsScreen()),
+        const ProviderScope(child: MaterialApp(home: DevicePermissionsScreen())),
       );
 
-      expect(find.text('Device Permissions 📱'), findsOneWidget);
+      expect(find.text('Device Permissions'), findsOneWidget);
       expect(find.text('Push Notifications'), findsOneWidget);
       expect(find.text('Camera & Photo Library'), findsOneWidget);
       expect(find.text('Contacts Assistance'), findsOneWidget);
@@ -174,29 +174,29 @@ void main() {
       );
 
       // Initial step: Home
-      expect(find.text('1. Home Dashboard & Calendar 🏠'), findsOneWidget);
+      expect(find.text('1. Home Dashboard & Calendar'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
       expect(find.text('Next Navigation Element'), findsOneWidget);
 
       // Advance to Step 2: Boards
       await tester.tap(find.text('Next Navigation Element'));
       await tester.pumpAndSettle();
-      expect(find.text('2. Household Boards 📦'), findsOneWidget);
+      expect(find.text('2. Unified Household Boards'), findsOneWidget);
 
-      // Advance to Step 3: Plus (+)
+      // Advance to Step 3: CASnap
       await tester.tap(find.text('Next Navigation Element'));
       await tester.pumpAndSettle();
-      expect(find.text('3. Plus (+) Quick Actions ➕'), findsOneWidget);
+      expect(find.text('3. CASnap Household Moments'), findsOneWidget);
 
       // Advance to Step 4: Chat
       await tester.tap(find.text('Next Navigation Element'));
       await tester.pumpAndSettle();
-      expect(find.text('4. Household Chat & Connect 💬'), findsOneWidget);
+      expect(find.text('4. Household Chat & Meet-ups'), findsOneWidget);
 
       // Advance to Step 5: Profile
       await tester.tap(find.text('Next Navigation Element'));
       await tester.pumpAndSettle();
-      expect(find.text('5. Profile & Settings ⚙️'), findsOneWidget);
+      expect(find.text('5. Profile, Roulette & Points'), findsOneWidget);
       expect(find.text('Enter Home Dashboard'), findsOneWidget);
     },
   );
@@ -1396,7 +1396,7 @@ void main() {
   );
 
   testWidgets(
-    'BoardsScreen displays Bills & Payments card and navigates to BillsDashboard',
+    'BoardsScreen displays unified 4-tab boards hub and switches to Bills tab',
     (tester) async {
       await tester.pumpWidget(
         const ProviderScope(child: MaterialApp(home: BoardsScreen())),
@@ -1404,16 +1404,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Parcels & Deliveries'), findsOneWidget);
-      expect(find.text('Lost & Found Items'), findsOneWidget);
-      expect(find.text('Maintenance & Restock'), findsOneWidget);
-      expect(find.text('Chore Roulette'), findsOneWidget);
+      expect(find.text('Parcels'), findsOneWidget);
+      expect(find.text('Tasks'), findsOneWidget);
+      expect(find.text('Bills'), findsOneWidget);
+      expect(find.text('Items'), findsOneWidget);
+      expect(find.text('Add parcel'), findsOneWidget);
+
+      await tester.tap(find.text('Bills'));
+      await tester.pumpAndSettle();
+
       expect(find.text('Bills & Payments'), findsOneWidget);
-      expect(
-        find.text(
-          'Track household bills, set reminders, and never miss a deadline',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('Edit billings'), findsOneWidget);
     },
   );
 
@@ -1453,7 +1454,7 @@ void main() {
       expect(find.text('No moments shared yet today'), findsOneWidget);
       expect(find.text('Take QuickSnap'), findsOneWidget);
 
-      // Now add a snap and verify active state
+      // Now add a snap and verify 3x2 Shared CASnaps state
       mockRepo.sendQuickSnap(
         imageUrl: 'https://images.unsplash.com/photo-test',
         caption: 'Balcony sunrise',
@@ -1461,10 +1462,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Household QuickSnap'), findsOneWidget);
+      expect(find.text('Shared CASnaps'), findsOneWidget);
       expect(find.text('Snap Back'), findsOneWidget);
-      expect(find.text('😍'), findsWidgets);
-      expect(find.text('🔥'), findsWidgets);
+      expect(find.text('View all ›'), findsOneWidget);
+      expect(find.textContaining('Browse all 1 shared shot'), findsOneWidget);
     },
   );
 
@@ -1681,7 +1682,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Take Profile Photo'), findsNothing);
-      expect(find.text('Tell Us About You 👋'), findsOneWidget);
+      expect(find.text('Tell Us About You'), findsOneWidget);
     },
   );
 

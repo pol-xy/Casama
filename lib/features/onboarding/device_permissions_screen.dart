@@ -1,24 +1,73 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
+import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_wave_header.dart';
+import '../auth/widgets/auth_wave_header.dart';
 
-class DevicePermissionsScreen extends StatefulWidget {
-  const DevicePermissionsScreen({super.key});
+class DevicePermissionsScreen extends ConsumerStatefulWidget {
+  final bool isOnboarding;
+
+  const DevicePermissionsScreen({super.key, this.isOnboarding = true});
 
   @override
-  State<DevicePermissionsScreen> createState() =>
+  ConsumerState<DevicePermissionsScreen> createState() =>
       _DevicePermissionsScreenState();
 }
 
-class _DevicePermissionsScreenState extends State<DevicePermissionsScreen> {
-  bool _notificationsAllowed = true;
+class _DevicePermissionsScreenState
+    extends ConsumerState<DevicePermissionsScreen> {
+  late bool _notificationsAllowed;
   bool _cameraPhotosAllowed = true;
   bool _contactsAllowed = false;
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isOnboarding) {
+      _notificationsAllowed = true;
+    } else {
+      final prefs = ref.read(repositoryProvider).notificationPreferences;
+      _notificationsAllowed =
+          prefs.householdUpdates ||
+          prefs.parcelNotifications ||
+          prefs.taskReminders ||
+          prefs.chatNotifications;
+    }
+  }
+
+  void _savePreferences(bool notifications) {
+    ref
+        .read(repositoryProvider)
+        .updateNotificationPreferences(
+          householdUpdates: notifications,
+          parcelNotifications: notifications,
+          taskReminders: notifications,
+          chatNotifications: notifications,
+        );
+  }
+
   void _continue() {
+    _savePreferences(_notificationsAllowed);
+    if (!widget.isOnboarding) {
+      showCasamaToast(
+        context,
+        'Permission preferences updated',
+        icon: Icons.check_circle_outline_rounded,
+      );
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/settings');
+      }
+      return;
+    }
     context.push('/intro');
   }
 
@@ -28,238 +77,203 @@ class _DevicePermissionsScreenState extends State<DevicePermissionsScreen> {
       _cameraPhotosAllowed = false;
       _contactsAllowed = false;
     });
+    _savePreferences(false);
     context.push('/intro');
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Permissions'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => context.pop(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: _skipAll,
-            child: Text(
-              'Skip All',
-              style: TextStyle(
-                color: context.textSecondaryColor,
-                fontWeight: FontWeight.w600,
-              ),
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return CasamaAuthShell(
+      stepLabel: widget.isOnboarding ? 'Step 4 of 4' : null,
+      skipLabel: widget.isOnboarding ? 'Skip All' : null,
+      onSkip: widget.isOnboarding ? _skipAll : null,
+      onBack: () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(widget.isOnboarding ? '/household-setup' : '/settings');
+        }
+      },
+      mascotPose: CasPose.standing,
+      mascotAlignment: Alignment.bottomRight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Device Permissions',
+            style: theme.textTheme.headlineLarge?.copyWith(
+              color: pal.textPrimary,
             ),
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.xl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: CasamaSpacing.sm),
-              Text(
-                'Device Permissions 📱',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: context.textColor,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Step 4 of 4: Casama requests only what is needed for shared living coordination. You can customize or skip each permission.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: context.textSecondaryColor,
-                  height: 1.45,
-                ),
-              ),
-              const SizedBox(height: CasamaSpacing.lg),
-
-              // Permission 1: Push Notifications
-              _buildPermissionTile(
-                icon: Icons.notifications_active_outlined,
-                iconBg: context.isDark
-                    ? CasamaColors.darkTileParcels
-                    : CasamaColors.tileParcels,
-                iconColor: CasamaColors.primaryCoral,
-                title: 'Push Notifications',
-                badge: 'Recommended',
-                reason: 'Receive timely alerts when a delivery arrives, when housemates request COD payment assistance, or when someone schedules a household gathering.',
-                value: _notificationsAllowed,
-                onChanged: (val) => setState(() => _notificationsAllowed = val),
-              ),
-              const SizedBox(height: CasamaSpacing.md),
-
-              // Permission 2: Camera & Photos
-              _buildPermissionTile(
-                icon: Icons.photo_camera_outlined,
-                iconBg: context.isDark
-                    ? CasamaColors.darkTileLostFound
-                    : CasamaColors.tileLostFound,
-                iconColor: CasamaColors.deepTeal,
-                title: 'Camera & Photo Library',
-                badge: 'Recommended',
-                reason: 'Take or attach photos of parcel delivery slips, items for the Lost & Found board, and maintenance repair receipts.',
-                value: _cameraPhotosAllowed,
-                onChanged: (val) => setState(() => _cameraPhotosAllowed = val),
-              ),
-              const SizedBox(height: CasamaSpacing.md),
-
-              // Permission 3: Contacts (Optional)
-              _buildPermissionTile(
-                icon: Icons.contacts_outlined,
-                iconBg: context.isDark
-                    ? CasamaColors.darkTileChat
-                    : CasamaColors.tileChat,
-                iconColor: const Color(0xFF3949AB),
-                title: 'Contacts Assistance',
-                badge: 'Optional',
-                reason: 'Help you quickly share your household invite code (CASA204) directly with roommates from your contact list.',
-                value: _contactsAllowed,
-                onChanged: (val) => setState(() => _contactsAllowed = val),
-              ),
-              const SizedBox(height: CasamaSpacing.xl),
-
-              // Action Buttons
-              CasamaButton(
-                label: 'Save & Continue',
-                isPill: true,
-                height: 52,
-                onPressed: _continue,
-              ),
-              const SizedBox(height: CasamaSpacing.sm),
-
-              CasamaButton(
-                label: 'Skip All for Now',
-                style: CasamaButtonStyle.ghost,
-                onPressed: _skipAll,
-                height: 44,
-              ),
-              const SizedBox(height: CasamaSpacing.xxl),
-            ],
+          const SizedBox(height: 6),
+          Text(
+            'Casama requests only what supports household coordination. You can toggle or adjust these anytime.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: pal.textSecondary,
+              height: 1.45,
+            ),
           ),
-        ),
+          const SizedBox(height: CasamaSpacing.lg),
+
+          _buildPermissionTile(
+            context: context,
+            icon: Icons.notifications_active_outlined,
+            iconBg: pal.softBlush,
+            iconColor: pal.primaryCoral,
+            title: 'Push Notifications',
+            badge: 'Recommended',
+            isRecommended: true,
+            reason:
+                'Receive timely alerts when deliveries arrive, bills need attention, or housemates post updates.',
+            value: _notificationsAllowed,
+            onChanged: (val) => setState(() => _notificationsAllowed = val),
+          ),
+          const SizedBox(height: CasamaSpacing.md),
+
+          _buildPermissionTile(
+            context: context,
+            icon: Icons.photo_camera_outlined,
+            iconBg: pal.softSage,
+            iconColor: pal.forestTeal,
+            title: 'Camera & Photo Library',
+            badge: 'Recommended',
+            isRecommended: true,
+            reason:
+                'Capture CASnap moments, photograph parcel delivery slips, or attach photos for household items.',
+            value: _cameraPhotosAllowed,
+            onChanged: (val) => setState(() => _cameraPhotosAllowed = val),
+          ),
+          const SizedBox(height: CasamaSpacing.md),
+
+          _buildPermissionTile(
+            context: context,
+            icon: Icons.contacts_outlined,
+            iconBg: pal.infoBg,
+            iconColor: pal.infoFg,
+            title: 'Contacts Assistance',
+            badge: 'Optional',
+            isRecommended: false,
+            reason:
+                'Quickly invite housemates from your contact list using your household invite code.',
+            value: _contactsAllowed,
+            onChanged: (val) => setState(() => _contactsAllowed = val),
+          ),
+          const SizedBox(height: CasamaSpacing.xl),
+
+          CasamaButton(
+            label: 'Save & Continue',
+            isPill: true,
+            height: 50,
+            onPressed: _continue,
+          ),
+          if (widget.isOnboarding) ...[
+            const SizedBox(height: CasamaSpacing.xs),
+            CasamaButton(
+              label: 'Skip All for Now',
+              style: CasamaButtonStyle.ghost,
+              onPressed: _skipAll,
+              height: 48,
+            ),
+          ],
+        ],
       ),
     );
   }
 
   Widget _buildPermissionTile({
+    required BuildContext context,
     required IconData icon,
     required Color iconBg,
     required Color iconColor,
     required String title,
     required String badge,
+    required bool isRecommended,
     required String reason,
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    final isDark = context.isDark;
+    final pal = context.palette;
+    final theme = Theme.of(context);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: CasamaSpacing.roundedLg,
-        border: Border.all(color: context.borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: CasamaSpacing.roundedLg,
-          onTap: () => onChanged(!value),
-          child: Padding(
-            padding: const EdgeInsets.all(CasamaSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Semantics(
+      toggled: value,
+      label: '$title, $badge',
+      child: CasamaCard(
+        padding: const EdgeInsets.all(CasamaSpacing.md),
+        onTap: () => onChanged(!value),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: iconBg,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(icon, color: iconColor, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: context.textColor,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2.5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: badge == 'Recommended'
-                                  ? (isDark
-                                        ? const Color(0xFF1B382B)
-                                        : CasamaColors.successBg)
-                                  : (isDark
-                                        ? CasamaColors.darkSurface
-                                        : CasamaColors.softNeutral),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              badge,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: badge == 'Recommended'
-                                    ? (isDark
-                                          ? const Color(0xFF81C784)
-                                          : CasamaColors.successGreen)
-                                    : context.textSecondaryColor,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Switch(
-                      value: value,
-                      activeTrackColor: CasamaColors.primaryCoral,
-                      onChanged: onChanged,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  reason,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
-                    height: 1.45,
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    shape: BoxShape.circle,
                   ),
+                  child: Icon(icon, color: iconColor, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: pal.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isRecommended ? pal.successBg : pal.neutralBg,
+                          borderRadius: CasamaSpacing.roundedPill,
+                        ),
+                        child: Text(
+                          badge,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isRecommended
+                                ? pal.successFg
+                                : pal.neutralFg,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Switch(
+                  value: value,
+                  activeTrackColor: CasamaColors.primaryCoral,
+                  onChanged: onChanged,
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              reason,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: pal.textSecondary,
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+            ),
+          ],
         ),
       ),
     );

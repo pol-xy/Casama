@@ -8,8 +8,13 @@ import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/casama_avatar.dart';
+import '../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../shared/widgets/casama_wave_header.dart';
+import 'widgets/chat_thread_components.dart';
 
 class ChatSpaceScreen extends ConsumerStatefulWidget {
   final String spaceId;
@@ -51,12 +56,17 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
   }
 
   void _scrollToBottom() {
+    final reduced = CasamaMotion.reduceMotion(context);
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
+      if (!_scrollController.hasClients) return;
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      if (reduced) {
+        _scrollController.jumpTo(maxExtent);
+      } else {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
+          maxExtent,
+          duration: CasamaMotion.sheet,
+          curve: CasamaMotion.easeOut,
         );
       }
     });
@@ -71,7 +81,7 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
         maxHeight: 1024,
         imageQuality: 80,
       );
-      if (picked != null) {
+      if (picked != null && mounted) {
         final bytes = await picked.readAsBytes();
         final base64String = 'data:image/jpeg;base64,${base64Encode(bytes)}';
         ref
@@ -85,9 +95,11 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showCasamaToast(
           context,
-        ).showSnackBar(SnackBar(content: Text('Could not attach image: $e')));
+          'Could not attach image: $e',
+          icon: Icons.error_outline_rounded,
+        );
       }
     }
   }
@@ -105,384 +117,297 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
   }
 
   void _showAttachmentMenu(BuildContext context, ChatSpace space) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: context.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: context.borderColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 14),
-              ListTile(
-                leading: const Icon(
-                  Icons.camera_alt_outlined,
-                  color: CasamaColors.primaryCoral,
-                ),
-                title: Text(
-                  'Take Photo',
-                  style: TextStyle(
-                    color: context.textColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickAndSendPhoto(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.photo_library_outlined,
-                  color: Color(0xFF1E88E5),
-                ),
-                title: Text(
-                  'Choose from Gallery',
-                  style: TextStyle(
-                    color: context.textColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickAndSendPhoto(ImageSource.gallery);
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(
-                  Icons.vpn_key_rounded,
-                  color: CasamaColors.homeGreen,
-                ),
-                title: Text(
-                  'Share Space Invite Code (${space.inviteCode})',
-                  style: TextStyle(
-                    color: context.textColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                subtitle: Text(
-                  'Share into this space so members can invite other housemates',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: context.textSecondaryColor,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _shareSpaceCode(space);
-                },
-              ),
-            ],
+    final pal = context.palette;
+
+    showCasamaSheet<void>(
+      context,
+      icon: Icons.add_circle_outline_rounded,
+      title: 'Share in ${space.name}',
+      subtitle: 'Attach photos or post this space invite code',
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CasamaSheetActionRow(
+            icon: Icons.camera_alt_outlined,
+            iconColor: pal.primaryCoral,
+            iconBg: pal.softBlush,
+            title: 'Take Photo',
+            onTap: () {
+              Navigator.pop(ctx);
+              _pickAndSendPhoto(ImageSource.camera);
+            },
           ),
-        ),
+          CasamaSheetActionRow(
+            icon: Icons.photo_library_outlined,
+            iconColor: pal.infoFg,
+            iconBg: pal.infoBg,
+            title: 'Choose from Gallery',
+            onTap: () {
+              Navigator.pop(ctx);
+              _pickAndSendPhoto(ImageSource.gallery);
+            },
+          ),
+          Divider(height: 16, color: pal.divider),
+          CasamaSheetActionRow(
+            icon: Icons.vpn_key_rounded,
+            iconColor: pal.successFg,
+            iconBg: pal.successBg,
+            title: 'Share Space Invite Code (${space.inviteCode})',
+            subtitle:
+                'Share into this space so members can invite other housemates',
+            onTap: () {
+              Navigator.pop(ctx);
+              _shareSpaceCode(space);
+            },
+          ),
+        ],
       ),
     );
   }
 
   void _showSpaceInfoSheet(BuildContext context, ChatSpace space) {
-    final repo = ref.read(repositoryProvider);
-    final allHouseholdMembers = repo.members
+    final allHouseholdMembers = ref
+        .read(repositoryProvider)
+        .members
         .map((m) => m.profile.displayName)
         .toList();
-    final nonMembers = allHouseholdMembers
-        .where((name) => !space.memberNames.contains(name))
-        .toList();
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    showCasamaSheet<void>(
+      context,
+      icon: Icons.forum_rounded,
+      title: '${space.iconEmoji} ${space.name}',
+      subtitle:
+          'Created by ${space.creatorName} • ${space.memberNames.length} members',
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
+        builder: (innerCtx, setModalState) {
+          final pal = innerCtx.palette;
+          final theme = Theme.of(innerCtx);
           final currentSpace = ref
               .watch(repositoryProvider)
               .chatSpaces
               .firstWhere((s) => s.id == widget.spaceId, orElse: () => space);
+          final nonMembers = allHouseholdMembers
+              .where((name) => !currentSpace.memberNames.contains(name))
+              .toList();
 
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: context.borderColor,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (currentSpace.description.isNotEmpty) ...[
+                Text(
+                  currentSpace.description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: pal.textSecondary,
+                    fontSize: 13,
                   ),
-                  const SizedBox(height: 14),
-
-                  // Header
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: context.isDark
-                              ? CasamaColors.darkSurface
-                              : CasamaColors.tileChat,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          currentSpace.iconEmoji,
-                          style: const TextStyle(fontSize: 24),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              currentSpace.name,
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: context.textColor,
-                              ),
-                            ),
-                            Text(
-                              'Created by ${currentSpace.creatorName} • ${currentSpace.memberNames.length} members',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: context.textSecondaryColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (currentSpace.description.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+                ),
+                const SizedBox(height: CasamaSpacing.md),
+              ],
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: pal.track,
+                  borderRadius: CasamaSpacing.roundedCard,
+                  border: Border.all(color: pal.border),
+                ),
+                child: Column(
+                  children: [
                     Text(
-                      currentSpace.description,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: context.textSecondaryColor,
+                      'SPACE INVITATION CODE',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        letterSpacing: 1.2,
+                        color: pal.textMuted,
                       ),
                     ),
-                  ],
-                  const SizedBox(height: 16),
-
-                  // Space Invite Code Card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: context.isDark
-                          ? CasamaColors.darkSurface
-                          : CasamaColors.softNeutral,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: context.borderColor),
-                    ),
-                    child: Column(
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'SPACE INVITATION CODE',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2,
-                            color: context.textMutedColor,
+                          currentSpace.inviteCode,
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 3,
+                            color: pal.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              currentSpace.inviteCode,
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 3,
-                                color: context.textColor,
+                        const SizedBox(width: 10),
+                        Semantics(
+                          button: true,
+                          label: 'Copy space code',
+                          child: CasamaPressable(
+                            onTap: () {
+                              Clipboard.setData(
+                                ClipboardData(text: currentSpace.inviteCode),
+                              );
+                              showCasamaToast(
+                                context,
+                                'Copied space code "${currentSpace.inviteCode}"!',
+                                icon: Icons.copy_rounded,
+                              );
+                            },
+                            child: Container(
+                              width: CasamaSpacing.minTouchTarget,
+                              height: CasamaSpacing.minTouchTarget,
+                              decoration: BoxDecoration(
+                                color: pal.surface,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: pal.border),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            IconButton(
-                              icon: const Icon(
+                              child: Icon(
                                 Icons.copy_rounded,
-                                color: CasamaColors.primaryCoral,
+                                color: pal.primaryCoral,
                                 size: 20,
                               ),
-                              tooltip: 'Copy Code',
-                              onPressed: () {
-                                Clipboard.setData(
-                                  ClipboardData(text: currentSpace.inviteCode),
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Copied space code "${currentSpace.inviteCode}" to clipboard!',
-                                    ),
-                                    backgroundColor: CasamaColors.midnightNavy,
-                                  ),
-                                );
-                              },
                             ),
-                          ],
-                        ),
-                        Text(
-                          'Housemates can enter this code in Chat to join instantly.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: context.textSecondaryColor,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Member list
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Space Members (${currentSpace.memberNames.length})',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: context.textColor,
-                        ),
-                      ),
-                      if (nonMembers.isNotEmpty)
-                        Text(
-                          '${nonMembers.length} available to add',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textSecondaryColor,
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: currentSpace.memberNames.map((name) {
-                      return Chip(
-                        backgroundColor: context.cardColor,
-                        side: BorderSide(color: context.borderColor),
-                        avatar: CircleAvatar(
-                          backgroundColor: CasamaColors.primaryCoral,
-                          child: Text(
-                            name.isNotEmpty ? name[0] : '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                        label: Text(
-                          name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textColor,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  // Creator can add directly
-                  if (nonMembers.isNotEmpty) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 4),
                     Text(
-                      'Add Housemates Directly:',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: context.textColor,
+                      'Housemates can enter this code in Chat to join instantly.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11.5,
+                        color: pal.textSecondary,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    ...nonMembers.map((name) {
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: CircleAvatar(
-                          radius: 14,
-                          backgroundColor: context.tileChatColor,
-                          child: Text(
-                            name.isNotEmpty ? name[0] : '?',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: context.textColor,
-                            ),
-                          ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: CasamaSpacing.md),
+              SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      'Space Members (${currentSpace.memberNames.length})',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: pal.textPrimary,
+                      ),
+                    ),
+                    if (nonMembers.isNotEmpty)
+                      Text(
+                        '${nonMembers.length} available to add',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 12,
+                          color: pal.textSecondary,
                         ),
-                        title: Text(
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: CasamaSpacing.xs),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: currentSpace.memberNames.map((name) {
+                  return Container(
+                    padding: const EdgeInsets.only(
+                      left: 5,
+                      right: 12,
+                      top: 5,
+                      bottom: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: pal.card,
+                      borderRadius: CasamaSpacing.roundedPill,
+                      border: Border.all(color: pal.border),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CasamaAvatar(radius: 12, name: name),
+                        const SizedBox(width: 6),
+                        Text(
                           name,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: context.textColor,
-                            fontWeight: FontWeight.w600,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: pal.textPrimary,
                           ),
                         ),
-                        trailing: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: CasamaColors.midnightNavy,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+              if (nonMembers.isNotEmpty) ...[
+                const SizedBox(height: CasamaSpacing.md),
+                Text(
+                  'Add Housemates Directly:',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: pal.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: CasamaSpacing.xs),
+                ...nonMembers.map((name) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        CasamaAvatar(radius: 16, name: name),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: pal.textPrimary,
                             ),
-                            visualDensity: VisualDensity.compact,
                           ),
-                          icon: const Icon(Icons.add, size: 14),
-                          label: const Text(
-                            'Add',
-                            style: TextStyle(fontSize: 11),
-                          ),
-                          onPressed: () {
+                        ),
+                        CasamaPressable(
+                          onTap: () {
                             ref
                                 .read(repositoryProvider)
                                 .addMemberToSpace(currentSpace.id, name);
                             setModalState(() {});
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Added $name to ${currentSpace.name}!',
-                                ),
-                                backgroundColor: CasamaColors.midnightNavy,
-                              ),
+                            showCasamaToast(
+                              context,
+                              'Added $name to ${currentSpace.name}!',
+                              icon: Icons.check_circle_outline_rounded,
                             );
                           },
+                          child: Container(
+                            height: 38,
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: pal.forestTeal,
+                              borderRadius: CasamaSpacing.roundedPill,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.add_rounded,
+                                  size: 16,
+                                  color: pal.onForestTeal,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Add',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: pal.onForestTeal,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      );
-                    }),
-                  ],
-                  const SizedBox(height: 14),
-                ],
-              ),
-            ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ],
           );
         },
       ),
@@ -491,6 +416,8 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
     final space = repo.chatSpaces.firstWhere(
       (s) => s.id == widget.spaceId,
@@ -510,82 +437,78 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
     );
 
     return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: GestureDetector(
-          onTap: () => _showSpaceInfoSheet(context, space),
-          child: Row(
-            children: [
-              Text(space.iconEmoji, style: const TextStyle(fontSize: 22)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      space.name,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: context.textColor,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      '${space.memberNames.length} members • Code: ${space.inviteCode}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: context.textSecondaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.info_outline, color: context.textColor),
-            tooltip: 'Space Details & Code',
-            onPressed: () => _showSpaceInfoSheet(context, space),
-          ),
-        ],
-      ),
-      body: SafeArea(
+      backgroundColor: pal.scaffoldBg,
+      body: CasamaAmbientCanvas(
         child: Column(
           children: [
-            // Messages list
+            CasamaChatThreadHeader(
+              title: space.name,
+              subtitle:
+                  '${space.memberNames.length} members • Code: ${space.inviteCode}',
+              onBack: () {
+                if (Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+              },
+              onTitleTap: () => _showSpaceInfoSheet(context, space),
+              leadingBadge: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: CasamaSpacing.roundedMd,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.28),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  space.iconEmoji,
+                  style: const TextStyle(fontSize: 22),
+                ),
+              ),
+              rightActions: [
+                CasamaCircleIconButton(
+                  icon: Icons.info_outline_rounded,
+                  semanticLabel: 'Space Details & Code',
+                  onTap: () => _showSpaceInfoSheet(context, space),
+                ),
+              ],
+            ),
             Expanded(
               child: space.messages.isEmpty
                   ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            space.iconEmoji,
-                            style: const TextStyle(fontSize: 48),
+                      child: Padding(
+                        padding: const EdgeInsets.all(CasamaSpacing.lg),
+                        child: CasamaCard(
+                          padding: const EdgeInsets.all(CasamaSpacing.lg),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                space.iconEmoji,
+                                style: const TextStyle(fontSize: 44),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Welcome to ${space.name}!',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: pal.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Share updates or invite housemates using code ${space.inviteCode}',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: pal.textSecondary,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Welcome to ${space.name}!',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: context.textColor,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Share updates or invite housemates using code ${space.inviteCode}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: context.textSecondaryColor,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     )
                   : ListView.builder(
@@ -597,304 +520,26 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
                       itemCount: space.messages.length,
                       itemBuilder: (context, index) {
                         final msg = space.messages[index];
-                        return _buildSpaceMessageBubble(msg);
+                        return CasamaMessageBubble(
+                          message: msg,
+                          timeLabel: DateFormat('h:mm a').format(msg.createdAt),
+                        );
                       },
                     ),
             ),
-
-            // Composer bar
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: CasamaSpacing.md,
-                vertical: CasamaSpacing.sm,
-              ),
-              decoration: BoxDecoration(
-                color: context.surfaceColor,
-                border: Border(top: BorderSide(color: context.borderColor)),
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.add_circle_outline_rounded,
-                      color: CasamaColors.primaryCoral,
-                      size: 24,
-                    ),
-                    tooltip: 'Attach photo or Share code',
-                    onPressed: () => _showAttachmentMenu(context, space),
-                  ),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: context.isDark
-                            ? CasamaColors.darkSurface
-                            : const Color(0xFFF8F9FA),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: context.borderColor),
-                      ),
-                      child: TextField(
-                        controller: _msgController,
-                        onSubmitted: (_) => _sendMessage(),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: context.textColor,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Message in ${space.name}...',
-                          hintStyle: TextStyle(
-                            fontSize: 14,
-                            color: context.textMutedColor,
-                          ),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: const BoxDecoration(
-                      color: CasamaColors.midnightNavy,
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.send_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                      onPressed: _sendMessage,
-                    ),
-                  ),
-                ],
+            SafeArea(
+              top: false,
+              child: CasamaChatComposer(
+                controller: _msgController,
+                hintText: 'Message in ${space.name}...',
+                attachIcon: Icons.add_circle_outline_rounded,
+                attachTooltip: 'Attach photo or Share code',
+                onAttach: () => _showAttachmentMenu(context, space),
+                onSend: _sendMessage,
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSpaceMessageBubble(ChatMessage msg) {
-    final isMe = msg.isCurrentUser;
-    final timeStr = DateFormat('h:mm a').format(msg.createdAt);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: isMe
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isMe) ...[
-            CircleAvatar(
-              radius: 14,
-              backgroundColor: CasamaColors.borderGray,
-              child: Text(
-                msg.senderName.isNotEmpty ? msg.senderName[0] : '?',
-                style: const TextStyle(fontSize: 10, color: Colors.white),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isMe
-                    ? (context.isDark
-                          ? CasamaColors.darkSurface
-                          : CasamaColors.midnightNavy)
-                    : context.cardColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isMe ? 16 : 4),
-                  bottomRight: Radius.circular(isMe ? 4 : 16),
-                ),
-                border: isMe
-                    ? (context.isDark
-                          ? Border.all(color: context.borderColor)
-                          : null)
-                    : Border.all(color: context.borderColor),
-              ),
-              child: Column(
-                crossAxisAlignment: isMe
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
-                children: [
-                  if (!isMe)
-                    Text(
-                      msg.senderName,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: CasamaColors.primaryCoral,
-                      ),
-                    ),
-                  if (msg.mediaUrl != null && msg.mediaUrl!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: msg.mediaUrl!.startsWith('data:image')
-                          ? Image.memory(
-                              base64Decode(msg.mediaUrl!.split(',').last),
-                              width: 200,
-                              height: 140,
-                              fit: BoxFit.cover,
-                            )
-                          : Image.network(
-                              msg.mediaUrl!,
-                              width: 200,
-                              height: 140,
-                              fit: BoxFit.cover,
-                            ),
-                    ),
-                    const SizedBox(height: 6),
-                  ],
-                  // If sharing invitation code card
-                  if (msg.inviteCode != null) ...[
-                    Container(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: isMe
-                            ? Colors.white.withValues(alpha: 0.15)
-                            : (context.isDark
-                                  ? CasamaColors.darkBackground
-                                  : CasamaColors.softNeutral),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isMe
-                              ? Colors.white.withValues(alpha: 0.3)
-                              : context.borderColor,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.vpn_key_rounded,
-                                size: 16,
-                                color: CasamaColors.primaryCoral,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                msg.inviteSpaceName ?? 'Invite Code',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: isMe
-                                      ? Colors.white
-                                      : context.textColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            msg.inviteCode!,
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 2,
-                              color: isMe
-                                  ? Colors.white
-                                  : CasamaColors.primaryCoral,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          GestureDetector(
-                            onTap: () {
-                              Clipboard.setData(
-                                ClipboardData(text: msg.inviteCode!),
-                              );
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Copied code "${msg.inviteCode}"!',
-                                  ),
-                                ),
-                              );
-                            },
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.copy_rounded,
-                                  size: 13,
-                                  color: isMe
-                                      ? Colors.white.withValues(alpha: 0.8)
-                                      : context.textSecondaryColor,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Tap to copy code',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: isMe
-                                        ? Colors.white.withValues(alpha: 0.8)
-                                        : context.textSecondaryColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ] else ...[
-                    Text(
-                      msg.content,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isMe ? Colors.white : context.textColor,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 3),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        timeStr,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: isMe
-                              ? Colors.white.withValues(alpha: 0.7)
-                              : context.textMutedColor,
-                        ),
-                      ),
-                      if (isMe) ...[
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.done_all,
-                          size: 13,
-                          color: msg.isRead
-                              ? CasamaColors.primaryCoral
-                              : Colors.white.withValues(alpha: 0.6),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isMe) const SizedBox(width: 4),
-        ],
       ),
     );
   }

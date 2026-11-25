@@ -3,237 +3,279 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_filter_controls.dart';
+import '../../shared/widgets/casama_wave_header.dart';
 
 class TermsPrivacyScreen extends StatefulWidget {
-  const TermsPrivacyScreen({super.key});
+  final bool readOnly;
+
+  const TermsPrivacyScreen({super.key, this.readOnly = false});
 
   @override
   State<TermsPrivacyScreen> createState() => _TermsPrivacyScreenState();
 }
 
-class _TermsPrivacyScreenState extends State<TermsPrivacyScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _TermsPrivacyScreenState extends State<TermsPrivacyScreen> {
+  int _selectedTab = 0;
+  int _previousTab = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  void _selectTab(int idx) {
+    if (idx == _selectedTab) return;
+    setState(() {
+      _previousTab = _selectedTab;
+      _selectedTab = idx;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final pal = context.palette;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final maxW = CasamaBreakpoints.isTablet(context)
+        ? CasamaBreakpoints.maxContentWidth
+        : double.infinity;
+
     return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Terms & Privacy'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => context.pop(),
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: CasamaColors.primaryCoral,
-          labelColor: CasamaColors.primaryCoral,
-          unselectedLabelColor: context.textSecondaryColor,
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-          tabs: const [
-            Tab(text: 'Terms'),
-            Tab(text: 'Privacy'),
-            Tab(text: 'Permissions'),
-          ],
-        ),
-      ),
-      body: SafeArea(
+      backgroundColor: pal.scaffoldBg,
+      body: CasamaAmbientCanvas(
         child: Column(
           children: [
+            CasamaWaveHeader(
+              title: 'Terms & Privacy',
+              subtitle: 'Zero background GPS • Household-isolated rules',
+              compact: true,
+              onBackTap: () {
+                if (Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                } else {
+                  GoRouter.maybeOf(context)?.pop();
+                }
+              },
+            ),
+            Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxW),
+                child: CasamaSegmentedTrack<int>(
+                  selectedValue: _selectedTab,
+                  onSelected: _selectTab,
+                  segments: const [
+                    CasamaFilterOption(value: 0, label: 'Terms'),
+                    CasamaFilterOption(value: 1, label: 'Privacy'),
+                    CasamaFilterOption(value: 2, label: 'Permissions'),
+                  ],
+                ),
+              ),
+            ),
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildTermsTab(),
-                  _buildPrivacyTab(),
-                  _buildPermissionsTab(),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(CasamaSpacing.md),
-              decoration: BoxDecoration(
-                color: context.surfaceColor,
-                border: Border(top: BorderSide(color: context.borderColor)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -3),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxW),
+                  child: CasamaDirectionalSwitcher(
+                    index: _selectedTab,
+                    previousIndex: _previousTab,
+                    child: switch (_selectedTab) {
+                      0 => _buildTermsTab(context),
+                      1 => _buildPrivacyTab(context),
+                      _ => _buildPermissionsTab(context),
+                    },
                   ),
-                ],
-              ),
-              child: CasamaButton(
-                label: 'I Understand & Agree',
-                isPill: true,
-                onPressed: () => context.pop(true),
+                ),
               ),
             ),
+            if (!widget.readOnly)
+              Container(
+                padding: EdgeInsets.fromLTRB(
+                  CasamaSpacing.md,
+                  CasamaSpacing.sm,
+                  CasamaSpacing.md,
+                  bottomInset + CasamaSpacing.md,
+                ),
+                decoration: BoxDecoration(
+                  color: pal.surface,
+                  border: Border(top: BorderSide(color: pal.divider)),
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxW),
+                    child: CasamaButton(
+                      label: 'I Understand & Agree',
+                      icon: Icons.check_circle_outline_rounded,
+                      onPressed: () {
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context, true);
+                        } else {
+                          GoRouter.maybeOf(context)?.pop(true);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTermsTab() {
+  Widget _buildTermsTab(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(CasamaSpacing.lg),
+      key: const ValueKey('legal_terms_tab'),
+      padding: const EdgeInsets.all(CasamaSpacing.md),
       children: [
-        _buildSectionCard(
+        _LegalSectionCard(
           icon: Icons.handshake_outlined,
           title: 'Household Harmony',
-          content: 'Casama is designed to foster transparency, cooperation, and goodwill between housemates. By using Casama, you agree to treat your housemates with respect and keep household records accurate.',
+          content:
+              'Casama is designed to foster transparency, cooperation, and goodwill between housemates. By using Casama, you agree to treat your housemates with respect and keep household records accurate.',
         ),
-        const SizedBox(height: CasamaSpacing.md),
-        _buildSectionCard(
+        const SizedBox(height: CasamaSpacing.sm),
+        _LegalSectionCard(
           icon: Icons.payments_outlined,
           title: 'Parcel Deliveries & COD Reimbursement',
-          content: 'When a housemate covers Cash on Delivery (COD) on your behalf, you are expected to settle the reimbursement promptly. Casama tracks these balances transparently to prevent awkward financial friction.',
+          content:
+              'When a housemate covers Cash on Delivery (COD) on your behalf, you are expected to settle the reimbursement promptly. Casama tracks these balances transparently to prevent awkward financial friction.',
         ),
-        const SizedBox(height: CasamaSpacing.md),
-        _buildSectionCard(
+        const SizedBox(height: CasamaSpacing.sm),
+        _LegalSectionCard(
           icon: Icons.checklist_rounded,
           title: 'Chores & Maintenance Responsibilities',
-          content: 'Chore assignments and Roulette spins are intended to distribute responsibilities fairly. Completed tasks award Good Kasama points to recognize helpful housemates.',
+          content:
+              'Chore assignments and Roulette spins are intended to distribute responsibilities fairly. Completed tasks award Good Kasama points to recognize helpful housemates.',
         ),
-        const SizedBox(height: CasamaSpacing.md),
-        _buildSectionCard(
+        const SizedBox(height: CasamaSpacing.sm),
+        _LegalSectionCard(
           icon: Icons.inventory_2_outlined,
           title: 'Shared Belongings & Borrowing',
-          content: 'Items logged in the Lost, Found & Borrowed board belong to household members. Respect borrowed items, return them in good condition, and notify the owner of any damage.',
+          content:
+              'Items logged in the Lost, Found & Borrowed board belong to household members. Respect borrowed items, return them in good condition, and notify the owner of any damage.',
         ),
       ],
     );
   }
 
-  Widget _buildPrivacyTab() {
+  Widget _buildPrivacyTab(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(CasamaSpacing.lg),
+      key: const ValueKey('legal_privacy_tab'),
+      padding: const EdgeInsets.all(CasamaSpacing.md),
       children: [
-        _buildSectionCard(
+        _LegalSectionCard(
           icon: Icons.location_off_rounded,
           title: 'Zero Background GPS Tracking',
           badge: 'Privacy First',
-          content: 'Casama strictly respects your personal privacy. The app NEVER monitors, requests, or records your continuous background GPS location. Your presence status (In, Out, Away) is entirely controlled by you manually.',
+          content:
+              'Casama strictly respects your personal privacy. The app NEVER monitors, requests, or records your continuous background GPS location. Your presence status (In, Out, Away) is entirely controlled by you manually.',
         ),
-        const SizedBox(height: CasamaSpacing.md),
-        _buildSectionCard(
+        const SizedBox(height: CasamaSpacing.sm),
+        _LegalSectionCard(
           icon: Icons.shield_outlined,
           title: 'Household Data Isolation (RLS)',
-          content: 'Your household conversations, delivery logs, tasks, and item postings are isolated using Row Level Security (RLS). Only approved members of your household code can view your home data.',
+          content:
+              'Your household conversations, delivery logs, tasks, and item postings are isolated using Row Level Security (RLS). Only approved members of your household code can view your home data.',
         ),
-        const SizedBox(height: CasamaSpacing.md),
-        _buildSectionCard(
+        const SizedBox(height: CasamaSpacing.sm),
+        _LegalSectionCard(
           icon: Icons.lock_outline_rounded,
           title: 'Data Security & Storage',
-          content: 'Your profile details and household communications are encrypted in transit and protected by Supabase security policies. We do not sell your personal data to third parties or advertisers.',
+          content:
+              'Your profile details and household communications are encrypted in transit and protected by Supabase security policies. We do not sell your personal data to third parties or advertisers.',
         ),
       ],
     );
   }
 
-  Widget _buildPermissionsTab() {
+  Widget _buildPermissionsTab(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(CasamaSpacing.lg),
+      key: const ValueKey('legal_permissions_tab'),
+      padding: const EdgeInsets.all(CasamaSpacing.md),
       children: [
-        _buildPermissionItem(
+        _LegalPermissionCard(
           icon: Icons.camera_alt_outlined,
           title: 'Camera & Photo Library',
-          reason: 'Required only when you choose to snap or upload a photo of a package delivery slip, a lost item, or a maintenance repair issue.',
+          reason:
+              'Required only when you choose to snap or upload a photo of a package delivery slip, a lost item, or a maintenance repair issue.',
           isOptional: false,
         ),
-        const SizedBox(height: CasamaSpacing.md),
-        _buildPermissionItem(
+        const SizedBox(height: CasamaSpacing.sm),
+        _LegalPermissionCard(
           icon: Icons.notifications_active_outlined,
           title: 'Push Notifications',
-          reason: 'Used to alert you when a parcel arrives, when someone covers your COD, or when a housemate invites you to a household meet-up.',
+          reason:
+              'Used to alert you when a parcel arrives, when someone covers your COD, or when a housemate invites you to a household meet-up.',
           isOptional: true,
         ),
-        const SizedBox(height: CasamaSpacing.md),
-        _buildPermissionItem(
+        const SizedBox(height: CasamaSpacing.sm),
+        _LegalPermissionCard(
           icon: Icons.storage_rounded,
           title: 'Local Storage & Offline Cache',
-          reason: 'Used to store your current session token, preferences, and offline cache so Casama opens smoothly and quickly even with low connectivity.',
+          reason:
+              'Used to store your current session token, preferences, and offline cache so Casama opens smoothly and quickly even with low connectivity.',
           isOptional: false,
         ),
       ],
     );
   }
+}
 
-  Widget _buildSectionCard({
-    required IconData icon,
-    required String title,
-    required String content,
-    String? badge,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(CasamaSpacing.md),
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: CasamaSpacing.roundedLg,
-        border: Border.all(color: context.borderColor),
-      ),
+class _LegalSectionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String content;
+  final String? badge;
+
+  const _LegalSectionCard({
+    required this.icon,
+    required this.title,
+    required this.content,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return CasamaCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: context.tileParcelsColor,
+                  color: pal.softBlush,
                   borderRadius: CasamaSpacing.roundedSm,
                 ),
-                child: Icon(icon, size: 20, color: CasamaColors.primaryCoral),
+                child: Icon(icon, size: 19, color: pal.primaryCoral),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: context.textColor,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: pal.textPrimary,
                   ),
                 ),
               ),
               if (badge != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
+                    horizontal: 9,
+                    vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: context.isDark
-                        ? const Color(0xFF1B3B2B)
-                        : CasamaColors.successBg,
-                    borderRadius: BorderRadius.circular(12),
+                    color: pal.successBg,
+                    borderRadius: CasamaSpacing.roundedPill,
                   ),
                   child: Text(
-                    badge,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: context.isDark
-                          ? const Color(0xFF81C784)
-                          : CasamaColors.successGreen,
+                    badge!,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: pal.successFg,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -242,9 +284,9 @@ class _TermsPrivacyScreenState extends State<TermsPrivacyScreen>
           const SizedBox(height: CasamaSpacing.sm),
           Text(
             content,
-            style: TextStyle(
+            style: theme.textTheme.bodySmall?.copyWith(
               fontSize: 13,
-              color: context.textSecondaryColor,
+              color: pal.textSecondary,
               height: 1.45,
             ),
           ),
@@ -252,71 +294,84 @@ class _TermsPrivacyScreenState extends State<TermsPrivacyScreen>
       ),
     );
   }
+}
 
-  Widget _buildPermissionItem({
-    required IconData icon,
-    required String title,
-    required String reason,
-    required bool isOptional,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(CasamaSpacing.md),
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: CasamaSpacing.roundedLg,
-        border: Border.all(color: context.borderColor),
-      ),
+class _LegalPermissionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String reason;
+  final bool isOptional;
+
+  const _LegalPermissionCard({
+    required this.icon,
+    required this.title,
+    required this.reason,
+    required this.isOptional,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return CasamaCard(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              color: context.tileChatColor,
+              color: pal.softSage,
               borderRadius: CasamaSpacing.roundedMd,
             ),
-            child: Icon(
-              icon,
-              size: 22,
-              color: context.isDark
-                  ? CasamaColors.primaryCoral
-                  : CasamaColors.midnightNavy,
-            ),
+            child: Icon(icon, size: 21, color: pal.forestTeal),
           ),
-          const SizedBox(width: CasamaSpacing.md),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: context.textColor,
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: pal.textPrimary,
+                        ),
                       ),
                     ),
-                    const Spacer(),
-                    Text(
-                      isOptional ? 'Optional' : 'Required',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: isOptional
-                            ? context.textSecondaryColor
-                            : CasamaColors.primaryCoral,
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isOptional ? pal.track : pal.softBlush,
+                        borderRadius: CasamaSpacing.roundedPill,
+                      ),
+                      child: Text(
+                        isOptional ? 'Optional' : 'Required',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: isOptional
+                              ? pal.textSecondary
+                              : pal.primaryCoral,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 Text(
                   reason,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondaryColor,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12.5,
+                    color: pal.textSecondary,
                     height: 1.4,
                   ),
                 ),

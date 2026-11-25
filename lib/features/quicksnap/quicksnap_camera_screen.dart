@@ -11,10 +11,14 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/colors.dart';
+import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
+import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_sheet_scaffold.dart';
 import 'quicksnap_feed_screen.dart';
 
 class QuickSnapCameraScreen extends ConsumerStatefulWidget {
@@ -31,11 +35,10 @@ class QuickSnapCameraScreen extends ConsumerStatefulWidget {
 }
 
 class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const String _prefKeyCameraPermission =
       'quicksnap_camera_permission_granted';
 
-  // Camera state
   List<CameraDescription> _availableCameras = [];
   CameraController? _cameraController;
   int _selectedCameraIndex = 0;
@@ -44,20 +47,20 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
   bool _isFrontCamera = true;
   bool _isCapturing = false;
 
-  // Permission state
   bool _permissionPromptShown = false;
   bool _permissionGranted = false;
 
   int _flashMode = 0; // 0 = off, 1 = on, 2 = auto
-  bool _isFlashing = false;
-  late AnimationController _flipController;
 
-  // Captured snapshot
+  late final AnimationController _flashController;
+  late final AnimationController _flipController;
+  double _flipAngleStart = 0;
+  double _flipAngleEnd = 0;
+
   String? _capturedImageUrl;
   Uint8List? _capturedBytes;
   final TextEditingController _captionController = TextEditingController();
 
-  // Audience
   QuickSnapRecipientType _recipientType = QuickSnapRecipientType.everyone;
   final List<String> _selectedRecipients = [];
 
@@ -66,9 +69,13 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
   @override
   void initState() {
     super.initState();
+    _flashController = AnimationController(
+      vsync: this,
+      duration: CasamaMotion.shutterFlash,
+    );
     _flipController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: CasamaMotion.cameraFlip,
     );
 
     if (widget.autoPromptPermission) {
@@ -81,6 +88,7 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
   @override
   void dispose() {
     _cameraController?.dispose();
+    _flashController.dispose();
     _flipController.dispose();
     _captionController.dispose();
     super.dispose();
@@ -89,32 +97,26 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
   Future<void> _checkAndPromptPermission({bool forceDialog = false}) async {
     if (!mounted) return;
 
-    // Check saved permission history from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    final bool hasSavedPermission =
+    final hasSavedPermission =
         prefs.getBool(_prefKeyCameraPermission) ?? false;
 
-    // If permission was already accepted previously, skip dialog and launch camera directly!
     if (hasSavedPermission && !forceDialog) {
       if (!mounted) return;
-      setState(() {
-        _permissionGranted = true;
-      });
+      setState(() => _permissionGranted = true);
       await _initLiveCamera();
       return;
     }
 
     if (_permissionPromptShown && !forceDialog) return;
     _permissionPromptShown = true;
-
     if (!mounted) return;
 
-    // Show branded modal asking for permission first (only shown once)
-    final bool? proceed = await showDialog<bool>(
+    final proceed = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
       builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF1E1E26),
+        backgroundColor: const Color(0xFF141B29),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
@@ -126,7 +128,7 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
                 width: 100,
                 height: 100,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               const Text(
                 'Enable Camera for QuickSnap',
                 textAlign: TextAlign.center,
@@ -138,45 +140,31 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
               ),
               const SizedBox(height: 10),
               Text(
-                'Casama needs access to your camera to capture live moments and send QuickSnaps to your housemates in Casa 204.',
+                'Casama needs camera access to capture live moments and share CASnaps with your housemates.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white.withAlpha(190),
-                  fontSize: 14,
+                  color: Colors.white.withValues(alpha: 0.78),
+                  fontSize: 13.5,
                   height: 1.4,
                 ),
               ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  key: const Key('allow_camera_permission_button'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: CasamaColors.primaryCoral,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onPressed: () => Navigator.of(ctx).pop(true),
-                  child: const Text(
-                    'Allow Camera Access',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+              const SizedBox(height: 22),
+              CasamaButton(
+                key: const Key('allow_camera_permission_button'),
+                label: 'Allow Camera Access',
+                isPill: true,
+                height: 50,
+                onPressed: () => Navigator.of(ctx).pop(true),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               TextButton(
                 key: const Key('deny_camera_permission_button'),
+                style: TextButton.styleFrom(minimumSize: const Size(0, 44)),
                 onPressed: () => Navigator.of(ctx).pop(false),
                 child: Text(
                   'Not Now',
                   style: TextStyle(
-                    color: Colors.white.withAlpha(150),
+                    color: Colors.white.withValues(alpha: 0.65),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -191,22 +179,17 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
     if (proceed == true) {
       await prefs.setBool(_prefKeyCameraPermission, true);
       await _requestSystemPermissionAndInit();
-    } else {
-      if (mounted) {
-        setState(() {
-          _permissionGranted = false;
-        });
-      }
+    } else if (mounted) {
+      setState(() => _permissionGranted = false);
     }
   }
 
   Future<void> _requestSystemPermissionAndInit() async {
-    bool granted = false;
+    var granted = false;
     try {
       final status = await Permission.camera.request();
       granted = status.isGranted;
     } catch (_) {
-      // In test environment or web where permission_handler is mocked or unavailable
       granted = true;
     }
 
@@ -218,43 +201,30 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
     }
 
     if (!mounted) return;
-
-    setState(() {
-      _permissionGranted = granted;
-    });
-
+    setState(() => _permissionGranted = granted);
     if (granted) {
       await _initLiveCamera();
     }
   }
 
   Future<void> _initLiveCamera() async {
-    setState(() {
-      _isCameraInitializing = true;
-    });
-
+    setState(() => _isCameraInitializing = true);
     try {
       final cameras = await availableCameras();
       if (!mounted) return;
 
       if (cameras.isNotEmpty) {
         _availableCameras = cameras;
-        // Default to front-facing camera for quick snaps/selfies if available
         final frontIdx = cameras.indexWhere(
           (c) => c.lensDirection == CameraLensDirection.front,
         );
         _selectedCameraIndex = frontIdx != -1 ? frontIdx : 0;
         await _setupController(_availableCameras[_selectedCameraIndex]);
       } else {
-        setState(() {
-          _isCameraInitializing = false;
-        });
+        setState(() => _isCameraInitializing = false);
       }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isCameraInitializing = false;
-      });
+    } catch (_) {
+      if (mounted) setState(() => _isCameraInitializing = false);
     }
   }
 
@@ -285,7 +255,7 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
         _isCameraInitializing = false;
         _isFrontCamera = description.lensDirection == CameraLensDirection.front;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _isCameraInitialized = false;
@@ -294,64 +264,64 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
     }
   }
 
-  void _toggleCameraFlip() async {
+  Future<void> _toggleCameraFlip() async {
+    final reduced = CasamaMotion.reduceMotion(context);
+    setState(() {
+      _flipAngleStart = _flipAngleEnd;
+      _flipAngleEnd = _flipAngleEnd + math.pi;
+      _isFrontCamera = !_isFrontCamera;
+    });
+    if (!reduced) {
+      _flipController.forward(from: 0);
+    }
+
     if (_availableCameras.length > 1) {
-      final nextIdx = (_selectedCameraIndex + 1) % _availableCameras.length;
-      _selectedCameraIndex = nextIdx;
-      _flipController.forward(from: 0.0);
+      _selectedCameraIndex =
+          (_selectedCameraIndex + 1) % _availableCameras.length;
       await _setupController(_availableCameras[_selectedCameraIndex]);
-    } else {
-      setState(() {
-        _isFrontCamera = !_isFrontCamera;
-      });
-      _flipController.forward(from: 0.0);
     }
   }
 
-  void _cycleFlash() async {
-    setState(() {
-      _flashMode = (_flashMode + 1) % 3;
-    });
-
+  Future<void> _cycleFlash() async {
+    setState(() => _flashMode = (_flashMode + 1) % 3);
     if (_cameraController != null && _cameraController!.value.isInitialized) {
       try {
         final mode = _flashMode == 1
             ? FlashMode.always
             : (_flashMode == 2 ? FlashMode.auto : FlashMode.off);
         await _cameraController!.setFlashMode(mode);
-      } catch (_) {
-        // Flash mode unsupported or not available
-      }
+      } catch (_) {}
     }
   }
 
   Future<void> _pickFromGallery() async {
     try {
-      final XFile? file = await _picker.pickImage(
+      final file = await _picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 85,
       );
       if (file != null) {
         final bytes = await file.readAsBytes();
-        setState(() {
-          _capturedBytes = bytes;
-          _capturedImageUrl = file.path;
-        });
+        if (mounted) {
+          setState(() {
+            _capturedBytes = bytes;
+            _capturedImageUrl = file.path;
+          });
+        }
       }
-    } catch (_) {
-      // Fallback
-    }
+    } catch (_) {}
   }
 
   Future<void> _takeSnap() async {
     if (_isCapturing) return;
     _isCapturing = true;
+    final reduced = CasamaMotion.reduceMotion(context);
 
-    // Trigger shutter flash animation
-    setState(() => _isFlashing = true);
-    await Future.delayed(const Duration(milliseconds: 100));
+    if (!reduced) {
+      _flashController.forward(from: 0);
+    }
+    await Future.delayed(const Duration(milliseconds: 60));
 
-    // Hardware capture if live camera is active
     if (_cameraController != null &&
         _cameraController!.value.isInitialized &&
         !_cameraController!.value.hasError) {
@@ -360,18 +330,16 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
         return;
       }
       try {
-        final XFile file = await _cameraController!
+        final file = await _cameraController!
             .takePicture()
             .timeout(const Duration(seconds: 4));
         final bytes = await file.readAsBytes();
-
         try {
           await _cameraController!.pausePreview();
         } catch (_) {}
 
         if (!mounted) return;
         setState(() {
-          _isFlashing = false;
           _isCapturing = false;
           _capturedBytes = bytes;
           _capturedImageUrl = file.path;
@@ -385,10 +353,8 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
       }
     }
 
-    // Offline / Fallback capture for tests & non-camera environments
     if (!mounted) return;
     setState(() {
-      _isFlashing = false;
       _isCapturing = false;
       _capturedImageUrl =
           'offline_snap_${DateTime.now().millisecondsSinceEpoch}.jpg';
@@ -404,19 +370,15 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
       _isCapturing = false;
     });
 
-    // 1. First attempt: resume native preview if controller is still initialized
     if (_cameraController != null &&
         _cameraController!.value.isInitialized &&
         !_cameraController!.value.hasError) {
       try {
         await _cameraController!.resumePreview();
         return;
-      } catch (_) {
-        // Fallback to fresh setup below if resume fails
-      }
+      } catch (_) {}
     }
 
-    // 2. Second attempt: Re-initialize camera controller cleanly
     if (_permissionGranted && _availableCameras.isNotEmpty) {
       await _setupController(_availableCameras[_selectedCameraIndex]);
     }
@@ -434,27 +396,16 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
       recipientNames: _selectedRecipients,
     );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
-            Text(
-              _recipientType == QuickSnapRecipientType.everyone
-                  ? 'QuickSnap sent to Everyone! 💛'
-                  : 'QuickSnap sent to ${_selectedRecipients.join(", ")}! 💛',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        backgroundColor: CasamaColors.primaryCoral,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
+    final targetLabel = _recipientType == QuickSnapRecipientType.everyone
+        ? 'Everyone'
+        : _selectedRecipients.join(', ');
+
+    showCasamaToast(
+      context,
+      'CASnap sent to $targetLabel',
+      icon: Icons.send_rounded,
     );
 
-    // Open Feed/History
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => const QuickSnapFeedScreen(),
@@ -466,150 +417,135 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
     final repo = ref.read(repositoryProvider);
     final members = repo.members;
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E1E26),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
+    showCasamaSheet<void>(
+      context,
+      darkSurfaceOverride: true,
+      icon: Icons.group_rounded,
+      iconBackgroundColor: CasamaColors.primaryCoral.withValues(alpha: 0.2),
+      iconColor: CasamaColors.primaryCoral,
+      title: 'Send CASnap to...',
+      subtitle: 'Choose who in ${repo.currentHousehold.name} will see this photo',
+      builder: (sheetCtx) {
         return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
+          builder: (ctx, setSheetState) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                InkWell(
+                  borderRadius: CasamaSpacing.roundedLg,
+                  onTap: () {
+                    setSheetState(() {
+                      setState(() {
+                        _recipientType = QuickSnapRecipientType.everyone;
+                        _selectedRecipients.clear();
+                      });
+                    });
+                  },
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 54),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: CasamaColors.primaryCoral.withValues(
+                              alpha: 0.2,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.group_rounded,
+                            color: CasamaColors.primaryCoral,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Everyone in ${repo.currentHousehold.name}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                        _SheetCheckCircle(
+                          selected:
+                              _recipientType == QuickSnapRecipientType.everyone,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 38,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Send QuickSnap to...',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Choose who in Casa 204 will see this photo',
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(160),
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ListTile(
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: CasamaColors.primaryCoral.withAlpha(40),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.group_rounded,
-                          color: CasamaColors.primaryCoral,
-                          size: 20,
-                        ),
-                      ),
-                      title: const Text(
-                        'Everyone in Casa 204',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      trailing:
-                          _recipientType == QuickSnapRecipientType.everyone
-                              ? const Icon(
-                                  Icons.check_circle,
-                                  color: CasamaColors.primaryCoral,
-                                )
-                              : null,
-                      onTap: () {
+                const SizedBox(height: 4),
+                ...members.map((m) {
+                  final name = m.profile.displayName;
+                  final isSelected =
+                      _recipientType ==
+                              QuickSnapRecipientType.selectedHousemates &&
+                          _selectedRecipients.contains(name);
+                  return InkWell(
+                    borderRadius: CasamaSpacing.roundedLg,
+                    onTap: () {
+                      setSheetState(() {
                         setState(() {
-                          _recipientType = QuickSnapRecipientType.everyone;
-                          _selectedRecipients.clear();
+                          _recipientType =
+                              QuickSnapRecipientType.selectedHousemates;
+                          if (isSelected) {
+                            _selectedRecipients.remove(name);
+                            if (_selectedRecipients.isEmpty) {
+                              _recipientType = QuickSnapRecipientType.everyone;
+                            }
+                          } else {
+                            _selectedRecipients.add(name);
+                          }
                         });
-                        Navigator.pop(ctx);
-                      },
+                      });
+                    },
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 52),
+                      child: Row(
+                        children: [
+                          CasamaAvatar(
+                            avatarUrl: m.profile.effectiveAvatarUrl,
+                            radius: 18,
+                            name: name,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          _SheetCheckCircle(selected: isSelected),
+                        ],
+                      ),
                     ),
-                    const Divider(color: Colors.white12),
-                    ...members.map((m) {
-                      final name = m.profile.displayName;
-                      final isSelected =
-                          _recipientType ==
-                                  QuickSnapRecipientType.selectedHousemates &&
-                              _selectedRecipients.contains(name);
-                      return ListTile(
-                        leading: CasamaAvatar(
-                          avatarUrl: m.profile.effectiveAvatarUrl,
-                          radius: 18,
-                          name: name,
-                        ),
-                        title: Text(
-                          name,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        trailing: Checkbox(
-                          value: isSelected,
-                          activeColor: CasamaColors.primaryCoral,
-                          onChanged: (checked) {
-                            setSheetState(() {
-                              setState(() {
-                                _recipientType =
-                                    QuickSnapRecipientType.selectedHousemates;
-                                if (checked == true) {
-                                  _selectedRecipients.add(name);
-                                } else {
-                                  _selectedRecipients.remove(name);
-                                  if (_selectedRecipients.isEmpty) {
-                                    _recipientType =
-                                        QuickSnapRecipientType.everyone;
-                                  }
-                                }
-                              });
-                            });
-                          },
-                        ),
-                        onTap: () {
-                          setSheetState(() {
-                            setState(() {
-                              _recipientType =
-                                  QuickSnapRecipientType.selectedHousemates;
-                              if (isSelected) {
-                                _selectedRecipients.remove(name);
-                                if (_selectedRecipients.isEmpty) {
-                                  _recipientType =
-                                      QuickSnapRecipientType.everyone;
-                                }
-                              } else {
-                                _selectedRecipients.add(name);
-                              }
-                            });
-                          });
-                        },
-                      );
-                    }),
-                    const SizedBox(height: 12),
-                  ],
+                  );
+                }),
+                const SizedBox(height: CasamaSpacing.md),
+                CasamaButton(
+                  label: 'Done',
+                  isPill: true,
+                  height: 50,
+                  onPressed: () => Navigator.of(sheetCtx).pop(),
                 ),
-              ),
+              ],
             );
           },
         );
@@ -618,20 +554,16 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
   }
 
   Widget _buildViewfinderContent() {
-    // 1. Captured photo preview
     if (_capturedImageUrl != null) {
       if (_capturedBytes != null) {
-        return Image.memory(
-          _capturedBytes!,
-          fit: BoxFit.cover,
-        );
+        return Image.memory(_capturedBytes!, fit: BoxFit.cover);
       }
       if (_capturedImageUrl!.startsWith('http://') ||
           _capturedImageUrl!.startsWith('https://')) {
         return Image.network(
           _capturedImageUrl!,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
+          errorBuilder: (_, _, _) => _buildPlaceholder(),
         );
       }
       if (!kIsWeb) {
@@ -640,12 +572,18 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
           return Image.file(
             file,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
+            errorBuilder: (_, _, _) => _buildPlaceholder(),
           );
         }
       }
       return Container(
-        color: const Color(0xFF1E1E26),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2D625F), Color(0xFF10161F)],
+          ),
+        ),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -660,7 +598,7 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
                 'Photo Captured!',
                 style: TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w700,
                   fontSize: 16,
                 ),
               ),
@@ -668,7 +606,7 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
               Text(
                 'Ready to share with your housemates',
                 style: TextStyle(
-                  color: Colors.white.withAlpha(140),
+                  color: Colors.white.withValues(alpha: 0.65),
                   fontSize: 12,
                 ),
               ),
@@ -678,7 +616,6 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
       );
     }
 
-    // 2. Live camera feed
     if (_isCameraInitialized &&
         _cameraController != null &&
         _cameraController!.value.isInitialized &&
@@ -691,12 +628,22 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
               height: constraints.maxHeight,
               child: FittedBox(
                 fit: BoxFit.cover,
-                child: SizedBox(
-                  width: _cameraController!.value.previewSize?.height ??
-                      constraints.maxWidth,
-                  height: _cameraController!.value.previewSize?.width ??
-                      constraints.maxHeight,
-                  child: CameraPreview(_cameraController!),
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.diagonal3Values(
+                    _isFrontCamera ? -1.0 : 1.0,
+                    1.0,
+                    1.0,
+                  ),
+                  child: SizedBox(
+                    width:
+                        _cameraController!.value.previewSize?.height ??
+                        constraints.maxWidth,
+                    height:
+                        _cameraController!.value.previewSize?.width ??
+                        constraints.maxHeight,
+                    child: CameraPreview(_cameraController!),
+                  ),
                 ),
               ),
             ),
@@ -705,11 +652,10 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
       );
     }
 
-    // 3. Initializing state
     if (_isCameraInitializing) {
-      return Container(
-        color: const Color(0xFF15151B),
-        child: const Center(
+      return const ColoredBox(
+        color: Color(0xFF10161F),
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -725,9 +671,14 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
       );
     }
 
-    // 4. Clean dark viewfinder (empty state, zero fake sample photos)
     return Container(
-      color: const Color(0xFF16161D),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF2D625F), Color(0xFF10161F)],
+        ),
+      ),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -735,31 +686,18 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 68,
-                  height: 68,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white24, width: 2),
-                    color: Colors.white.withAlpha(10),
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.camera_rounded,
-                      color: Colors.white38,
-                      size: 32,
-                    ),
-                  ),
+                const CasMascotView(
+                  pose: CasPose.hero,
+                  width: 92,
+                  height: 92,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Text(
-                  _permissionGranted
-                      ? 'Camera Ready'
-                      : 'Camera Access Needed',
+                  _permissionGranted ? 'Camera Ready' : 'Camera Access Needed',
                   style: const TextStyle(
                     color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -768,8 +706,8 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
                       ? 'Tap shutter to take a photo'
                       : 'Allow camera to capture live moments',
                   style: TextStyle(
-                    color: Colors.white.withAlpha(120),
-                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.56),
+                    fontSize: 11.5,
                   ),
                 ),
               ],
@@ -787,8 +725,8 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.black.withAlpha(180),
-                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.black.withValues(alpha: 0.72),
+                    borderRadius: CasamaSpacing.roundedPill,
                     border: Border.all(color: Colors.white24),
                   ),
                   child: Row(
@@ -820,7 +758,7 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
                           style: TextStyle(
                             color: CasamaColors.primaryCoral,
                             fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w700,
                             decoration: TextDecoration.underline,
                           ),
                         ),
@@ -837,360 +775,404 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
 
   Widget _buildPlaceholder() {
     return Container(
-      color: Colors.grey.shade900,
+      color: const Color(0xFF141B29),
       child: const Center(
-        child: Icon(
-          Icons.camera_alt,
-          color: Colors.white54,
-          size: 50,
-        ),
+        child: Icon(Icons.photo_camera_outlined, color: Colors.white54, size: 50),
       ),
     );
+  }
+
+  String _recipientLabel() {
+    if (_recipientType == QuickSnapRecipientType.everyone) return 'Everyone';
+    if (_selectedRecipients.length == 1) return _selectedRecipients.first;
+    return '${_selectedRecipients.length} Friends';
   }
 
   @override
   Widget build(BuildContext context) {
     final repo = ref.watch(repositoryProvider);
     final memberCount = repo.members.length;
+    final vfSize = math.min(MediaQuery.sizeOf(context).width - 32, 340.0);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D11),
+      backgroundColor: const Color(0xFF070C16),
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            Column(
-              children: [
-                // ── Top Bar ──────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Back / Close
-                      IconButton(
-                        icon: const Icon(
+            // Top Controls Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Semantics(
+                    button: true,
+                    label: 'Close camera',
+                    child: CasamaPressable(
+                      onTap: () => context.pop(),
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
                           Icons.close_rounded,
                           color: Colors.white,
-                          size: 28,
-                        ),
-                        onPressed: () => context.pop(),
-                      ),
-
-                      // Recipient Pill Dropdown (Locket style)
-                      GestureDetector(
-                        onTap: _openRecipientSheet,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withAlpha(28),
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: Colors.white24, width: 1),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _recipientType ==
-                                        QuickSnapRecipientType.everyone
-                                    ? 'Everyone'
-                                    : (_selectedRecipients.length == 1
-                                        ? _selectedRecipients.first
-                                        : '${_selectedRecipients.length} Friends'),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              const Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: Colors.white70,
-                                size: 18,
-                              ),
-                            ],
-                          ),
+                          size: 24,
                         ),
                       ),
+                    ),
+                  ),
 
-                      // Friends Count pill & Flash
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: Icon(
+                  Semantics(
+                    button: true,
+                    label: 'Choose recipients',
+                    child: CasamaPressable(
+                      onTap: _openRecipientSheet,
+                      child: Container(
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: CasamaSpacing.roundedPill,
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.group_rounded,
+                              color: Colors.white70,
+                              size: 17,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _recipientLabel(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: Colors.white70,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Semantics(
+                        button: true,
+                        label: 'Cycle flash mode',
+                        child: CasamaPressable(
+                          onTap: _cycleFlash,
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
                               _flashMode == 0
                                   ? Icons.flash_off_rounded
                                   : (_flashMode == 1
-                                      ? Icons.flash_on_rounded
-                                      : Icons.flash_auto_rounded),
+                                        ? Icons.flash_on_rounded
+                                        : Icons.flash_auto_rounded),
                               color: _flashMode > 0
                                   ? CasamaColors.warmGold
                                   : Colors.white70,
                               size: 22,
                             ),
-                            onPressed: _cycleFlash,
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: CasamaSpacing.roundedPill,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.people_alt_rounded,
+                              color: Colors.white70,
+                              size: 14,
                             ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withAlpha(25),
-                              borderRadius: BorderRadius.circular(16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$memberCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.people_alt_rounded,
-                                  color: Colors.white70,
-                                  size: 14,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  '$memberCount',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
+                ],
+              ),
+            ),
+
+            const Spacer(),
+
+            // Rounded Square Viewfinder + 450ms White Shutter Flash Fade-out
+            Center(
+              child: Container(
+                width: vfSize,
+                height: vfSize,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(32),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black54,
+                      blurRadius: 24,
+                      offset: Offset(0, 12),
+                    ),
+                  ],
                 ),
-
-                const Spacer(),
-
-                // ── Rounded Viewfinder (Locket Photo Frame) ─────────
-                Center(
-                  child: Container(
-                    width: math.min(
-                      MediaQuery.of(context).size.width - 32,
-                      340,
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _buildViewfinderContent(),
+                    const Positioned(
+                      top: 16,
+                      left: 16,
+                      child: _CornerAccent(isTop: true, isLeft: true),
                     ),
-                    height: math.min(
-                      MediaQuery.of(context).size.width - 32,
-                      340,
+                    const Positioned(
+                      top: 16,
+                      right: 16,
+                      child: _CornerAccent(isTop: true, isLeft: false),
                     ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(36),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withAlpha(120),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
+                    const Positioned(
+                      bottom: 16,
+                      left: 16,
+                      child: _CornerAccent(isTop: false, isLeft: true),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Camera preview or Captured Image or Clean Dark Viewfinder
-                        _buildViewfinderContent(),
-
-                        // Viewfinder Corner Accents
-                        const Positioned(
-                          top: 16,
-                          left: 16,
-                          child: _CornerAccent(isTop: true, isLeft: true),
-                        ),
-                        const Positioned(
-                          top: 16,
-                          right: 16,
-                          child: _CornerAccent(isTop: true, isLeft: false),
-                        ),
-                        const Positioned(
-                          bottom: 16,
-                          left: 16,
-                          child: _CornerAccent(isTop: false, isLeft: true),
-                        ),
-                        const Positioned(
-                          bottom: 16,
-                          right: 16,
-                          child: _CornerAccent(isTop: false, isLeft: false),
-                        ),
-
-                        // Shutter Flash Effect
-                        if (_isFlashing) Container(color: Colors.white),
-                      ],
+                    const Positioned(
+                      bottom: 16,
+                      right: 16,
+                      child: _CornerAccent(isTop: false, isLeft: false),
                     ),
-                  ),
-                ),
-
-                const Spacer(),
-
-                // ── Caption & Actions (when photo captured) ────────
-                if (_capturedImageUrl != null) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 8,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(20),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white24),
-                      ),
-                      child: TextField(
-                        controller: _captionController,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Add a message or note...',
-                          hintStyle: TextStyle(
-                            color: Colors.white.withAlpha(120),
-                            fontSize: 14,
-                          ),
-                          border: InputBorder.none,
-                          isDense: true,
-                        ),
-                        maxLength: 80,
-                        buildCounter: (context,
-                                {required currentLength,
-                                required isFocused,
-                                maxLength}) =>
-                            null,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Row(
-                      children: [
-                        // Retake
-                        OutlinedButton(
-                          onPressed: _retake,
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.white38),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 14,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                          ),
-                          child: const Text('Retake'),
-                        ),
-                        const SizedBox(width: 12),
-
-                        // Send
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            key: const Key('send_quicksnap_button'),
-                            onPressed: _sendSnap,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: CasamaColors.primaryCoral,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              elevation: 0,
-                            ),
-                            icon: const Icon(Icons.send_rounded, size: 18),
-                            label: Text(
-                              'Send to ${_recipientType == QuickSnapRecipientType.everyone ? "Everyone" : "Friends"}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ] else ...[
-                  // ── Shutter Controls Row (Locket Style) ───────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        // Gallery Button
-                        GestureDetector(
-                          key: const Key('gallery_picker_button'),
-                          onTap: _pickFromGallery,
+                    // 450ms flash pulse (fades 0.90 -> 0.0)
+                    AnimatedBuilder(
+                      animation: _flashController,
+                      builder: (context, _) {
+                        if (!_flashController.isAnimating &&
+                            _flashController.value == 0) {
+                          return const SizedBox.shrink();
+                        }
+                        final opacity =
+                            (1.0 - _flashController.value).clamp(0.0, 1.0) *
+                            0.9;
+                        if (opacity <= 0.01) return const SizedBox.shrink();
+                        return IgnorePointer(
                           child: Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withAlpha(25),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white24,
-                                width: 2,
-                              ),
+                            color: Colors.white.withValues(alpha: opacity),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+            Text(
+              'Sending to ${_recipientLabel()} in ${repo.currentHousehold.name}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+
+            const Spacer(),
+
+            if (_capturedImageUrl != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 6,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: CasamaSpacing.roundedPill,
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: TextField(
+                    controller: _captionController,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Add a message or note...',
+                      hintStyle: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 14,
+                      ),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      fillColor: Colors.transparent,
+                      filled: false,
+                      isDense: true,
+                    ),
+                    maxLength: 80,
+                    buildCounter:
+                        (
+                          context, {
+                          required currentLength,
+                          required isFocused,
+                          maxLength,
+                        }) => null,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: [
+                    OutlinedButton(
+                      onPressed: _retake,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 50),
+                        side: const BorderSide(color: Colors.white38),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        shape: const StadiumBorder(),
+                      ),
+                      child: const Text(
+                        'Retake',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: CasamaButton(
+                        key: const Key('send_quicksnap_button'),
+                        icon: Icons.send_rounded,
+                        label:
+                            'Send to ${_recipientType == QuickSnapRecipientType.everyone ? "Everyone" : "Friends"}',
+                        isPill: true,
+                        height: 50,
+                        onPressed: _sendSnap,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+            ] else ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Semantics(
+                      button: true,
+                      label: 'Choose photo from gallery',
+                      child: CasamaPressable(
+                        key: const Key('gallery_picker_button'),
+                        onTap: _pickFromGallery,
+                        child: Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white24, width: 1.5),
+                          ),
+                          child: const Icon(
+                            Icons.photo_library_outlined,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    Semantics(
+                      button: true,
+                      label: 'Take CASnap',
+                      child: CasamaPressable.fab(
+                        key: const Key('quicksnap_shutter_button'),
+                        onTap: _takeSnap,
+                        child: Container(
+                          width: 82,
+                          height: 82,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: CasamaColors.warmGold,
+                              width: 4,
                             ),
-                            child: const Icon(
-                              Icons.photo_library_outlined,
+                          ),
+                          padding: const EdgeInsets.all(5),
+                          child: const DecoratedBox(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
                               color: Colors.white,
-                              size: 24,
                             ),
                           ),
                         ),
+                      ),
+                    ),
 
-                        // Shutter Button (Locket Circular Outer Ring)
-                        GestureDetector(
-                          key: const Key('quicksnap_shutter_button'),
-                          onTap: _takeSnap,
-                          child: Container(
-                            width: 82,
-                            height: 82,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: CasamaColors.warmGold,
-                                width: 4.5,
-                              ),
-                            ),
-                            padding: const EdgeInsets.all(4.5),
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // Camera Flip Button
-                        GestureDetector(
-                          key: const Key('flip_camera_button'),
-                          onTap: _toggleCameraFlip,
+                    // 350ms 180-degree camera flip rotation
+                    Semantics(
+                      button: true,
+                      label: 'Flip camera',
+                      child: CasamaPressable(
+                        key: const Key('flip_camera_button'),
+                        onTap: _toggleCameraFlip,
+                        child: AnimatedBuilder(
+                          animation: _flipController,
+                          builder: (context, child) {
+                            final angle =
+                                _flipAngleStart +
+                                (_flipAngleEnd - _flipAngleStart) *
+                                    CurvedAnimation(
+                                      parent: _flipController,
+                                      curve: CasamaMotion.easeOut,
+                                    ).value;
+                            return Transform.rotate(angle: angle, child: child);
+                          },
                           child: Container(
                             width: 52,
                             height: 52,
                             decoration: BoxDecoration(
-                              color: Colors.white.withAlpha(25),
+                              color: Colors.white.withValues(alpha: 0.12),
                               shape: BoxShape.circle,
                               border: Border.all(
                                 color: Colors.white24,
-                                width: 2,
+                                width: 1.5,
                               ),
                             ),
                             child: const Icon(
@@ -1200,63 +1182,90 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
                             ),
                           ),
                         ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              Semantics(
+                button: true,
+                label: 'Open CASnap gallery history',
+                child: CasamaPressable(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const QuickSnapFeedScreen(initialTabIndex: 1),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: CasamaSpacing.roundedPill,
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.history_rounded,
+                          color: Colors.white70,
+                          size: 17,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'History',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white54,
+                          size: 17,
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 18),
-
-                  // ── History / Memories swipe-up Pill ──────────────
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const QuickSnapFeedScreen(),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(20),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.history_rounded,
-                            color: Colors.white70,
-                            size: 16,
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            'History',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                          SizedBox(width: 4),
-                          Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: Colors.white54,
-                            size: 16,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ],
-            ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SheetCheckCircle extends StatelessWidget {
+  final bool selected;
+
+  const _SheetCheckCircle({required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: selected ? CasamaColors.primaryCoral : Colors.transparent,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? CasamaColors.primaryCoral : Colors.white30,
+          width: 1.5,
+        ),
+      ),
+      child: selected
+          ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
+          : null,
     );
   }
 }
@@ -1270,21 +1279,21 @@ class _CornerAccent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 16,
-      height: 16,
+      width: 18,
+      height: 18,
       decoration: BoxDecoration(
         border: Border(
           top: isTop
-              ? const BorderSide(color: Colors.white54, width: 2.5)
+              ? const BorderSide(color: Colors.white60, width: 2.5)
               : BorderSide.none,
           bottom: !isTop
-              ? const BorderSide(color: Colors.white54, width: 2.5)
+              ? const BorderSide(color: Colors.white60, width: 2.5)
               : BorderSide.none,
           left: isLeft
-              ? const BorderSide(color: Colors.white54, width: 2.5)
+              ? const BorderSide(color: Colors.white60, width: 2.5)
               : BorderSide.none,
           right: !isLeft
-              ? const BorderSide(color: Colors.white54, width: 2.5)
+              ? const BorderSide(color: Colors.white60, width: 2.5)
               : BorderSide.none,
         ),
       ),

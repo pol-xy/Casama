@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
@@ -62,9 +63,7 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
   Future<void> _openCameraCapture() async {
     final photo = await showProfileCameraSheet(context);
     if (photo != null && mounted) {
-      setState(() {
-        _selectedAvatar = photo;
-      });
+      setState(() => _selectedAvatar = photo);
     }
   }
 
@@ -82,20 +81,17 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
         maxHeight: 600,
         imageQuality: 85,
       );
-      if (picked != null) {
+      if (picked != null && mounted) {
         final bytes = await picked.readAsBytes();
         final base64String = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-        setState(() {
-          _selectedAvatar = base64String;
-        });
+        setState(() => _selectedAvatar = base64String);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not access image: $e'),
-            backgroundColor: CasamaColors.errorRed,
-          ),
+        showCasamaToast(
+          context,
+          'Could not access image: $e',
+          icon: Icons.error_outline_rounded,
         );
       }
     } finally {
@@ -115,102 +111,143 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
     final clearAvatar =
         _selectedAvatar == null || _selectedAvatar!.trim().isEmpty;
 
-    ref
-        .read(repositoryProvider)
-        .updateProfile(
-          displayName: _nameController.text.trim(),
-          fullName: _nameController.text.trim(),
-          nickname: clearNickname ? null : _nicknameController.text.trim(),
-          handle: _handleController.text.trim(),
-          age: age,
-          avatarUrl: clearAvatar ? null : _selectedAvatar,
-          clearAvatar: clearAvatar,
-          clearNickname: clearNickname,
-          clearAge: clearAge,
-        );
+    ref.read(repositoryProvider).updateProfile(
+      displayName: _nameController.text.trim(),
+      fullName: _nameController.text.trim(),
+      nickname: clearNickname ? null : _nicknameController.text.trim(),
+      handle: _handleController.text.trim(),
+      age: age,
+      avatarUrl: clearAvatar ? null : _selectedAvatar,
+      clearAvatar: clearAvatar,
+      clearNickname: clearNickname,
+      clearAge: clearAge,
+    );
 
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Profile updated successfully! ✨'),
-        backgroundColor: CasamaColors.successGreen,
-      ),
+    if (Navigator.canPop(context)) {
+      Navigator.of(context).pop();
+    }
+    showCasamaToast(
+      context,
+      'Profile updated successfully! ✨',
+      icon: Icons.check_circle_outline_rounded,
     );
   }
 
   void _removeAvatar() {
-    setState(() {
-      _selectedAvatar = null;
-    });
+    setState(() => _selectedAvatar = null);
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? Colors.white : CasamaColors.ink;
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final reduced = CasamaMotion.reduceMotion(context);
 
     return Container(
       padding: EdgeInsets.only(
-        top: 20,
-        left: 20,
-        right: 20,
+        top: 14,
+        left: CasamaSpacing.lg,
+        right: CasamaSpacing.lg,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       decoration: BoxDecoration(
-        color: isDark ? CasamaColors.darkSurface : CasamaColors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        color: pal.surface,
+        borderRadius: CasamaSpacing.roundedSheetTop,
       ),
       child: Form(
         key: _formKey,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Drag Handle
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: pal.border,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
               // Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: CasamaColors.primaryCoral.withValues(
-                            alpha: 0.15,
-                          ),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.edit_rounded,
-                          color: CasamaColors.primaryCoral,
-                          size: 20,
-                        ),
+              Container(
+                padding: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: pal.divider)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: pal.softBlush,
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Edit Profile',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: textColor,
-                        ),
+                      child: Icon(
+                        Icons.edit_rounded,
+                        color: pal.primaryCoral,
+                        size: 20,
                       ),
-                    ],
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.close,
-                      size: 20,
-                      color: isDark ? Colors.white70 : CasamaColors.textMuted,
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Edit Profile',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w700,
+                              color: pal.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            'Update your avatar, nickname & details',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: pal.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Semantics(
+                      button: true,
+                      label: 'Close Edit Profile',
+                      child: CasamaPressable(
+                        onTap: () {
+                          if (Navigator.canPop(context)) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                        child: Container(
+                          width: CasamaSpacing.minTouchTarget,
+                          height: CasamaSpacing.minTouchTarget,
+                          decoration: BoxDecoration(
+                            color: pal.track,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.close,
+                            size: 20,
+                            color: pal.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: CasamaSpacing.md),
 
-              // Profile Picture Section
+              // Avatar Preview + Camera & Gallery Actions
               Center(
                 child: Column(
                   children: [
@@ -219,116 +256,75 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
                       children: [
                         CasamaAvatar(
                           avatarUrl: _selectedAvatar,
-                          radius: 46,
+                          radius: 44,
                           name: _nameController.text,
                           showEditBadge: true,
                           onTap: _openCameraCapture,
                           borderWidth: 2,
+                          borderColor: pal.coralFab,
                         ),
                         if (_isPickingImage)
-                          const Positioned.fill(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: CasamaColors.primaryCoral,
-                            ),
+                          Positioned.fill(
+                            child: reduced
+                                ? Icon(
+                                    Icons.hourglass_top_rounded,
+                                    color: pal.primaryCoral,
+                                  )
+                                : CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: pal.primaryCoral,
+                                  ),
                           ),
                       ],
                     ),
                     if (_selectedAvatar == null) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         'Default Avatar',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark
-                              ? Colors.white70
-                              : CasamaColors.textSecondary,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: pal.textSecondary,
                         ),
                       ),
                     ],
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
 
-                    // Photo Action Buttons: Take Photo & Upload from Gallery
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 10,
+                      runSpacing: 8,
                       children: [
-                        OutlinedButton.icon(
-                          icon: const Icon(
-                            Icons.photo_camera_rounded,
-                            size: 16,
-                            color: CasamaColors.primaryCoral,
-                          ),
-                          label: const Text(
-                            'Take Photo',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: CasamaColors.primaryCoral,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            side: const BorderSide(
-                              color: CasamaColors.primaryCoral,
-                              width: 1.2,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          onPressed: _openCameraCapture,
+                        _AvatarActionPill(
+                          icon: Icons.photo_camera_rounded,
+                          label: 'Take Photo',
+                          color: pal.primaryCoral,
+                          borderColor: pal.primaryCoral.withValues(alpha: 0.45),
+                          bgColor: pal.softBlush,
+                          onTap: _openCameraCapture,
                         ),
-                        const SizedBox(width: 10),
-                        OutlinedButton.icon(
-                          icon: const Icon(
-                            Icons.photo_library_rounded,
-                            size: 16,
-                            color: CasamaColors.deepTeal,
-                          ),
-                          label: const Text(
-                            'Gallery',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: CasamaColors.deepTeal,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            side: const BorderSide(
-                              color: CasamaColors.deepTeal,
-                              width: 1.2,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          onPressed: () => _pickImage(ImageSource.gallery),
+                        _AvatarActionPill(
+                          icon: Icons.photo_library_rounded,
+                          label: 'Gallery',
+                          color: pal.forestTeal,
+                          borderColor: pal.forestTeal.withValues(alpha: 0.45),
+                          bgColor: pal.softSage,
+                          onTap: () => _pickImage(ImageSource.gallery),
                         ),
                       ],
                     ),
 
-                    // Remove Picture Option
                     if (_selectedAvatar != null) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       TextButton.icon(
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.delete_outline_rounded,
-                          size: 15,
-                          color: CasamaColors.errorRed,
+                          size: 16,
+                          color: pal.dangerFg,
                         ),
-                        label: const Text(
+                        label: Text(
                           'Remove Picture',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: CasamaColors.errorRed,
-                            fontWeight: FontWeight.w500,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: pal.dangerFg,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         onPressed: _removeAvatar,
@@ -337,18 +333,13 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
                   ],
                 ),
               ),
-
               const SizedBox(height: CasamaSpacing.sm),
 
-              // Preset Avatars
               Text(
                 'Or Choose a Preset Photo',
-                style: TextStyle(
-                  fontSize: 13,
+                style: theme.textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: isDark
-                      ? CasamaColors.darkTextSecondary
-                      : CasamaColors.textSecondary,
+                  color: pal.textSecondary,
                 ),
               ),
               const SizedBox(height: 10),
@@ -357,7 +348,7 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
                 child: Row(
                   children: _avatarPresets.map((url) {
                     final isSelected = _selectedAvatar == url;
-                    return GestureDetector(
+                    return CasamaPressable(
                       onTap: () => setState(() => _selectedAvatar = url),
                       child: Container(
                         margin: const EdgeInsets.only(right: 12),
@@ -366,7 +357,7 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: isSelected
-                                ? CasamaColors.primaryCoral
+                                ? pal.primaryCoral
                                 : Colors.transparent,
                             width: 2.5,
                           ),
@@ -379,7 +370,6 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
               ),
               const SizedBox(height: CasamaSpacing.lg),
 
-              // Full Name Field
               CasamaTextField(
                 controller: _nameController,
                 label: 'Full Name',
@@ -391,7 +381,6 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
               ),
               const SizedBox(height: CasamaSpacing.md),
 
-              // Nickname Field
               CasamaTextField(
                 controller: _nicknameController,
                 label: 'Nickname',
@@ -400,7 +389,6 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
               ),
               const SizedBox(height: CasamaSpacing.md),
 
-              // Handle Field
               CasamaTextField(
                 controller: _handleController,
                 label: 'Handle',
@@ -412,7 +400,6 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
               ),
               const SizedBox(height: CasamaSpacing.md),
 
-              // Age Field (Optional, with range validation)
               CasamaTextField(
                 controller: _ageController,
                 label: 'Age (Optional)',
@@ -430,11 +417,63 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
               ),
               const SizedBox(height: CasamaSpacing.xl),
 
-              // Save Changes Button
               CasamaButton(
                 label: 'Save Changes',
-                isPill: true,
+                icon: Icons.check_circle_outline_rounded,
                 onPressed: _save,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AvatarActionPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color borderColor;
+  final Color bgColor;
+  final VoidCallback onTap;
+
+  const _AvatarActionPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.borderColor,
+    required this.bgColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: CasamaPressable(
+        onTap: onTap,
+        child: Container(
+          height: CasamaSpacing.minTouchTarget,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: CasamaSpacing.roundedPill,
+            border: Border.all(color: borderColor, width: 1.2),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
               ),
             ],
           ),

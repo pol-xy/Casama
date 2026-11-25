@@ -4,228 +4,331 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
+import '../../shared/widgets/casama_avatar.dart';
+import '../../shared/widgets/casama_wave_header.dart';
 
 class LeaderboardScreen extends ConsumerWidget {
   const LeaderboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final maxW = CasamaBreakpoints.isTablet(context)
+        ? CasamaBreakpoints.maxContentWidth
+        : double.infinity;
 
-    final leaderboardList = [
+    final entries = [
       _LeaderboardEntry(
-        'Jon Paul Berana',
-        '@jpberana',
+        repo.currentUser.fullName ?? repo.currentUser.displayName,
+        repo.currentUser.handle,
         repo.kasamaPoints,
-        '1st',
         '🥇',
-        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+        repo.currentUser.avatarUrl,
+        isCurrentUser: true,
       ),
-      _LeaderboardEntry(
+      const _LeaderboardEntry(
         'Maria Santos',
         '@maria',
         85,
-        '2nd',
         '🥈',
-        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
+        null,
       ),
-      _LeaderboardEntry(
+      const _LeaderboardEntry(
         'Alex Rivera',
         '@alex',
         65,
-        '3rd',
         '🥉',
-        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
+        null,
       ),
-      _LeaderboardEntry(
+      const _LeaderboardEntry(
         'Ria Garcia',
         '@ria',
         55,
-        '4th',
         '🎖️',
-        'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80',
+        null,
       ),
     ];
 
     return Scaffold(
-      backgroundColor: context.scaffoldBg,
-      appBar: AppBar(
-        title: const Text('Kasama Leaderboard'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => context.pop(),
+      backgroundColor: pal.scaffoldBg,
+      body: CasamaAmbientCanvas(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(bottom: bottomInset + CasamaSpacing.xxl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              CasamaWaveHeader(
+                title: 'Kasama Leaderboard',
+                subtitle: '${repo.currentHousehold.name} • November 2026',
+                compact: true,
+                onBackTap: () {
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
+                  } else {
+                    GoRouter.maybeOf(context)?.pop();
+                  }
+                },
+              ),
+
+              Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxW),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Celebration Split Hero (Transparent PNG Mascot + Rank Card)
+                      Transform.translate(
+                        offset: const Offset(0, -16),
+                        child: CasamaSplitHero(
+                          mascotPose: CasPose.roulette,
+                          kicker: 'November 2026',
+                          kickerDotColor: pal.amberFg,
+                          headline: 'Good Kasama Rank',
+                          subtitle:
+                              'Every helpful deed builds a warmer household.',
+                        ),
+                      ),
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: CasamaSpacing.md,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Household Standings',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: pal.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: CasamaSpacing.xs),
+
+                            ...entries.map((entry) {
+                              return Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: CasamaSpacing.xs,
+                                ),
+                                child: CasamaCard(
+                                  padding: const EdgeInsets.all(14),
+                                  borderSide: entry.isCurrentUser
+                                      ? BorderSide(
+                                          color: pal.forestTeal,
+                                          width: 1.5,
+                                        )
+                                      : null,
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        entry.medal,
+                                        style: const TextStyle(fontSize: 24),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      CasamaAvatar(
+                                        radius: 20,
+                                        avatarUrl: entry.avatarUrl,
+                                        name: entry.name,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                    entry.name,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: theme
+                                                        .textTheme
+                                                        .titleSmall
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color:
+                                                              pal.textPrimary,
+                                                        ),
+                                                  ),
+                                                ),
+                                                if (entry.isCurrentUser) ...[
+                                                  const SizedBox(width: 6),
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 7,
+                                                          vertical: 2,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: pal.softSage,
+                                                      borderRadius:
+                                                          CasamaSpacing
+                                                              .roundedPill,
+                                                    ),
+                                                    child: Text(
+                                                      'You',
+                                                      style: theme
+                                                          .textTheme
+                                                          .labelSmall
+                                                          ?.copyWith(
+                                                            color:
+                                                                pal.forestTeal,
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                            Text(
+                                              entry.handle,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    fontSize: 12,
+                                                    color: pal.textSecondary,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 5,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: pal.softBlush,
+                                          borderRadius:
+                                              CasamaSpacing.roundedPill,
+                                        ),
+                                        child: Text(
+                                          '${entry.points} pts',
+                                          style: theme
+                                              .textTheme
+                                              .titleSmall
+                                              ?.tabular
+                                              .copyWith(
+                                                color: pal.primaryCoral,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+
+                            const SizedBox(height: CasamaSpacing.md),
+
+                            CasamaCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'How to Earn Points',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: pal.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: CasamaSpacing.sm),
+                                  const _PointRuleRow(
+                                    label: 'Receive & confirm a delivery',
+                                    points: '+5 pts',
+                                  ),
+                                  const _PointRuleRow(
+                                    label: 'Complete maintenance repair / chore',
+                                    points: '+5 pts',
+                                  ),
+                                  const _PointRuleRow(
+                                    label: 'Restock household supplies',
+                                    points: '+2 pts',
+                                  ),
+                                  const _PointRuleRow(
+                                    label: 'Locate and return lost item',
+                                    points: '+3 pts',
+                                    isLast: true,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.lg),
-          children: [
-            const SizedBox(height: CasamaSpacing.sm),
+    );
+  }
+}
 
-            // Top Hero Card with Cas Jumping Celebration
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: CasamaColors.midnightNavy,
-                borderRadius: CasamaSpacing.roundedXl,
-              ),
-              child: Row(
-                children: [
-                  const CasMascotView(
-                    pose: CasPose.jumping,
-                    width: 85,
-                    height: 85,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'November 2026',
-                          style: TextStyle(
-                            color: CasamaColors.warmGold,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Good Kasama Rank',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Every helpful deed coordinates a better home.',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+class _PointRuleRow extends StatelessWidget {
+  final String label;
+  final String points;
+  final bool isLast;
+
+  const _PointRuleRow({
+    required this.label,
+    required this.points,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: pal.textSecondary,
+                fontSize: 13,
               ),
             ),
-
-            const SizedBox(height: CasamaSpacing.xl),
-
-            // Rankings List
-            Text(
-              'Household Standings',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: context.textColor,
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: pal.successBg,
+              borderRadius: CasamaSpacing.roundedPill,
+            ),
+            child: Text(
+              points,
+              style: theme.textTheme.labelSmall?.tabular.copyWith(
+                color: pal.successFg,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: CasamaSpacing.sm),
-
-            ...leaderboardList.map((entry) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: context.cardColor,
-                  borderRadius: CasamaSpacing.roundedLg,
-                  border: Border.all(color: context.borderColor),
-                ),
-                child: Row(
-                  children: [
-                    Text(entry.medal, style: const TextStyle(fontSize: 24)),
-                    const SizedBox(width: 14),
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundImage: NetworkImage(entry.avatar),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            entry.name,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: context.textColor,
-                            ),
-                          ),
-                          Text(
-                            entry.handle,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: context.textSecondaryColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '${entry.points} pts',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: CasamaColors.primaryCoral,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-
-            const SizedBox(height: CasamaSpacing.lg),
-
-            // Points Rules Guide Card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: context.cardColor,
-                borderRadius: CasamaSpacing.roundedLg,
-                border: Border.all(color: context.borderColor),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'How to Earn Points:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: context.textColor,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '• Receive & confirm a delivery: +5 pts',
-                    style: TextStyle(color: context.textSecondaryColor),
-                  ),
-                  Text(
-                    '• Complete maintenance repair: +5 pts',
-                    style: TextStyle(color: context.textSecondaryColor),
-                  ),
-                  Text(
-                    '• Restock household supplies: +2 pts',
-                    style: TextStyle(color: context.textSecondaryColor),
-                  ),
-                  Text(
-                    '• Locate and return lost item: +3 pts',
-                    style: TextStyle(color: context.textSecondaryColor),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: CasamaSpacing.xxl),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -235,16 +338,16 @@ class _LeaderboardEntry {
   final String name;
   final String handle;
   final int points;
-  final String rank;
   final String medal;
-  final String avatar;
+  final String? avatarUrl;
+  final bool isCurrentUser;
 
-  _LeaderboardEntry(
+  const _LeaderboardEntry(
     this.name,
     this.handle,
     this.points,
-    this.rank,
     this.medal,
-    this.avatar,
-  );
+    this.avatarUrl, {
+    this.isCurrentUser = false,
+  });
 }

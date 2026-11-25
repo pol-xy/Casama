@@ -10,13 +10,18 @@ enum CasPose {
   roulette,
   together,
   chatting,
+  chores,
 }
 
+/// Renders transparent Cas/Migo mascot PNG illustrations cleanly over any
+/// background (stepped wave headers, cards, or avatar rims) with no opaque
+/// backdrop boxes, borders, or cast shadows.
 class CasMascotView extends StatelessWidget {
   final CasPose pose;
   final double? width;
   final double? height;
   final BoxFit fit;
+  final String? semanticLabel;
 
   const CasMascotView({
     super.key,
@@ -24,51 +29,58 @@ class CasMascotView extends StatelessWidget {
     this.width,
     this.height,
     this.fit = BoxFit.contain,
+    this.semanticLabel,
   });
 
   String get _assetPath {
     switch (pose) {
       case CasPose.hero:
-        return 'assets/images/cas/cas_hero.png';
-      case CasPose.waving:
-        return 'assets/images/cas/cas_waving.png';
-      case CasPose.jumping:
-        return 'assets/images/cas/cas_jumping.png';
       case CasPose.standing:
-        return 'assets/images/cas/cas_standing.png';
-      case CasPose.deliveries:
-        return 'assets/images/cas/cas_deliveries.png';
-      case CasPose.tasks:
-        return 'assets/images/cas/cas_tasks.png';
-      case CasPose.roulette:
-        return 'assets/images/cas/cas_roulette.png';
       case CasPose.together:
-        return 'assets/images/cas/cas_together.png';
+        return 'assets/images/cas/together_cards.png';
+      case CasPose.waving:
       case CasPose.chatting:
-        return 'assets/images/cas/cas_chatting.png';
+        return 'assets/images/cas/migo_chat.png';
+      case CasPose.jumping:
+      case CasPose.roulette:
+        return 'assets/images/cas/migo_roulette.png';
+      case CasPose.deliveries:
+        return 'assets/images/cas/migo_deliveries.png';
+      case CasPose.tasks:
+        return 'assets/images/cas/migo_tasks.png';
+      case CasPose.chores:
+        return 'assets/images/cas/migo_chores.png';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
+    final image = Image.asset(
       _assetPath,
       width: width,
       height: height,
       fit: fit,
+      filterQuality: FilterQuality.medium,
+      excludeFromSemantics: semanticLabel == null,
+      semanticLabel: semanticLabel,
       errorBuilder: (context, error, stackTrace) {
-        // Fallback friendly placeholder if asset loading has an issue
-        return Container(
+        return SizedBox(
           width: width ?? 80,
           height: height ?? 80,
-          decoration: const BoxDecoration(
-            color: Color(0xFFFFF8F1),
-            shape: BoxShape.circle,
+          child: const Center(
+            child: Icon(
+              Icons.cottage_rounded,
+              size: 32,
+              color: Color(0xFF37655E),
+            ),
           ),
-          alignment: Alignment.center,
-          child: const Text('🦉', style: TextStyle(fontSize: 32)),
         );
       },
     );
+
+    if (semanticLabel == null) {
+      return ExcludeSemantics(child: image);
+    }
+    return image;
   }
 }

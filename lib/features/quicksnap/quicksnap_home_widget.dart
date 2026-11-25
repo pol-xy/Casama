@@ -1,335 +1,283 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/motion/casama_motion.dart';
+import '../../core/theme/app_theme.dart';
+import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/casama_avatar.dart';
+import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_wave_header.dart';
 import 'quicksnap_camera_screen.dart';
 import 'quicksnap_feed_screen.dart';
 import 'quicksnap_image_view.dart';
+import 'quicksnap_lightbox.dart';
 
+/// Home Dashboard `Shared CASnaps` card featuring a 3×2 thumbnail grid,
+/// `Hero` lightbox viewer on tile tap, and direct link into the filterable
+/// household gallery (`casama-app-mockup.html`).
 class QuickSnapHomeWidget extends ConsumerWidget {
   const QuickSnapHomeWidget({super.key});
 
+  void _openGallery(BuildContext context, {int initialTabIndex = 1}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => QuickSnapFeedScreen(initialTabIndex: initialTabIndex),
+      ),
+    );
+  }
+
+  void _openCamera(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const QuickSnapCameraScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
-    final latestSnap = repo.latestQuickSnap;
+    final snaps = repo.quickSnaps;
     final streak = repo.quickSnapStreak;
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: CasamaSpacing.roundedLg,
-        border: Border.all(color: context.borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(context.isDark ? 50 : 15),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(16),
+    return CasamaCard(
+      padding: const EdgeInsets.all(CasamaSpacing.md),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header Row
+          // Header Row: Shared CASnaps + count badge + View all / Snap Back
           Row(
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: CasamaColors.primaryCoral.withAlpha(25),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text('💛', style: TextStyle(fontSize: 16)),
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Text(
-                      'Household QuickSnap',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: context.textColor,
+                    Flexible(
+                      child: Text(
+                        'Shared CASnaps',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: pal.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    Text(
-                      'Live moments from ${repo.currentHousehold.name}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondaryColor,
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: pal.track,
+                        borderRadius: CasamaSpacing.roundedPill,
+                      ),
+                      child: Text(
+                        '${snaps.length} ${snaps.length == 1 ? 'photo' : 'photos'}',
+                        style: theme.textTheme.labelSmall?.tabular.copyWith(
+                          color: pal.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              if (streak > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: CasamaColors.warningBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: CasamaColors.warningOrange.withAlpha(70),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Text('🔥', style: TextStyle(fontSize: 12)),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${streak}d',
-                        style: const TextStyle(
-                          color: CasamaColors.warningOrange,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                    if (streak > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: pal.amberBg,
+                          borderRadius: CasamaSpacing.roundedPill,
+                        ),
+                        child: Text(
+                          '${streak}d',
+                          style: theme.textTheme.labelSmall?.tabular.copyWith(
+                            color: pal.amberFg,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // Main Locket-style photo or Empty State
-          if (latestSnap != null) ...[
-            GestureDetector(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const QuickSnapFeedScreen(),
-                  ),
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                height: 220,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withAlpha(30),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    QuickSnapImageView(
-                      imageUrl: latestSnap.imageUrl,
-                      fit: BoxFit.cover,
-                    ),
-
-                    // Top gradient with sender info
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withAlpha(140),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            CasamaAvatar(
-                              avatarUrl: latestSnap.senderAvatar,
-                              radius: 14,
-                              name: latestSnap.senderName,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              latestSnap.senderName,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '• ${_formatTime(latestSnap.createdAt)}',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Caption if any
-                    if (latestSnap.caption != null &&
-                        latestSnap.caption!.isNotEmpty)
-                      Positioned(
-                        bottom: 12,
-                        left: 12,
-                        right: 12,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withAlpha(150),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Text(
-                            latestSnap.caption!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Quick emoji reactions + snap button
-            Row(
-              children: [
-                ...['😍', '🔥', '❤️'].map((emoji) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: GestureDetector(
-                      onTap: () {
-                        repo.reactToQuickSnap(latestSnap.id, emoji);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Reacted with $emoji to ${latestSnap.senderName}',
-                            ),
-                            duration: const Duration(seconds: 1),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: context.borderColor.withAlpha(60),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          emoji,
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const QuickSnapCameraScreen(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.camera_alt_outlined, size: 16),
-                  label: const Text(
-                    'Snap Back',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: CasamaColors.primaryCoral,
-                  ),
+              TextButton(
+                onPressed: () => _openGallery(context),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(44, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  foregroundColor: pal.primaryCoral,
                 ),
-              ],
-            ),
-          ] else ...[
-            // Empty state
+                child: const Text(
+                  'View all ›',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: CasamaSpacing.sm),
+
+          if (snaps.isEmpty)
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
               decoration: BoxDecoration(
-                color: context.scaffoldBg,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: context.borderColor),
+                color: pal.surface,
+                borderRadius: CasamaSpacing.roundedLg,
+                border: Border.all(color: pal.border),
               ),
               child: Column(
                 children: [
                   Icon(
                     Icons.photo_camera_back_outlined,
-                    size: 40,
-                    color: context.textMutedColor,
+                    size: 38,
+                    color: pal.textMuted,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'No moments shared yet today',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: context.textColor,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: pal.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Send a quick photo to your dormmates!',
-                    style: TextStyle(
+                    'Send a quick photo to ${repo.currentHousehold.name}.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: pal.textSecondary,
                       fontSize: 12,
-                      color: context.textSecondaryColor,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const QuickSnapCameraScreen(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: CasamaColors.primaryCoral,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    icon: const Icon(Icons.add_a_photo_outlined, size: 16),
-                    label: const Text('Take QuickSnap'),
+                  const SizedBox(height: 14),
+                  CasamaButton(
+                    label: 'Take QuickSnap',
+                    icon: Icons.add_a_photo_outlined,
+                    isFullWidth: false,
+                    height: 44,
+                    onPressed: () => _openCamera(context),
                   ),
                 ],
+              ),
+            )
+          else ...[
+            // 3×2 Grid (up to 5 recent photos + 6th View all / +N slot)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: snaps.length > 5 ? 6 : snaps.length + 1,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 1,
+              ),
+              itemBuilder: (context, index) {
+                final maxPhotoSlots = snaps.length > 5 ? 5 : snaps.length;
+                if (index < maxPhotoSlots) {
+                  final snap = snaps[index];
+                  final heroTag = 'home_casnap_${index}_${snap.id}';
+                  return _SnapGridTile(
+                    snap: snap,
+                    heroTag: heroTag,
+                    onTap: () => showCasamaSnapLightbox(
+                      context,
+                      snap: snap,
+                      heroTag: heroTag,
+                    ),
+                  );
+                }
+
+                // 6th slot: "+N View all" or "+ Snap Back"
+                final overflowCount = snaps.length > 5 ? snaps.length - 5 : 0;
+                return Semantics(
+                  button: true,
+                  label: overflowCount > 0
+                      ? 'View all ${snaps.length} shared photos'
+                      : 'Snap back a photo',
+                  child: CasamaPressable(
+                    onTap: overflowCount > 0
+                        ? () => _openGallery(context)
+                        : () => _openCamera(context),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: pal.softSage,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: pal.border),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (overflowCount > 0) ...[
+                            Text(
+                              '+$overflowCount',
+                              style: theme.textTheme.titleLarge?.tabular
+                                  .copyWith(
+                                    color: pal.forestTeal,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                            Text(
+                              'View all',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: pal.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ] else ...[
+                            Icon(
+                              Icons.add_a_photo_outlined,
+                              size: 22,
+                              color: pal.forestTeal,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Snap Back',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: pal.forestTeal,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Bottom Browse Pill Action
+            Semantics(
+              button: true,
+              label: 'Browse all ${snaps.length} shared shots',
+              child: CasamaPressable(
+                onTap: () => _openGallery(context),
+                child: Container(
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: pal.surface,
+                    borderRadius: CasamaSpacing.roundedPill,
+                    border: Border.all(color: pal.border),
+                  ),
+                  child: Text(
+                    'Browse all ${snaps.length} shared ${snaps.length == 1 ? 'shot' : 'shots'} →',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: pal.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -337,11 +285,118 @@ class QuickSnapHomeWidget extends ConsumerWidget {
       ),
     );
   }
+}
 
-  String _formatTime(DateTime time) {
-    final diff = DateTime.now().difference(time);
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    return DateFormat('MMM d').format(time);
+class _SnapGridTile extends StatelessWidget {
+  final QuickSnap snap;
+  final String heroTag;
+  final VoidCallback onTap;
+
+  const _SnapGridTile({
+    required this.snap,
+    required this.heroTag,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final isDirect =
+        snap.recipientType == QuickSnapRecipientType.selectedHousemates;
+
+    return Semantics(
+      button: true,
+      container: true,
+      excludeSemantics: true,
+      label: 'Photo by ${snap.senderName}',
+      child: CasamaPressable(
+        enableHaptic: true,
+        onTap: onTap,
+        child: Hero(
+          tag: heroTag,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: pal.headerDeep,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                QuickSnapImageView(imageUrl: snap.imageUrl, fit: BoxFit.cover),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 46,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.72),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (isDirect)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: pal.primaryCoral,
+                        borderRadius: CasamaSpacing.roundedPill,
+                      ),
+                      child: const Text(
+                        'To You',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  left: 6,
+                  right: 6,
+                  bottom: 6,
+                  child: Row(
+                    children: [
+                      CasamaAvatar(
+                        radius: 10,
+                        avatarUrl: snap.senderAvatar,
+                        name: snap.senderName,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          snap.senderName.split(' ').first,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

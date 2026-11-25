@@ -60,4 +60,4 @@ app.*.map.json
 /.gemini
 
 
-/docs
+# /docs
