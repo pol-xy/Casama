@@ -194,8 +194,8 @@ class _TermsPrivacyScreenState extends State<TermsPrivacyScreen> {
           icon: Icons.camera_alt_outlined,
           title: 'Camera & Photo Library',
           reason:
-              'Required only when you choose to snap or upload a photo of a package delivery slip, a lost item, or a maintenance repair issue.',
-          isOptional: false,
+              'Used when you choose to snap or upload a photo of a package delivery slip, a lost item, or a maintenance repair issue.',
+          isOptional: true,
         ),
         const SizedBox(height: CasamaSpacing.sm),
         _LegalPermissionCard(

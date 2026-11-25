@@ -23,15 +23,15 @@ class DevicePermissionsScreen extends ConsumerStatefulWidget {
 
 class _DevicePermissionsScreenState
     extends ConsumerState<DevicePermissionsScreen> {
-  late bool _notificationsAllowed;
-  bool _cameraPhotosAllowed = true;
+  bool _notificationsAllowed = false;
+  bool _cameraPhotosAllowed = false;
   bool _contactsAllowed = false;
 
   @override
   void initState() {
     super.initState();
     if (widget.isOnboarding) {
-      _notificationsAllowed = true;
+      _notificationsAllowed = false;
     } else {
       final prefs = ref.read(repositoryProvider).notificationPreferences;
       _notificationsAllowed =

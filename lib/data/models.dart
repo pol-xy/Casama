@@ -8,6 +8,7 @@ class UserProfile {
   final String? fullName;
   final String? nickname;
   final int? age;
+  final DateTime? birthDate;
   final String? avatarUrl;
   final bool hasConsentedTerms;
   final bool hasCompletedOnboarding;
@@ -19,6 +20,7 @@ class UserProfile {
     this.fullName,
     this.nickname,
     this.age,
+    this.birthDate,
     this.avatarUrl,
     this.hasConsentedTerms = false,
     this.hasCompletedOnboarding = false,
@@ -45,6 +47,10 @@ class UserProfile {
   }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
+    DateTime? birthDate;
+    if (json['birth_date'] != null) {
+      birthDate = DateTime.tryParse(json['birth_date'] as String);
+    }
     return UserProfile(
       id: json['id'] as String,
       displayName: json['display_name'] as String? ?? 'Housemate',
@@ -52,6 +58,7 @@ class UserProfile {
       fullName: json['full_name'] as String?,
       nickname: json['nickname'] as String?,
       age: json['age'] as int?,
+      birthDate: birthDate,
       avatarUrl: json['avatar_url'] as String?,
       hasConsentedTerms: json['has_consented_terms'] as bool? ?? false,
       hasCompletedOnboarding:
@@ -66,6 +73,7 @@ class UserProfile {
     'full_name': fullName,
     'nickname': nickname,
     'age': age,
+    'birth_date': birthDate?.toIso8601String(),
     'avatar_url': avatarUrl,
     'has_consented_terms': hasConsentedTerms,
     'has_completed_onboarding': hasCompletedOnboarding,

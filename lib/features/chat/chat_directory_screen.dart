@@ -72,7 +72,7 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
         ? (groupLastMsg.isCurrentUser
               ? 'You: ${groupLastMsg.content}'
               : '${groupLastMsg.senderName}: ${groupLastMsg.content}')
-        : "Let's plan for the meetup!";
+        : 'No messages yet in household chat';
     final groupTime = groupLastMsg != null
         ? DateFormat('h:mm a').format(groupLastMsg.createdAt)
         : '8:24 PM';

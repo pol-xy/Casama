@@ -13,5 +13,5 @@ final repositoryProvider = ChangeNotifierProvider<CasamaRepository>((ref) {
   if (client != null && client.auth.currentUser != null) {
     return SupabaseRepository(client);
   }
-  return MockRepository();
+  return MockRepository(loadSeedData: false);
 });

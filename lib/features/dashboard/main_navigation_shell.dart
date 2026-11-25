@@ -7,6 +7,8 @@ import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
+import '../../shared/widgets/casama_button.dart';
 import '../chat/chat_directory_screen.dart';
 import '../profile/profile_screen.dart';
 import '../quicksnap/quicksnap_camera_screen.dart';
@@ -48,12 +50,14 @@ class MainNavigationShell extends ConsumerStatefulWidget {
   final int initialIndex;
   final int initialBoardIndex;
   final bool showBottomNav;
+  final bool isTourMode;
 
   const MainNavigationShell({
     super.key,
     this.initialIndex = 0,
     this.initialBoardIndex = 0,
     this.showBottomNav = true,
+    this.isTourMode = false,
   });
 
   @override
@@ -64,6 +68,8 @@ class MainNavigationShell extends ConsumerStatefulWidget {
 class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
   late int _currentIndex;
   late final ValueNotifier<int> _boardTabNotifier;
+  late bool _isTourActive;
+  int _tourStep = 0;
 
   final List<Widget> _screens = const [
     DashboardScreen(),
@@ -78,6 +84,12 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     super.initState();
     _currentIndex = widget.initialIndex.clamp(0, 4);
     _boardTabNotifier = ValueNotifier<int>(widget.initialBoardIndex.clamp(0, 3));
+    _isTourActive = widget.isTourMode;
+    if (_isTourActive) {
+      _tourStep = _currentIndex == 1
+          ? 1
+          : (_currentIndex == 3 ? 3 : (_currentIndex == 4 ? 4 : 0));
+    }
   }
 
   @override
@@ -88,6 +100,9 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     }
     if (widget.initialBoardIndex != oldWidget.initialBoardIndex) {
       _boardTabNotifier.value = widget.initialBoardIndex.clamp(0, 3);
+    }
+    if (widget.isTourMode != oldWidget.isTourMode) {
+      setState(() => _isTourActive = widget.isTourMode);
     }
   }
 
@@ -105,15 +120,33 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
 
   void _onTabTapped(int index) {
     if (index == 2) {
-      _openQuickSnap();
+      if (_isTourActive) {
+        setState(() => _tourStep = 2);
+      } else {
+        _openQuickSnap();
+      }
     } else {
-      setState(() => _currentIndex = index.clamp(0, 4));
+      setState(() {
+        _currentIndex = index.clamp(0, 4);
+        if (_isTourActive) {
+          _tourStep = switch (index) {
+            0 => 0,
+            1 => 1,
+            3 => 3,
+            4 => 4,
+            _ => _tourStep,
+          };
+        }
+      });
     }
   }
 
   void _openBoardTab(int boardIndex) {
     _boardTabNotifier.value = boardIndex.clamp(0, 3);
-    setState(() => _currentIndex = 1);
+    setState(() {
+      _currentIndex = 1;
+      if (_isTourActive) _tourStep = 1;
+    });
   }
 
   void _openDrawer() {
@@ -124,6 +157,43 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     );
   }
 
+  void _finishTour() {
+    ref.read(repositoryProvider).completeOnboardingTutorial();
+    setState(() {
+      _isTourActive = false;
+      _currentIndex = 0;
+    });
+    showCasamaToast(
+      context,
+      'Feature tour complete! Welcome to Casama.',
+      icon: Icons.check_circle_outline_rounded,
+    );
+  }
+
+  void _goToTourStep(int step) {
+    if (step < 0 || step > 4) return;
+    setState(() {
+      _tourStep = step;
+      switch (step) {
+        case 0:
+          _currentIndex = 0;
+          break;
+        case 1:
+          _currentIndex = 1;
+          break;
+        case 2:
+          // Keep on current tab, highlighting CASnap center button
+          break;
+        case 3:
+          _currentIndex = 3;
+          break;
+        case 4:
+          _currentIndex = 4;
+          break;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final pal = context.palette;
@@ -131,6 +201,10 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     final unreadChat = repo.totalUnreadChatCount;
     final reduced = CasamaMotion.reduceMotion(context);
     final navVisible = widget.showBottomNav && _currentIndex != 2;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final maxW = CasamaBreakpoints.isTablet(context)
+        ? CasamaBreakpoints.maxContentWidth
+        : double.infinity;
 
     return CasamaShellScope(
       currentIndex: _currentIndex,
@@ -141,7 +215,23 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       child: Scaffold(
         backgroundColor: pal.scaffoldBg,
         extendBody: true,
-        body: IndexedStack(index: _currentIndex, children: _screens),
+        body: Stack(
+          children: [
+            IndexedStack(index: _currentIndex, children: _screens),
+            if (_isTourActive)
+              Positioned(
+                left: CasamaSpacing.md,
+                right: CasamaSpacing.md,
+                bottom: 74 + (bottomInset > 0 ? bottomInset : 8),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxW),
+                    child: _buildTourGuideCard(context, pal),
+                  ),
+                ),
+              ),
+          ],
+        ),
         bottomNavigationBar: AnimatedSwitcher(
           duration: reduced ? Duration.zero : CasamaMotion.press,
           child: navVisible
@@ -150,9 +240,184 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
                   currentIndex: _currentIndex,
                   unreadChatCount: unreadChat,
                   onTap: _onTabTapped,
+                  highlightCasnap: _isTourActive && _tourStep == 2,
                 )
               : const SizedBox.shrink(key: ValueKey('casama_hidden_bar')),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTourGuideCard(BuildContext context, CasamaPalette pal) {
+    final theme = Theme.of(context);
+
+    final (title, desc, pose, actionLabel) = switch (_tourStep) {
+      0 => (
+        '1. Home Dashboard & Presence',
+        'Check live housemate presence with zero background GPS, share quick status notes, and view upcoming events.',
+        CasPose.hero,
+        'Next: Boards ›',
+      ),
+      1 => (
+        '2. Unified Household Boards',
+        'Swipe across Parcels, Chores & Tasks, Utility Bills, and Lost & Found in one shared household hub.',
+        CasPose.deliveries,
+        'Next: CASnap ›',
+      ),
+      2 => (
+        '3. CASnap Household Camera',
+        'Tap the raised center shutter anytime to snap parcel slips, shared moments, or kitchen updates.',
+        CasPose.jumping,
+        'Next: Chat ›',
+      ),
+      3 => (
+        '4. Household Chat & Meet-ups',
+        'Message housemates 1-on-1, coordinate in topic spaces, and organize group meet-ups with instant RSVPs.',
+        CasPose.chatting,
+        'Next: Profile ›',
+      ),
+      _ => (
+        '5. Profile, Roulette & Points',
+        'Spin Task Roulette for fair chore turns, track Good Kasama points, and copy your household invite code.',
+        CasPose.roulette,
+        'Finish Tour 🎉',
+      ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(CasamaSpacing.md),
+      decoration: BoxDecoration(
+        color: pal.surface,
+        borderRadius: CasamaSpacing.roundedCard,
+        border: Border.all(
+          color: pal.primaryCoral.withValues(alpha: 0.35),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: context.isDark ? 0.45 : 0.14),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: pal.softBlush,
+                  borderRadius: CasamaSpacing.roundedPill,
+                ),
+                child: Text(
+                  'App Tour (${_tourStep + 1} of 5)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: pal.primaryCoral,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Semantics(
+                button: true,
+                label: 'Skip feature tour',
+                child: CasamaPressable(
+                  onTap: _finishTour,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      'Skip Tour',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: pal.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CasMascotView(pose: pose, width: 44, height: 44),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: pal.textPrimary,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      desc,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: pal.textSecondary,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (_tourStep > 0)
+                OutlinedButton(
+                  onPressed: () => _goToTourStep(_tourStep - 1),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    side: BorderSide(color: pal.border),
+                    shape: const StadiumBorder(),
+                  ),
+                  child: Text(
+                    '‹ Back',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: pal.textSecondary,
+                    ),
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+              CasamaButton(
+                label: actionLabel,
+                isPill: true,
+                isFullWidth: false,
+                height: 36,
+                onPressed: () {
+                  if (_tourStep < 4) {
+                    _goToTourStep(_tourStep + 1);
+                  } else {
+                    _finishTour();
+                  }
+                },
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -162,12 +427,14 @@ class _CasamaBottomBar extends StatelessWidget {
   final int currentIndex;
   final int unreadChatCount;
   final ValueChanged<int> onTap;
+  final bool highlightCasnap;
 
   const _CasamaBottomBar({
     super.key,
     required this.currentIndex,
     required this.unreadChatCount,
     required this.onTap,
+    this.highlightCasnap = false,
   });
 
   @override
@@ -210,7 +477,10 @@ class _CasamaBottomBar extends StatelessWidget {
               label: 'Boards',
               onTap: () => onTap(1),
             ),
-            _RaisedCasnapButton(onTap: () => onTap(2)),
+            _RaisedCasnapButton(
+              onTap: () => onTap(2),
+              isHighlighted: highlightCasnap,
+            ),
             _NavSlotItem(
               index: 3,
               currentIndex: currentIndex,
@@ -333,8 +603,12 @@ class _NavSlotItem extends StatelessWidget {
 
 class _RaisedCasnapButton extends StatelessWidget {
   final VoidCallback onTap;
+  final bool isHighlighted;
 
-  const _RaisedCasnapButton({required this.onTap});
+  const _RaisedCasnapButton({
+    required this.onTap,
+    this.isHighlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -357,18 +631,21 @@ class _RaisedCasnapButton extends StatelessWidget {
                 Positioned(
                   top: -18,
                   child: Container(
-                    width: 56,
-                    height: 56,
+                    width: isHighlighted ? 62 : 56,
+                    height: isHighlighted ? 62 : 56,
                     decoration: BoxDecoration(
                       color: pal.surface,
                       shape: BoxShape.circle,
-                      border: Border.all(color: pal.coralFab, width: 2.5),
+                      border: Border.all(
+                        color: pal.coralFab,
+                        width: isHighlighted ? 3.5 : 2.5,
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: pal.coralFab.withValues(
-                            alpha: context.isDark ? 0.45 : 0.35,
+                            alpha: isHighlighted ? 0.65 : (context.isDark ? 0.45 : 0.35),
                           ),
-                          blurRadius: 12,
+                          blurRadius: isHighlighted ? 18 : 12,
                           offset: const Offset(0, 4),
                         ),
                       ],

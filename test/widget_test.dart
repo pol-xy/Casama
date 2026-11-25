@@ -103,7 +103,7 @@ void main() {
       expect(find.text('Tell Us About You'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
       expect(find.text('Nickname'), findsOneWidget);
-      expect(find.text('Age (Optional)'), findsOneWidget);
+      expect(find.text('Birthday (Optional)'), findsOneWidget);
       expect(find.text('Save & Continue'), findsOneWidget);
       expect(find.text('Skip Profile for Now'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
@@ -174,30 +174,30 @@ void main() {
       );
 
       // Initial step: Home
-      expect(find.text('1. Home Dashboard & Calendar'), findsOneWidget);
-      expect(find.text('Skip'), findsOneWidget);
-      expect(find.text('Next Navigation Element'), findsOneWidget);
+      expect(find.text('1. Home Dashboard & Presence'), findsOneWidget);
+      expect(find.text('Skip Tour'), findsOneWidget);
+      expect(find.text('Next: Boards ›'), findsOneWidget);
 
       // Advance to Step 2: Boards
-      await tester.tap(find.text('Next Navigation Element'));
+      await tester.tap(find.text('Next: Boards ›'));
       await tester.pumpAndSettle();
       expect(find.text('2. Unified Household Boards'), findsOneWidget);
 
       // Advance to Step 3: CASnap
-      await tester.tap(find.text('Next Navigation Element'));
+      await tester.tap(find.text('Next: CASnap ›'));
       await tester.pumpAndSettle();
-      expect(find.text('3. CASnap Household Moments'), findsOneWidget);
+      expect(find.text('3. CASnap Household Camera'), findsOneWidget);
 
       // Advance to Step 4: Chat
-      await tester.tap(find.text('Next Navigation Element'));
+      await tester.tap(find.text('Next: Chat ›'));
       await tester.pumpAndSettle();
       expect(find.text('4. Household Chat & Meet-ups'), findsOneWidget);
 
       // Advance to Step 5: Profile
-      await tester.tap(find.text('Next Navigation Element'));
+      await tester.tap(find.text('Next: Profile ›'));
       await tester.pumpAndSettle();
       expect(find.text('5. Profile, Roulette & Points'), findsOneWidget);
-      expect(find.text('Enter Home Dashboard'), findsOneWidget);
+      expect(find.text('Finish Tour 🎉'), findsOneWidget);
     },
   );
 

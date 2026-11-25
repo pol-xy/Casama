@@ -326,6 +326,54 @@ class DashboardScreen extends ConsumerWidget {
                 ),
             ],
           ),
+          if (members.length <= 1) ...[
+            const SizedBox(height: CasamaSpacing.sm),
+            Semantics(
+              button: true,
+              label: 'Invite housemates to join ${repo.currentHousehold.name}',
+              child: CasamaPressable(
+                onTap: () => _openDrawer(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: pal.softSage,
+                    borderRadius: CasamaSpacing.roundedSm,
+                    border: Border.all(
+                      color: pal.forestTeal.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.group_add_outlined,
+                        size: 18,
+                        color: pal.forestTeal,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Invite housemates (Code: ${repo.currentHousehold.inviteCode})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: pal.forestTeal,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 12,
+                        color: pal.forestTeal,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

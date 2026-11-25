@@ -81,7 +81,7 @@ void main() {
       expect(find.text('Tell Us About You'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
       expect(find.text('Nickname'), findsOneWidget);
-      expect(find.text('Age (Optional)'), findsOneWidget);
+      expect(find.text('Birthday (Optional)'), findsOneWidget);
       expect(find.text('Skip Profile for Now'), findsOneWidget);
 
       // 4. Terms and Privacy Consent Screen
@@ -131,12 +131,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       // Initial step: Home
-      expect(find.text('1. Home Dashboard & Calendar'), findsOneWidget);
-      expect(find.text('Skip'), findsOneWidget);
-      expect(find.text('Next Navigation Element'), findsOneWidget);
+      expect(find.text('1. Home Dashboard & Presence'), findsOneWidget);
+      expect(find.text('Skip Tour'), findsOneWidget);
+      expect(find.text('Next: Boards ›'), findsOneWidget);
 
       // Advance to Step 2: Boards
-      await tester.tap(find.text('Next Navigation Element'));
+      await tester.tap(find.text('Next: Boards ›'));
       await tester.pumpAndSettle();
       expect(find.text('2. Unified Household Boards'), findsOneWidget);
 

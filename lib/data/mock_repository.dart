@@ -9,20 +9,26 @@ import 'models.dart';
 
 /// Pre-populated InMemory / Demo Repository matching Casama Mockup Ui.png
 class MockRepository extends ChangeNotifier implements CasamaRepository {
-  bool _isAuthenticated = true;
+  final bool loadSeedData;
+
+  MockRepository({this.loadSeedData = true}) {
+    if (loadSeedData) {
+      _loadInitialSeedData();
+    }
+  }
+
+  MockRepository.clean() : this(loadSeedData: false);
+
+  bool _isAuthenticated = false;
   bool get isAuthenticated => _isAuthenticated;
 
-  // Current user (JP)
+  // Current user (defaults to clean placeholder)
   UserProfile _currentUser = const UserProfile(
-    id: '11111111-1111-1111-1111-111111111111',
-    displayName: 'Jon Paul Berana',
-    handle: '@jpberana',
-    fullName: 'Jon Paul Berana',
-    nickname: 'JP',
-    age: 21,
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-    hasConsentedTerms: true,
-    hasCompletedOnboarding: true,
+    id: 'user_initial',
+    displayName: 'Housemate',
+    handle: '@housemate',
+    hasConsentedTerms: false,
+    hasCompletedOnboarding: false,
   );
 
   final Household _currentHousehold = const Household(
@@ -32,10 +38,48 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     createdBy: '11111111-1111-1111-1111-111111111111',
   );
 
-  int _kasamaPoints = 120;
+  int _kasamaPoints = 0;
+  int _groupChatUnreadCount = 0;
+  int _notificationsUnreadCount = 0;
 
   // Member presence list
-  final List<MemberPresence> _members = [
+  final List<MemberPresence> _members = [];
+  final List<ParcelItem> _parcels = [];
+  final List<LostFoundItem> _items = [];
+  final List<MaintenanceTask> _tasks = [];
+  final List<HouseholdBill> _bills = [];
+  MeetUpInvitation _activeMeetUp = MeetUpInvitation(
+    id: 'placeholder_m',
+    activity: '',
+    location: '',
+    scheduledTime: DateTime.now().add(const Duration(days: 30)),
+    goingCount: 0,
+    maybeCount: 0,
+    cantMakeCount: 0,
+  );
+  final List<ChatMessage> _groupMessages = [];
+  final List<ChatSpace> _chatSpaces = [];
+  final Map<String, List<ChatMessage>> _directMessages = {};
+  final List<QuickSnap> _quickSnaps = [];
+  final List<HouseholdInvitation> _invitations = [];
+  final List<PointAuditEntry> _pointHistory = [];
+
+  void _loadInitialSeedData() {
+    _isAuthenticated = true;
+    _currentUser = const UserProfile(
+      id: '11111111-1111-1111-1111-111111111111',
+      displayName: 'Jon Paul Berana',
+      handle: '@jpberana',
+      fullName: 'Jon Paul Berana',
+      nickname: 'JP',
+      age: 21,
+      avatarUrl:
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+      hasConsentedTerms: true,
+      hasCompletedOnboarding: true,
+    );
+    _kasamaPoints = 120;
+    _members.addAll([
     MemberPresence(
       profile: const UserProfile(
         id: '11111111-1111-1111-1111-111111111111',
@@ -80,367 +124,379 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       note: 'Resting',
       updatedAt: DateTime.now().subtract(const Duration(minutes: 45)),
     ),
-  ];
+    ]);
 
-  // Parcels list
-  final List<ParcelItem> _parcels = [
-    ParcelItem(
-      id: 'p1',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      buyerId: '22222222-2222-2222-2222-222222222222',
-      buyerName: 'Maria',
-      courier: 'Shopee',
-      expectedArrival: DateTime.now(),
-      paymentType: ParcelPaymentType.cod,
-      codAmount: 350.00,
-      status: ParcelStatus.expected,
-      notes: 'Fragile - Handle with care!',
-      availableMemberNames: ['You', 'Alex', 'Ria'],
-    ),
-    ParcelItem(
-      id: 'p2',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      buyerId: '33333333-3333-3333-3333-333333333333',
-      buyerName: 'Alex',
-      courier: 'Lazada',
-      expectedArrival: DateTime.now().add(const Duration(days: 3)),
-      paymentType: ParcelPaymentType.paid,
-      status: ParcelStatus.expected,
-      notes: 'For group use',
-      availableMemberNames: ['You', 'Maria'],
-    ),
-  ];
+    // Parcels list
+    _parcels.addAll([
+      ParcelItem(
+        id: 'p1',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        buyerId: '22222222-2222-2222-2222-222222222222',
+        buyerName: 'Maria',
+        courier: 'Shopee',
+        expectedArrival: DateTime.now(),
+        paymentType: ParcelPaymentType.cod,
+        codAmount: 350.00,
+        status: ParcelStatus.expected,
+        notes: 'Fragile - Handle with care!',
+        availableMemberNames: ['You', 'Alex', 'Ria'],
+      ),
+      ParcelItem(
+        id: 'p2',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        buyerId: '33333333-3333-3333-3333-333333333333',
+        buyerName: 'Alex',
+        courier: 'Lazada',
+        expectedArrival: DateTime.now().add(const Duration(days: 3)),
+        paymentType: ParcelPaymentType.paid,
+        status: ParcelStatus.expected,
+        notes: 'For group use',
+        availableMemberNames: ['You', 'Maria'],
+      ),
+    ]);
 
-  // Lost & Found
-  final List<LostFoundItem> _items = [
-    LostFoundItem(
-      id: 'i1',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      type: ItemType.lost,
-      title: 'Lost AirPods',
-      description: 'Last seen in the study area.',
-      imageUrl: 'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?auto=format&fit=crop&w=300&q=80',
-      status: ItemStatus.open,
-      reportedBy: '11111111-1111-1111-1111-111111111111',
-      reportedByName: 'Jon Paul',
-      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-    ),
-    LostFoundItem(
-      id: 'i2',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      type: ItemType.found,
-      title: 'Found Backpack',
-      description: 'Unclaimed in common area.',
-      imageUrl: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=300&q=80',
-      status: ItemStatus.unclaimed,
-      reportedBy: '22222222-2222-2222-2222-222222222222',
-      reportedByName: 'Maria',
-      createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-    ),
-  ];
+    // Lost & Found
+    _items.addAll([
+      LostFoundItem(
+        id: 'i1',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        type: ItemType.lost,
+        title: 'Lost AirPods',
+        description: 'Last seen in the study area.',
+        imageUrl:
+            'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?auto=format&fit=crop&w=300&q=80',
+        status: ItemStatus.open,
+        reportedBy: '11111111-1111-1111-1111-111111111111',
+        reportedByName: 'Jon Paul',
+        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+      ),
+      LostFoundItem(
+        id: 'i2',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        type: ItemType.found,
+        title: 'Found Backpack',
+        description: 'Unclaimed in common area.',
+        imageUrl:
+            'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=300&q=80',
+        status: ItemStatus.unclaimed,
+        reportedBy: '22222222-2222-2222-2222-222222222222',
+        reportedByName: 'Maria',
+        createdAt: DateTime.now().subtract(const Duration(hours: 3)),
+      ),
+    ]);
 
-  // Maintenance & Restock
-  final List<MaintenanceTask> _tasks = [
-    MaintenanceTask(
-      id: 't1',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      title: 'Leaking Faucet',
-      category: TaskCategory.landlord,
-      urgency: TaskUrgency.urgent,
-      status: TaskStatus.open,
-      assigneeName: 'Alex',
-      assigneeAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
-      createdByName: 'Jon Paul',
-      createdAt: DateTime.now().subtract(const Duration(hours: 4)),
-      dueDate: DateTime.now().add(const Duration(days: 1)),
-    ),
-    MaintenanceTask(
-      id: 't2',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      title: 'Buy Drinking Water',
-      category: TaskCategory.restock,
-      urgency: TaskUrgency.medium,
-      status: TaskStatus.open,
-      assigneeName: 'Jon Paul',
-      assigneeAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80',
-      createdByName: 'Maria',
-      createdAt: DateTime.now().subtract(const Duration(hours: 6)),
-      dueDate: DateTime.now(),
-    ),
-    MaintenanceTask(
-      id: 't3',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      title: 'Defrost Freezer',
-      category: TaskCategory.diy,
-      urgency: TaskUrgency.low,
-      status: TaskStatus.open,
-      assigneeName: 'Ria',
-      assigneeAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=80',
-      createdByName: 'Alex',
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      dueDate: DateTime.now().add(const Duration(days: 4)),
-    ),
-  ];
+    // Maintenance & Restock
+    _tasks.addAll([
+      MaintenanceTask(
+        id: 't1',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        title: 'Leaking Faucet',
+        category: TaskCategory.landlord,
+        urgency: TaskUrgency.urgent,
+        status: TaskStatus.open,
+        assigneeName: 'Alex',
+        assigneeAvatar:
+            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
+        createdByName: 'Jon Paul',
+        createdAt: DateTime.now().subtract(const Duration(hours: 4)),
+        dueDate: DateTime.now().add(const Duration(days: 1)),
+      ),
+      MaintenanceTask(
+        id: 't2',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        title: 'Buy Drinking Water',
+        category: TaskCategory.restock,
+        urgency: TaskUrgency.medium,
+        status: TaskStatus.open,
+        assigneeName: 'Jon Paul',
+        assigneeAvatar:
+            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80',
+        createdByName: 'Maria',
+        createdAt: DateTime.now().subtract(const Duration(hours: 6)),
+        dueDate: DateTime.now(),
+      ),
+      MaintenanceTask(
+        id: 't3',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        title: 'Defrost Freezer',
+        category: TaskCategory.diy,
+        urgency: TaskUrgency.low,
+        status: TaskStatus.open,
+        assigneeName: 'Ria',
+        assigneeAvatar:
+            'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=80',
+        createdByName: 'Alex',
+        createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        dueDate: DateTime.now().add(const Duration(days: 4)),
+      ),
+    ]);
 
-  // Meet-up Invitation
-  MeetUpInvitation _activeMeetUp = MeetUpInvitation(
-    id: 'm1',
-    activity: 'Study Session 🎓',
-    location: 'Dorm Common Area',
-    scheduledTime: DateTime.now().add(const Duration(hours: 3)),
-    goingCount: 3,
-    maybeCount: 1,
-    cantMakeCount: 0,
-    currentUserResponse: 'going',
-  );
+    // Meet-up Invitation
+    _activeMeetUp = MeetUpInvitation(
+      id: 'm1',
+      activity: 'Study Session 🎓',
+      location: 'Dorm Common Area',
+      scheduledTime: DateTime.now().add(const Duration(hours: 3)),
+      goingCount: 3,
+      maybeCount: 1,
+      cantMakeCount: 0,
+      currentUserResponse: 'going',
+    );
 
-  // Group Messages
-  final List<ChatMessage> _groupMessages = [
-    ChatMessage(
-      id: 'msg1',
-      senderId: '22222222-2222-2222-2222-222222222222',
-      senderName: 'Maria',
-      senderAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80',
-      content: "Hey everyone! Who's available to receive my parcel tomorrow?",
-      createdAt: DateTime.now().subtract(const Duration(minutes: 45)),
-      isCurrentUser: false,
-    ),
-    ChatMessage(
-      id: 'msg2',
-      senderId: '11111111-1111-1111-1111-111111111111',
-      senderName: 'Jon Paul',
-      content: "I'm available after 2 PM! I can receive it. 😊",
-      createdAt: DateTime.now().subtract(const Duration(minutes: 42)),
-      isCurrentUser: true,
-    ),
-    ChatMessage(
-      id: 'msg3',
-      senderId: '33333333-3333-3333-3333-333333333333',
-      senderName: 'Alex',
-      senderAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
-      content: 'Thanks! Just let us know when it arrives.',
-      createdAt: DateTime.now().subtract(const Duration(minutes: 40)),
-      isCurrentUser: false,
-    ),
-  ];
+    // Group Messages
+    _groupMessages.addAll([
+      ChatMessage(
+        id: 'msg1',
+        senderId: '22222222-2222-2222-2222-222222222222',
+        senderName: 'Maria',
+        senderAvatar:
+            'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80',
+        content:
+            "Hey everyone! Who's available to receive my parcel tomorrow?",
+        createdAt: DateTime.now().subtract(const Duration(minutes: 45)),
+        isCurrentUser: false,
+      ),
+      ChatMessage(
+        id: 'msg2',
+        senderId: '11111111-1111-1111-1111-111111111111',
+        senderName: 'Jon Paul',
+        content: "I'm available after 2 PM! I can receive it. 😊",
+        createdAt: DateTime.now().subtract(const Duration(minutes: 42)),
+        isCurrentUser: true,
+      ),
+      ChatMessage(
+        id: 'msg3',
+        senderId: '33333333-3333-3333-3333-333333333333',
+        senderName: 'Alex',
+        senderAvatar:
+            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
+        content: 'Thanks! Just let us know when it arrives.',
+        createdAt: DateTime.now().subtract(const Duration(minutes: 40)),
+        isCurrentUser: false,
+      ),
+    ]);
 
-  // Custom Chat Spaces
-  final List<ChatSpace> _chatSpaces = [
-    ChatSpace(
-      id: 'space_grocery',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      name: 'Grocery & Supplies',
-      description: 'Coordinate shared kitchen items and bulk grocery shopping.',
-      inviteCode: 'SPC-101',
-      creatorId: '11111111-1111-1111-1111-111111111111',
-      creatorName: 'Jon Paul',
-      memberNames: ['You', 'Maria', 'Alex'],
-      iconEmoji: '🛒',
-      createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      unreadCount: 1,
-      messages: [
+    // Custom Chat Spaces
+    _chatSpaces.addAll([
+      ChatSpace(
+        id: 'space_grocery',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        name: 'Grocery & Supplies',
+        description:
+            'Coordinate shared kitchen items and bulk grocery shopping.',
+        inviteCode: 'SPC-101',
+        creatorId: '11111111-1111-1111-1111-111111111111',
+        creatorName: 'Jon Paul',
+        memberNames: ['You', 'Maria', 'Alex'],
+        iconEmoji: '🛒',
+        createdAt: DateTime.now().subtract(const Duration(days: 2)),
+        unreadCount: 1,
+        messages: [
+          ChatMessage(
+            id: 'spc_m1',
+            senderId: '22222222-2222-2222-2222-222222222222',
+            senderName: 'Maria',
+            content: 'We need paper towels and olive oil!',
+            createdAt: DateTime.now().subtract(const Duration(hours: 4)),
+            isCurrentUser: false,
+          ),
+        ],
+      ),
+    ]);
+
+    _groupChatUnreadCount = 2;
+    _notificationsUnreadCount = 1;
+
+    // Direct messages mapping
+    _directMessages.addAll({
+      'maria': [
         ChatMessage(
-          id: 'spc_m1',
+          id: 'dm_m1',
           senderId: '22222222-2222-2222-2222-222222222222',
           senderName: 'Maria',
-          content: 'We need paper towels and olive oil!',
-          createdAt: DateTime.now().subtract(const Duration(hours: 4)),
+          senderAvatar:
+              'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80',
+          content: 'Hi JP! Did you get the package from the guard?',
+          createdAt: DateTime.now().subtract(const Duration(minutes: 50)),
+          isCurrentUser: false,
+        ),
+        ChatMessage(
+          id: 'dm_m2',
+          senderId: '11111111-1111-1111-1111-111111111111',
+          senderName: 'Jon Paul',
+          content: 'Got it! 👍 Placed it on the living room table.',
+          createdAt: DateTime.now().subtract(const Duration(minutes: 48)),
+          isCurrentUser: true,
+        ),
+      ],
+      'alex': [
+        ChatMessage(
+          id: 'dm_a1',
+          senderId: '33333333-3333-3333-3333-333333333333',
+          senderName: 'Alex',
+          senderAvatar:
+              'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
+          content: 'See you later at the study session!',
+          createdAt: DateTime.now().subtract(const Duration(hours: 1)),
           isCurrentUser: false,
         ),
       ],
-    ),
-  ];
+      'ria': [
+        ChatMessage(
+          id: 'dm_r1',
+          senderId: '44444444-4444-4444-4444-444444444444',
+          senderName: 'Ria',
+          senderAvatar:
+              'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=80',
+          content: 'Sent a photo 📷 of the groceries we need.',
+          createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+          isCurrentUser: false,
+        ),
+      ],
+    });
 
-  // Notification and message unread tracking
-  int _groupChatUnreadCount = 2;
-  int _notificationsUnreadCount = 1;
+    // Household bills
+    _bills.addAll([
+      HouseholdBill(
+        id: 'bill_1',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        creatorId: '11111111-1111-1111-1111-111111111111',
+        creatorName: 'Jon Paul',
+        category: BillCategory.electricity,
+        billName: 'Meralco Bill',
+        amount: 2500.00,
+        deadline: DateTime.now().add(const Duration(days: 5)),
+        reminderEnabled: true,
+        reminderTiming: ReminderTiming.oneDayBefore,
+        recipientType: BillRecipientType.allMembers,
+        responsibleMember: 'Jon Paul',
+        createdAt: DateTime.now().subtract(const Duration(days: 2)),
+      ),
+      HouseholdBill(
+        id: 'bill_2',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        creatorId: '22222222-2222-2222-2222-222222222222',
+        creatorName: 'Maria',
+        category: BillCategory.water,
+        billName: 'MWSS Water Bill',
+        amount: 850.00,
+        deadline: DateTime.now().add(const Duration(days: 12)),
+        reminderEnabled: true,
+        reminderTiming: ReminderTiming.threeDaysBefore,
+        recipientType: BillRecipientType.allMembers,
+        responsibleMember: 'Maria',
+        createdAt: DateTime.now().subtract(const Duration(days: 1)),
+      ),
+      HouseholdBill(
+        id: 'bill_3',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        creatorId: '11111111-1111-1111-1111-111111111111',
+        creatorName: 'Jon Paul',
+        category: BillCategory.internet,
+        billName: 'PLDT Wi-Fi',
+        amount: 1299.00,
+        deadline: DateTime.now().subtract(const Duration(days: 3)),
+        reminderEnabled: false,
+        reminderTiming: ReminderTiming.oneDayBefore,
+        recipientType: BillRecipientType.allMembers,
+        responsibleMember: 'Alex',
+        createdAt: DateTime.now().subtract(const Duration(days: 10)),
+      ),
+      HouseholdBill(
+        id: 'bill_4',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        creatorId: '33333333-3333-3333-3333-333333333333',
+        creatorName: 'Alex',
+        category: BillCategory.rent,
+        billName: 'Monthly Rent',
+        amount: 15000.00,
+        deadline: DateTime.now().add(const Duration(days: 20)),
+        reminderEnabled: true,
+        reminderTiming: ReminderTiming.oneWeekBefore,
+        recipientType: BillRecipientType.allMembers,
+        responsibleMember: 'Jon Paul',
+        createdAt: DateTime.now().subtract(const Duration(days: 5)),
+        status: BillStatus.paid,
+        paidAt: DateTime.now().subtract(const Duration(days: 1)),
+        paidByName: 'Jon Paul',
+      ),
+    ]);
 
-  // Direct messages mapping
-  final Map<String, List<ChatMessage>> _directMessages = {
-    'maria': [
-      ChatMessage(
-        id: 'dm_m1',
-        senderId: '22222222-2222-2222-2222-222222222222',
-        senderName: 'Maria',
-        senderAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80',
-        content: 'Hi JP! Did you get the package from the guard?',
-        createdAt: DateTime.now().subtract(const Duration(minutes: 50)),
-        isCurrentUser: false,
+    // Household invitations
+    _invitations.addAll([
+      HouseholdInvitation(
+        id: 'inv_1',
+        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        householdName: 'Casa 204',
+        inviterName: 'Jon Paul',
+        inviteeEmailOrHandle: '@miguel',
+        inviteeName: 'Miguel Ramos',
+        status: InvitationStatus.pending,
+        createdAt: DateTime.now().subtract(const Duration(hours: 5)),
       ),
-      ChatMessage(
-        id: 'dm_m2',
-        senderId: '11111111-1111-1111-1111-111111111111',
-        senderName: 'Jon Paul',
-        content: 'Got it! 👍 Placed it on the living room table.',
-        createdAt: DateTime.now().subtract(const Duration(minutes: 48)),
-        isCurrentUser: true,
+    ]);
+
+    // Point audit ledger
+    _pointHistory.addAll([
+      PointAuditEntry(
+        id: 'pa_1',
+        title: 'Received Shopee delivery for Maria',
+        points: 5,
+        timestamp: DateTime.now().subtract(const Duration(hours: 3)),
+        category: 'parcel',
       ),
-    ],
-    'alex': [
-      ChatMessage(
-        id: 'dm_a1',
-        senderId: '33333333-3333-3333-3333-333333333333',
-        senderName: 'Alex',
-        senderAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
-        content: 'See you later at the study session!',
-        createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-        isCurrentUser: false,
+      PointAuditEntry(
+        id: 'pa_2',
+        title: 'Completed maintenance task: Buy Drinking Water',
+        points: 5,
+        timestamp: DateTime.now().subtract(const Duration(hours: 8)),
+        category: 'task',
       ),
-    ],
-    'ria': [
-      ChatMessage(
-        id: 'dm_r1',
-        senderId: '44444444-4444-4444-4444-444444444444',
-        senderName: 'Ria',
-        senderAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=80',
-        content: 'Sent a photo 📷 of the groceries we need.',
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-        isCurrentUser: false,
+      PointAuditEntry(
+        id: 'pa_3',
+        title: 'Returned lost student ID in lounge',
+        points: 3,
+        timestamp: DateTime.now().subtract(const Duration(days: 1)),
+        category: 'lost_found',
       ),
-    ],
-  };
+      PointAuditEntry(
+        id: 'pa_4',
+        title: 'Good Kasama onboarding welcome bonus',
+        points: 107,
+        timestamp: DateTime.now().subtract(const Duration(days: 3)),
+        category: 'bonus',
+      ),
+    ]);
+  }
 
   // Searchable Casama public directory (external users not yet in household)
-  final List<UserProfile> _allCasamaUsers = [
-    const UserProfile(
+  final List<UserProfile> _allCasamaUsers = const [
+    UserProfile(
       id: '55555555-5555-5555-5555-555555555555',
       displayName: 'Miguel Ramos',
       handle: '@miguel',
       fullName: 'Miguel Ramos',
       nickname: 'Miggy',
-      avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
+      avatarUrl:
+          'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
     ),
-    const UserProfile(
+    UserProfile(
       id: '66666666-6666-6666-6666-666666666666',
       displayName: 'Clara Reyes',
       handle: '@clara',
       fullName: 'Clara Reyes',
       nickname: 'Clara',
-      avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=200&q=80',
+      avatarUrl:
+          'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=200&q=80',
     ),
-    const UserProfile(
+    UserProfile(
       id: '77777777-7777-7777-7777-777777777777',
       displayName: 'Bea Gomez',
       handle: '@bea',
       fullName: 'Bea Gomez',
       nickname: 'Bea',
-      avatarUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=200&q=80',
-    ),
-  ];
-
-  // Bills & Payments
-  final List<HouseholdBill> _bills = [
-    HouseholdBill(
-      id: 'bill_1',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      creatorId: '11111111-1111-1111-1111-111111111111',
-      creatorName: 'Jon Paul',
-      category: BillCategory.electricity,
-      billName: 'Meralco Bill',
-      amount: 2500.00,
-      deadline: DateTime.now().add(const Duration(days: 5)),
-      reminderEnabled: true,
-      reminderTiming: ReminderTiming.oneDayBefore,
-      recipientType: BillRecipientType.allMembers,
-      responsibleMember: 'Jon Paul',
-      createdAt: DateTime.now().subtract(const Duration(days: 2)),
-    ),
-    HouseholdBill(
-      id: 'bill_2',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      creatorId: '22222222-2222-2222-2222-222222222222',
-      creatorName: 'Maria',
-      category: BillCategory.water,
-      billName: 'MWSS Water Bill',
-      amount: 850.00,
-      deadline: DateTime.now().add(const Duration(days: 12)),
-      reminderEnabled: true,
-      reminderTiming: ReminderTiming.threeDaysBefore,
-      recipientType: BillRecipientType.allMembers,
-      responsibleMember: 'Maria',
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-    ),
-    HouseholdBill(
-      id: 'bill_3',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      creatorId: '11111111-1111-1111-1111-111111111111',
-      creatorName: 'Jon Paul',
-      category: BillCategory.internet,
-      billName: 'PLDT Wi-Fi',
-      amount: 1299.00,
-      deadline: DateTime.now().subtract(const Duration(days: 3)),
-      reminderEnabled: false,
-      reminderTiming: ReminderTiming.oneDayBefore,
-      recipientType: BillRecipientType.allMembers,
-      responsibleMember: 'Alex',
-      createdAt: DateTime.now().subtract(const Duration(days: 10)),
-    ),
-    HouseholdBill(
-      id: 'bill_4',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      creatorId: '33333333-3333-3333-3333-333333333333',
-      creatorName: 'Alex',
-      category: BillCategory.rent,
-      billName: 'Monthly Rent',
-      amount: 15000.00,
-      deadline: DateTime.now().add(const Duration(days: 20)),
-      reminderEnabled: true,
-      reminderTiming: ReminderTiming.oneWeekBefore,
-      recipientType: BillRecipientType.allMembers,
-      responsibleMember: 'Jon Paul',
-      createdAt: DateTime.now().subtract(const Duration(days: 5)),
-      status: BillStatus.paid,
-      paidAt: DateTime.now().subtract(const Duration(days: 1)),
-      paidByName: 'Jon Paul',
-    ),
-  ];
-
-  // QuickSnaps (Locket-style photo moments) - starts empty until users snap photos
-  final List<QuickSnap> _quickSnaps = [];
-
-  // Household invitations
-  final List<HouseholdInvitation> _invitations = [
-    HouseholdInvitation(
-      id: 'inv_1',
-      householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      householdName: 'Casa 204',
-      inviterName: 'Jon Paul',
-      inviteeEmailOrHandle: '@miguel',
-      inviteeName: 'Miguel Ramos',
-      status: InvitationStatus.pending,
-      createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-    ),
-  ];
-
-  // Point audit ledger
-  final List<PointAuditEntry> _pointHistory = [
-    PointAuditEntry(
-      id: 'pa_1',
-      title: 'Received Shopee delivery for Maria',
-      points: 5,
-      timestamp: DateTime.now().subtract(const Duration(hours: 3)),
-      category: 'parcel',
-    ),
-    PointAuditEntry(
-      id: 'pa_2',
-      title: 'Completed maintenance task: Buy Drinking Water',
-      points: 5,
-      timestamp: DateTime.now().subtract(const Duration(hours: 8)),
-      category: 'task',
-    ),
-    PointAuditEntry(
-      id: 'pa_3',
-      title: 'Returned lost student ID in lounge',
-      points: 3,
-      timestamp: DateTime.now().subtract(const Duration(days: 1)),
-      category: 'lost_found',
-    ),
-    PointAuditEntry(
-      id: 'pa_4',
-      title: 'Good Kasama onboarding welcome bonus',
-      points: 107,
-      timestamp: DateTime.now().subtract(const Duration(days: 3)),
-      category: 'bonus',
+      avatarUrl:
+          'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=200&q=80',
     ),
   ];
 
@@ -529,15 +585,60 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   // Actions
   void login({String? email, String? password}) {
     _isAuthenticated = true;
+    if (email != null && email.contains('@') && !email.startsWith('jp@')) {
+      final name = email.split('@').first;
+      _currentUser = UserProfile(
+        id: 'usr_${email.hashCode}',
+        displayName: name,
+        handle: '@$name',
+        hasConsentedTerms: true,
+        hasCompletedOnboarding: true,
+      );
+      _members.clear();
+      _members.add(
+        MemberPresence(
+          profile: _currentUser,
+          isHome: true,
+          updatedAt: DateTime.now(),
+        ),
+      );
+      _parcels.clear();
+      _items.clear();
+      _tasks.clear();
+      _bills.clear();
+      _chatSpaces.clear();
+      _directMessages.clear();
+      _groupMessages.clear();
+      _activeMeetUp = MeetUpInvitation(
+        id: 'placeholder_m',
+        activity: '',
+        location: '',
+        scheduledTime: DateTime.now().add(const Duration(days: 30)),
+        goingCount: 0,
+        maybeCount: 0,
+        cantMakeCount: 0,
+      );
+    } else {
+      if (_members.isEmpty) {
+        _members.add(
+          MemberPresence(
+            profile: _currentUser,
+            isHome: true,
+            updatedAt: DateTime.now(),
+          ),
+        );
+      }
+    }
     notifyListeners();
   }
 
   void register({required String email, required String password}) {
     _isAuthenticated = true;
-    final handle = '@${email.split('@').first}';
+    final name = email.split('@').first;
+    final handle = '@$name';
     _currentUser = UserProfile(
       id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
-      displayName: email.split('@').first,
+      displayName: name,
       handle: handle,
       fullName: null,
       nickname: null,
@@ -545,6 +646,36 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       avatarUrl: null,
       hasConsentedTerms: false,
       hasCompletedOnboarding: false,
+    );
+    _members.clear();
+    _members.add(
+      MemberPresence(
+        profile: _currentUser,
+        isHome: true,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    _parcels.clear();
+    _items.clear();
+    _tasks.clear();
+    _bills.clear();
+    _chatSpaces.clear();
+    _directMessages.clear();
+    _groupMessages.clear();
+    _invitations.clear();
+    _pointHistory.clear();
+    _quickSnaps.clear();
+    _kasamaPoints = 0;
+    _groupChatUnreadCount = 0;
+    _notificationsUnreadCount = 0;
+    _activeMeetUp = MeetUpInvitation(
+      id: 'placeholder_m',
+      activity: '',
+      location: '',
+      scheduledTime: DateTime.now().add(const Duration(days: 30)),
+      goingCount: 0,
+      maybeCount: 0,
+      cantMakeCount: 0,
     );
     notifyListeners();
   }
@@ -560,9 +691,11 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     String? fullName,
     String? nickname,
     int? age,
+    DateTime? birthDate,
     String? avatarUrl,
     bool clearNickname = false,
     bool clearAge = false,
+    bool clearBirthDate = false,
     bool clearAvatar = false,
   }) {
     _currentUser = UserProfile(
@@ -572,6 +705,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       fullName: fullName ?? _currentUser.fullName,
       nickname: clearNickname ? null : (nickname ?? _currentUser.nickname),
       age: clearAge ? null : (age ?? _currentUser.age),
+      birthDate: clearBirthDate ? null : (birthDate ?? _currentUser.birthDate),
       avatarUrl: clearAvatar ? null : (avatarUrl ?? _currentUser.avatarUrl),
       hasConsentedTerms: _currentUser.hasConsentedTerms,
       hasCompletedOnboarding: _currentUser.hasCompletedOnboarding,

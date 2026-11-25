@@ -193,9 +193,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('4. Household Chat & Meet-ups'), findsOneWidget);
 
-      await tester.tap(find.bySemanticsLabel('Jump to CASnap preview'));
+      await tester.tap(find.byKey(const Key('center_quicksnap_shutter_button')));
       await tester.pumpAndSettle();
-      expect(find.text('3. CASnap Household Moments'), findsOneWidget);
+      expect(find.text('3. CASnap Household Camera'), findsOneWidget);
     },
   );
 }

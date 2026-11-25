@@ -47,10 +47,12 @@ abstract class CasamaRepository extends ChangeNotifier {
     String? fullName,
     String? nickname,
     int? age,
+    DateTime? birthDate,
     String? avatarUrl,
     bool clearAvatar = false,
     bool clearNickname = false,
     bool clearAge = false,
+    bool clearBirthDate = false,
   });
   void updateNotificationPreferences({
     bool? householdUpdates,

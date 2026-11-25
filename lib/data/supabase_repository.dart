@@ -185,6 +185,30 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         _currentHousehold = Household.fromJson(
           memberRecord['households'] as Map<String, dynamic>,
         );
+      } else {
+        try {
+          final existing = await _client.from('households').select().limit(1).maybeSingle();
+          if (existing != null) {
+            _currentHousehold = Household.fromJson(existing);
+            await _client.from('household_members').upsert({
+              'household_id': _currentHousehold.id,
+              'user_id': authUser.id,
+              'role': 'member',
+            });
+          } else {
+            final newHousehold = await _client.from('households').insert({
+              'name': 'Casa 204',
+              'invite_code': 'CASA204',
+              'created_by': authUser.id,
+            }).select().single();
+            _currentHousehold = Household.fromJson(newHousehold);
+            await _client.from('household_members').upsert({
+              'household_id': _currentHousehold.id,
+              'user_id': authUser.id,
+              'role': 'admin',
+            });
+          }
+        } catch (_) {}
       }
 
       // 3. Hydrate Core Tables
@@ -358,16 +382,19 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     String? fullName,
     String? nickname,
     int? age,
+    DateTime? birthDate,
     String? avatarUrl,
     bool clearAvatar = false,
     bool clearNickname = false,
     bool clearAge = false,
+    bool clearBirthDate = false,
   }) async {
     final effectiveDisplayName = displayName ?? _currentUser.displayName;
     final effectiveFullName = fullName ?? _currentUser.fullName;
     final effectiveNickname = clearNickname ? null : (nickname ?? _currentUser.nickname);
     final effectiveHandle = handle ?? _currentUser.handle;
     final effectiveAge = clearAge ? null : (age ?? _currentUser.age);
+    final effectiveBirthDate = clearBirthDate ? null : (birthDate ?? _currentUser.birthDate);
     final effectiveAvatarUrl = clearAvatar ? null : (avatarUrl ?? _currentUser.avatarUrl);
 
     _currentUser = UserProfile(
@@ -377,6 +404,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       fullName: effectiveFullName,
       nickname: effectiveNickname,
       age: effectiveAge,
+      birthDate: effectiveBirthDate,
       avatarUrl: effectiveAvatarUrl,
       hasConsentedTerms: _currentUser.hasConsentedTerms,
       hasCompletedOnboarding: _currentUser.hasCompletedOnboarding,
@@ -385,14 +413,18 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
     if (_currentUser.id.isNotEmpty) {
       try {
-        await _client.from('profiles').update({
+        final updates = <String, dynamic>{
           'display_name': effectiveDisplayName,
           'handle': effectiveHandle,
           'full_name': effectiveFullName,
           'nickname': effectiveNickname,
           'age': effectiveAge,
           'avatar_url': effectiveAvatarUrl,
-        }).eq('id', _currentUser.id);
+        };
+        if (effectiveBirthDate != null) {
+          updates['birth_date'] = effectiveBirthDate.toIso8601String();
+        }
+        await _client.from('profiles').update(updates).eq('id', _currentUser.id);
       } catch (e) {
         debugPrint('Supabase updateProfile error: $e');
       }

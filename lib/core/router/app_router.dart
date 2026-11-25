@@ -85,7 +85,10 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/dashboard',
-      builder: (context, state) => const MainNavigationShell(initialIndex: 0),
+      builder: (context, state) {
+        final tour = state.uri.queryParameters['tour'] == 'true';
+        return MainNavigationShell(initialIndex: 0, isTourMode: tour);
+      },
     ),
     GoRoute(
       path: '/boards',
