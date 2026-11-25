@@ -185,6 +185,30 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         _currentHousehold = Household.fromJson(
           memberRecord['households'] as Map<String, dynamic>,
         );
+      } else {
+        try {
+          final existing = await _client.from('households').select().limit(1).maybeSingle();
+          if (existing != null) {
+            _currentHousehold = Household.fromJson(existing);
+            await _client.from('household_members').upsert({
+              'household_id': _currentHousehold.id,
+              'user_id': authUser.id,
+              'role': 'member',
+            });
+          } else {
+            final newHousehold = await _client.from('households').insert({
+              'name': 'Casa 204',
+              'invite_code': 'CASA204',
+              'created_by': authUser.id,
+            }).select().single();
+            _currentHousehold = Household.fromJson(newHousehold);
+            await _client.from('household_members').upsert({
+              'household_id': _currentHousehold.id,
+              'user_id': authUser.id,
+              'role': 'admin',
+            });
+          }
+        } catch (_) {}
       }
 
       // 3. Hydrate Core Tables
