@@ -13,6 +13,7 @@ import '../../../data/repository_provider.dart';
 import '../../../shared/widgets/casama_avatar.dart';
 import '../../../shared/widgets/casama_button.dart';
 import '../../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../tasks/task_ui_state_provider.dart';
 
 const String rouletteLastSpinPrefKey = 'casama_roulette_last_spin_ms';
 
@@ -55,6 +56,7 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
   MemberPresence? _winner;
   int? _winnerIndex;
   bool _cooldownLoaded = false;
+  String? _activeSpinId;
 
   @override
   void initState() {
@@ -68,6 +70,14 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
 
   Future<void> _loadCooldown() async {
     try {
+      final repoSpinAt = ref.read(repositoryProvider).lastRouletteSpinAt;
+      if (repoSpinAt != null && mounted) {
+        setState(() {
+          _lastSpinAt = repoSpinAt;
+          _cooldownLoaded = true;
+        });
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       final ms = prefs.getInt(rouletteLastSpinPrefKey);
       if (mounted) {
@@ -145,7 +155,32 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
       _isSpinning = true;
       _winner = null;
       _winnerIndex = pickedIdx;
+      _activeSpinId = null;
     });
+
+    Future<void> onSpinSettled() async {
+      final repo = ref.read(repositoryProvider);
+      final targetTask =
+          widget.task ??
+          repo.tasks.cast<MaintenanceTask?>().firstWhere(
+            (t) =>
+                t != null &&
+                t.status != TaskStatus.done &&
+                (t.assigneeName == null || t.assigneeName!.isEmpty),
+            orElse: () => repo.tasks.cast<MaintenanceTask?>().firstWhere(
+              (t) => t != null && t.status != TaskStatus.done,
+              orElse: () => null,
+            ),
+          );
+      try {
+        final spinId = await repo.recordRouletteSpin(
+          taskId: targetTask?.id,
+          taskTitle: targetTask?.title ?? 'Clean Bathroom',
+          selectedUserId: pickedMember.profile.id,
+        );
+        if (mounted) setState(() => _activeSpinId = spinId);
+      } catch (_) {}
+    }
 
     if (reduced) {
       setState(() {
@@ -153,6 +188,7 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
         _isSpinning = false;
         _winner = pickedMember;
       });
+      onSpinSettled();
       return;
     }
 
@@ -174,22 +210,52 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
                 _isSpinning = false;
                 _winner = pickedMember;
               });
+              onSpinSettled();
             }
           });
 
     _controller.forward(from: 0);
   }
 
-  void _handleDecision({
+  Future<void> _handleDecision({
     required bool accepted,
     required String taskTitle,
-  }) {
+    String? taskId,
+  }) async {
     final chosenName = _winner?.profile.displayName ?? 'Housemate';
-    _persistCooldown();
+    final hostContext = widget.hostContext;
+    final spinId = _activeSpinId;
+    if (spinId != null) {
+      try {
+        await ref
+            .read(repositoryProvider)
+            .respondToRouletteSpin(
+              spinId: spinId,
+              taskId: taskId,
+              accepted: accepted,
+            );
+      } catch (e) {
+        if (hostContext.mounted) {
+          showCasamaToast(
+            hostContext,
+            e is StateError ? e.message : 'Could not submit roulette decision.',
+            icon: Icons.error_outline_rounded,
+          );
+        }
+        return;
+      }
+    }
+    if (accepted && taskId != null && _winner != null) {
+      ref
+          .read(taskUiOverridesProvider.notifier)
+          .assignTask(taskId, _winner!.profile.displayName);
+    }
+    await _persistCooldown();
+    if (!mounted) return;
     Navigator.of(context).pop();
-    if (widget.hostContext.mounted) {
+    if (hostContext.mounted) {
       showCasamaToast(
-        widget.hostContext,
+        hostContext,
         accepted
             ? '$chosenName accepted "$taskTitle" (+2 bonus pts)'
             : '$chosenName rejected "$taskTitle" (-3 pts)',
@@ -520,8 +586,11 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
                   label: 'Reject (-3 pts)',
                   style: CasamaButtonStyle.secondary,
                   height: 48,
-                  onPressed: () =>
-                      _handleDecision(accepted: false, taskTitle: taskTitle),
+                  onPressed: () => _handleDecision(
+                    accepted: false,
+                    taskTitle: taskTitle,
+                    taskId: resolvedTask?.id,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -530,8 +599,11 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
                   label: 'Accept (+2 bonus)',
                   style: CasamaButtonStyle.primary,
                   height: 48,
-                  onPressed: () =>
-                      _handleDecision(accepted: true, taskTitle: taskTitle),
+                  onPressed: () => _handleDecision(
+                    accepted: true,
+                    taskTitle: taskTitle,
+                    taskId: resolvedTask?.id,
+                  ),
                 ),
               ),
             ],

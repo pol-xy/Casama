@@ -21,6 +21,96 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
 
   bool _isAuthenticated = false;
   bool get isAuthenticated => _isAuthenticated;
+  bool get hasActiveHousehold => _currentHousehold.id.isNotEmpty;
+  DateTime? _lastRouletteSpinAt;
+  DateTime? get lastRouletteSpinAt => _lastRouletteSpinAt;
+  RepositoryActionError? consumePendingError() => null;
+
+  Future<void> restoreSession() async {}
+
+  Future<void> signInWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    login(email: email, password: password);
+  }
+
+  Future<bool> signUpWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    register(email: email, password: password);
+    return true;
+  }
+
+  Future<void> resendSignupVerificationEmail(String email) async {}
+
+  Future<void> signInWithDemoAccount() async {
+    login();
+  }
+
+  Future<void> signOut() async {
+    logout();
+  }
+
+  Future<Household> createHousehold({required String name}) async {
+    _currentHousehold = Household(
+      id: _currentHousehold.id,
+      name: name.trim().isNotEmpty ? name.trim() : _currentHousehold.name,
+      inviteCode: _currentHousehold.inviteCode,
+      createdBy: _currentUser.id,
+    );
+    notifyListeners();
+    return _currentHousehold;
+  }
+
+  Future<Household> joinHouseholdByCode(String inviteCode) async {
+    final clean = inviteCode.trim().toUpperCase();
+    if (clean.isEmpty) {
+      throw ArgumentError('Please enter an invite code.');
+    }
+    _currentHousehold = Household(
+      id: _currentHousehold.id,
+      name: _currentHousehold.name,
+      inviteCode: clean,
+      createdBy: _currentHousehold.createdBy,
+    );
+    notifyListeners();
+    return _currentHousehold;
+  }
+
+  List<LeaderboardStanding> get leaderboardStandings {
+    return [
+      LeaderboardStanding(
+        userId: _currentUser.id,
+        displayName: _currentUser.fullName ?? _currentUser.displayName,
+        handle: _currentUser.handle,
+        avatarUrl: _currentUser.avatarUrl,
+        points: _kasamaPoints,
+        isCurrentUser: true,
+      ),
+      const LeaderboardStanding(
+        userId: '22222222-2222-2222-2222-222222222222',
+        displayName: 'Maria Santos',
+        handle: '@maria',
+        points: 85,
+      ),
+      const LeaderboardStanding(
+        userId: '33333333-3333-3333-3333-333333333333',
+        displayName: 'Alex Rivera',
+        handle: '@alex',
+        points: 65,
+      ),
+      const LeaderboardStanding(
+        userId: '44444444-4444-4444-4444-444444444444',
+        displayName: 'Ria Garcia',
+        handle: '@ria',
+        points: 55,
+      ),
+    ];
+  }
+
+  List<HouseholdNotificationItem> get notifications => const [];
 
   // Current user (defaults to clean placeholder)
   UserProfile _currentUser = const UserProfile(
@@ -31,7 +121,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     hasCompletedOnboarding: false,
   );
 
-  final Household _currentHousehold = const Household(
+  Household _currentHousehold = const Household(
     id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
     name: 'Casa 204',
     inviteCode: 'CASA204',
@@ -879,11 +969,83 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     }
   }
 
+  Future<void> updateParcel({
+    required String parcelId,
+    String? courier,
+    DateTime? arrival,
+    ParcelPaymentType? paymentType,
+    double? codAmount,
+    String? notes,
+    ParcelStatus? status,
+  }) async {
+    final index = _parcels.indexWhere((p) => p.id == parcelId);
+    if (index == -1) return;
+    final p = _parcels[index];
+    final nextPay = paymentType ?? p.paymentType;
+    _parcels[index] = ParcelItem(
+      id: p.id,
+      householdId: p.householdId,
+      buyerId: p.buyerId,
+      buyerName: p.buyerName,
+      courier: courier ?? p.courier,
+      expectedArrival: arrival ?? p.expectedArrival,
+      paymentType: nextPay,
+      codAmount: nextPay == ParcelPaymentType.cod
+          ? (codAmount ?? p.codAmount)
+          : null,
+      status: status ?? p.status,
+      notes: notes ?? p.notes,
+      availableMemberNames: p.availableMemberNames,
+      isAllUnavailable: p.isAllUnavailable,
+      codSettled: p.codSettled,
+    );
+    notifyListeners();
+  }
+
+  Future<void> cancelParcel(String parcelId) =>
+      updateParcel(parcelId: parcelId, status: ParcelStatus.cancelled);
+
+  Future<void> settleParcelClaim(String parcelId) async {
+    final index = _parcels.indexWhere((p) => p.id == parcelId);
+    if (index == -1) return;
+    final p = _parcels[index];
+    _parcels[index] = ParcelItem(
+      id: p.id,
+      householdId: p.householdId,
+      buyerId: p.buyerId,
+      buyerName: p.buyerName,
+      courier: p.courier,
+      expectedArrival: p.expectedArrival,
+      paymentType: p.paymentType,
+      codAmount: p.codAmount,
+      status: p.status,
+      notes: p.notes,
+      availableMemberNames: p.availableMemberNames,
+      isAllUnavailable: p.isAllUnavailable,
+      codSettled: true,
+    );
+    notifyListeners();
+  }
+
+  Future<void> updateTaskStatus(String taskId, TaskStatus status) async {
+    if (status == TaskStatus.done) {
+      completeTask(taskId);
+      return;
+    }
+    final idx = _tasks.indexWhere((t) => t.id == taskId);
+    if (idx != -1) {
+      _tasks[idx] = _tasks[idx].copyWith(status: status, clearCompleted: true);
+      notifyListeners();
+    }
+  }
+
   void addTask({
     required String title,
     required TaskCategory category,
     required TaskUrgency urgency,
     String? assigneeName,
+    String? description,
+    DateTime? dueDate,
   }) {
     _tasks.insert(
       0,
@@ -891,14 +1053,39 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         id: 't_${DateTime.now().millisecondsSinceEpoch}',
         householdId: _currentHousehold.id,
         title: title,
+        description: description,
         category: category,
         urgency: urgency,
         status: TaskStatus.open,
         assigneeName: assigneeName,
         createdByName: _currentUser.displayName,
         createdAt: DateTime.now(),
+        dueDate: dueDate,
       ),
     );
+    notifyListeners();
+  }
+
+  Future<String?> recordRouletteSpin({
+    String? taskId,
+    required String taskTitle,
+    required String selectedUserId,
+  }) async {
+    _lastRouletteSpinAt = DateTime.now();
+    notifyListeners();
+    return 'spin_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  Future<void> respondToRouletteSpin({
+    required String spinId,
+    String? taskId,
+    required bool accepted,
+  }) async {
+    if (accepted) {
+      _kasamaPoints += 2;
+    } else {
+      _kasamaPoints -= 3;
+    }
     notifyListeners();
   }
 
@@ -907,6 +1094,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     required String title,
     String? description,
     String? imageUrl,
+    Uint8List? imageBytes,
   }) {
     _items.insert(
       0,
@@ -937,6 +1125,29 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     final idx = _chatSpaces.indexWhere((s) => s.id == spaceId);
     if (idx != -1 && _chatSpaces[idx].unreadCount > 0) {
       _chatSpaces[idx] = _chatSpaces[idx].copyWith(unreadCount: 0);
+      notifyListeners();
+    }
+  }
+
+  void markDirectChatAsRead(String contactKey) {}
+
+  Future<void> createMeetUp({
+    required String activity,
+    required String location,
+    required DateTime scheduledTime,
+    String? announcementText,
+  }) async {
+    _activeMeetUp = MeetUpInvitation(
+      id: 'mu_${DateTime.now().millisecondsSinceEpoch}',
+      activity: activity,
+      location: location,
+      scheduledTime: scheduledTime,
+      goingCount: 1,
+      currentUserResponse: 'going',
+    );
+    if (announcementText != null && announcementText.trim().isNotEmpty) {
+      sendChatMessage(announcementText.trim());
+    } else {
       notifyListeners();
     }
   }
@@ -1607,6 +1818,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
 
   void sendQuickSnap({
     required String imageUrl,
+    Uint8List? imageBytes,
     String? caption,
     QuickSnapRecipientType recipientType = QuickSnapRecipientType.everyone,
     List<String> recipientNames = const [],

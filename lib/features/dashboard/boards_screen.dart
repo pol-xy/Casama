@@ -63,7 +63,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
     ),
     _BoardTabMeta(
       headerTitle: 'Lost & Found',
-      headerSubtitle: 'Missing, found & shared items',
+      headerSubtitle: 'Missing & found items',
       pillLabel: 'Items',
       pillIcon: Icons.sell_outlined,
       fabLabel: 'Report item',

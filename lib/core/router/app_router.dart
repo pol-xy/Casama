@@ -29,9 +29,12 @@ import '../../features/quicksnap/quicksnap_feed_screen.dart';
 import '../../features/settings/app_settings_screen.dart';
 import '../../features/tasks/maintenance_screen.dart';
 
-final appRouter = GoRouter(
-  initialLocation: '/',
-  routes: [
+final appRouter = createAppRouter();
+
+GoRouter createAppRouter({String initialLocation = '/'}) {
+  return GoRouter(
+    initialLocation: initialLocation,
+    routes: [
     GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
     GoRoute(
       path: '/auth',
@@ -200,4 +203,5 @@ final appRouter = GoRouter(
       builder: (context, state) => const AppSettingsScreen(),
     ),
   ],
-);
+  );
+}

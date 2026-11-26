@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../data/casama_repository.dart';
+import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
@@ -25,6 +28,18 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
 
   int _selectedTab = 0;
   int _previousTab = 0;
+  bool _isSubmitting = false;
+
+  CasamaRepository? _tryReadRepository() {
+    try {
+      return ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(repositoryProvider);
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void dispose() {
@@ -41,26 +56,74 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
     });
   }
 
-  void _submitJoin() {
+  Future<void> _submitJoin() async {
+    if (_isSubmitting) return;
     if (!(_joinFormKey.currentState?.validate() ?? false)) return;
     final code = _joinCodeController.text.trim().toUpperCase();
+    final repo = _tryReadRepository();
+    if (repo != null) {
+      setState(() => _isSubmitting = true);
+      try {
+        await repo.joinHouseholdByCode(code);
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isSubmitting = false);
+          showCasamaToast(
+            context,
+            e is StateError ? e.message : 'Could not join household "$code".',
+            icon: Icons.error_outline_rounded,
+          );
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
     showCasamaToast(
       context,
       'Joined household with code $code',
       icon: Icons.check_circle_outline_rounded,
     );
-    context.push('/permissions');
+    if (repo?.currentUser.hasCompletedOnboarding == true) {
+      context.go('/dashboard');
+    } else {
+      context.push('/permissions');
+    }
   }
 
-  void _submitCreate() {
+  Future<void> _submitCreate() async {
+    if (_isSubmitting) return;
     if (!(_createFormKey.currentState?.validate() ?? false)) return;
     final name = _createNameController.text.trim();
+    final repo = _tryReadRepository();
+    if (repo != null) {
+      setState(() => _isSubmitting = true);
+      try {
+        await repo.createHousehold(name: name);
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isSubmitting = false);
+          showCasamaToast(
+            context,
+            'Could not create household "$name".',
+            icon: Icons.error_outline_rounded,
+          );
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
     showCasamaToast(
       context,
       'Created household "$name"',
       icon: Icons.check_circle_outline_rounded,
     );
-    context.push('/permissions');
+    if (repo?.currentUser.hasCompletedOnboarding == true) {
+      context.go('/dashboard');
+    } else {
+      context.push('/permissions');
+    }
   }
 
   @override

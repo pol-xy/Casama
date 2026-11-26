@@ -118,7 +118,7 @@ class _BillsBoardViewState extends ConsumerState<BillsBoardView> {
     ];
 
     return SingleChildScrollView(
-      padding: EdgeInsets.only(top: 26, bottom: widget.bottomPadding),
+      padding: EdgeInsets.only(top: 46, bottom: widget.bottomPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

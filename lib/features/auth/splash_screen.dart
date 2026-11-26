@@ -158,7 +158,11 @@ class SplashScreen extends ConsumerWidget {
                                     'Continue as ${repo.currentUser.effectiveGreetingName}',
                                 icon: Icons.arrow_forward_rounded,
                                 iconAfterLabel: true,
-                                onPressed: () => context.go('/dashboard'),
+                                onPressed: () => context.go(
+                                  repo.hasActiveHousehold
+                                      ? '/dashboard'
+                                      : '/household-setup',
+                                ),
                                 height: 52,
                               ),
                               const SizedBox(height: CasamaSpacing.sm),

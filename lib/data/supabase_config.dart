@@ -1,69 +1,85 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseConfig {
-  static String _url = const String.fromEnvironment(
+  static const String avatarsBucket = 'avatars';
+  static const String casnapsBucket = 'casnaps';
+
+  static const String _envUrl = String.fromEnvironment(
     'SUPABASE_URL',
     defaultValue: '',
   );
-  static String _anonKey = const String.fromEnvironment(
+  static const String _envAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
     defaultValue: '',
   );
+  static const String _envDemoEmail = String.fromEnvironment(
+    'SUPABASE_DEMO_EMAIL',
+    defaultValue: '',
+  );
+  static const String _envDemoPassword = String.fromEnvironment(
+    'SUPABASE_DEMO_PASSWORD',
+    defaultValue: '',
+  );
 
-  static String get defaultUrl => _url;
-  static String get defaultAnonKey => _anonKey;
+  static bool _initialized = false;
+
+  static String _readEnv(String key, String compileTimeDefault) {
+    if (dotenv.isInitialized) {
+      final value = dotenv.env[key]?.trim();
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return compileTimeDefault.trim();
+  }
+
+  static String get defaultUrl => _readEnv('SUPABASE_URL', _envUrl);
+  static String get defaultAnonKey =>
+      _readEnv('SUPABASE_ANON_KEY', _envAnonKey);
+  static String get demoEmail => _readEnv('SUPABASE_DEMO_EMAIL', _envDemoEmail);
+  static String get demoPassword =>
+      _readEnv('SUPABASE_DEMO_PASSWORD', _envDemoPassword);
 
   static bool get isConfigured =>
-      _url.trim().isNotEmpty && _anonKey.trim().isNotEmpty;
+      defaultUrl.isNotEmpty && defaultAnonKey.isNotEmpty;
+
+  static bool get isInitialized => _initialized;
+
+  static bool get hasDemoCredentials =>
+      demoEmail.isNotEmpty && demoPassword.isNotEmpty;
 
   static Future<void> initialize() async {
-    // 1. Attempt to parse .env file if compile-time flags were not supplied
-    if (!kIsWeb && (_url.isEmpty || _anonKey.isEmpty)) {
+    if (!dotenv.isInitialized) {
       try {
-        final envFile = File('.env');
-        if (await envFile.exists()) {
-          final lines = await envFile.readAsLines();
-          for (final line in lines) {
-            final trimmed = line.trim();
-            if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
-            final parts = trimmed.split('=');
-            if (parts.length >= 2) {
-              final key = parts[0].trim();
-              final val = parts.sublist(1).join('=').trim();
-              if (key == 'SUPABASE_URL' && _url.isEmpty) {
-                _url = val;
-              } else if (key == 'SUPABASE_ANON_KEY' && _anonKey.isEmpty) {
-                _anonKey = val;
-              }
-            }
-          }
-        }
+        await dotenv.load(fileName: '.env');
       } catch (_) {}
     }
 
-    // 2. Initialize Supabase if credentials are present
-    if (isConfigured) {
+    final url = defaultUrl;
+    final anonKey = defaultAnonKey;
+
+    if (url.isNotEmpty && anonKey.isNotEmpty && !_initialized) {
       try {
         await Supabase.initialize(
-          url: _url,
-          publishableKey: _anonKey,
+          url: url,
+          publishableKey: anonKey,
         );
-        debugPrint('Supabase initialized successfully with $_url');
+        _initialized = true;
+        debugPrint('Supabase initialized successfully for $url');
       } catch (e) {
-        debugPrint('Supabase init failed, falling back to mock mode: $e');
+        debugPrint('Supabase initialization failed: $e');
       }
-    } else {
+    } else if (url.isEmpty || anonKey.isEmpty) {
       debugPrint(
-        'No Supabase credentials provided. Running in high-fidelity Mock Mode.',
+        'SupabaseConfig: SUPABASE_URL and SUPABASE_ANON_KEY not set. Live requests require .env or --dart-define configuration.',
       );
     }
   }
 
   static SupabaseClient? get client {
-    if (isConfigured) {
+    if (_initialized) {
       try {
         return Supabase.instance.client;
       } catch (_) {

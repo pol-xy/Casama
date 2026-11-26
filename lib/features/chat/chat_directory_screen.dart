@@ -88,11 +88,9 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
       if (query.isEmpty) return true;
       final name = s.name.toLowerCase();
       final desc = s.description.toLowerCase();
-      final code = s.inviteCode.toLowerCase();
       final lastMsg = s.messages.lastOrNull?.content.toLowerCase() ?? '';
       return name.contains(query) ||
           desc.contains(query) ||
-          code.contains(query) ||
           lastMsg.contains(query);
     }).toList();
 
@@ -299,25 +297,12 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                         ),
                                       ],
                                     ),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        _MiniHeaderPill(
-                                          icon: Icons.vpn_key_rounded,
-                                          label: 'Join Code',
-                                          color: pal.primaryCoral,
-                                          onTap: () =>
-                                              showJoinWithCodeSheet(context),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        _MiniHeaderPill(
-                                          icon: Icons.add_rounded,
-                                          label: '+ Space',
-                                          color: pal.forestTeal,
-                                          onTap: () =>
-                                              showCreateChatSpaceSheet(context),
-                                        ),
-                                      ],
+                                    _MiniHeaderPill(
+                                      icon: Icons.add_rounded,
+                                      label: 'Space',
+                                      color: pal.forestTeal,
+                                      onTap: () =>
+                                          showCreateChatSpaceSheet(context),
                                     ),
                                   ],
                                 ),
@@ -335,7 +320,7 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: Text(
-                                          'No chat spaces yet. Create one or join with a code!',
+                                          'No chat spaces yet. Create one for your household!',
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(
                                                 color: pal.textSecondary,
@@ -352,9 +337,11 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                       _SpaceCard(
                                         emoji: s.iconEmoji,
                                         name: s.name,
-                                        code: s.inviteCode,
-                                        memberCount: s.memberNames.length,
-                                        preview: s.messages.lastOrNull != null
+                                        preview:
+                                            s.messages.lastOrNull != null &&
+                                                !(s.messages.last.inviteCode
+                                                        ?.startsWith('SPC-') ??
+                                                    false)
                                             ? (s.messages.last.isCurrentUser
                                                   ? 'You: ${s.messages.last.content}'
                                                   : '${s.messages.last.senderName}: ${s.messages.last.content}')
@@ -493,7 +480,7 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                   ),
                                   _MiniHeaderPill(
                                     icon: Icons.add_rounded,
-                                    label: '+ New',
+                                    label: 'New',
                                     color: pal.primaryCoral,
                                     onTap: () => showCreateMeetupSheet(context),
                                   ),
@@ -786,8 +773,6 @@ class _PinnedHouseholdCard extends StatelessWidget {
 class _SpaceCard extends StatelessWidget {
   final String emoji;
   final String name;
-  final String code;
-  final int memberCount;
   final String preview;
   final String time;
   final int unreadCount;
@@ -796,8 +781,6 @@ class _SpaceCard extends StatelessWidget {
   const _SpaceCard({
     required this.emoji,
     required this.name,
-    required this.code,
-    required this.memberCount,
     required this.preview,
     required this.time,
     required this.unreadCount,
@@ -832,7 +815,7 @@ class _SpaceCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Flexible(
+                    Expanded(
                       child: Text(
                         name,
                         maxLines: 1,
@@ -843,26 +826,7 @@ class _SpaceCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: pal.infoBg,
-                        borderRadius: CasamaSpacing.roundedPill,
-                      ),
-                      child: Text(
-                        code,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: pal.infoFg,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Text(
                       time,
                       style: theme.textTheme.labelSmall?.copyWith(
@@ -877,7 +841,7 @@ class _SpaceCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '$memberCount members • $preview',
+                        preview,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,23 +12,32 @@ import '../../../data/models.dart';
 import '../../../data/repository_provider.dart';
 import '../../../shared/widgets/casama_button.dart';
 import '../../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../../shared/widgets/casama_text_field.dart';
 
-/// Opens the unified slide-up Report / Post Item sheet matching
-/// `casama-app-mockup.html` while keeping existing Lost & Found tests happy.
-Future<void> showReportItemSheet(BuildContext context) {
+/// Opens the unified slide-up Report Item sheet matching
+/// `casama-app-mockup.html` (`280ms` ease-out rise, Light/Dark parity).
+Future<void> showReportItemSheet(
+  BuildContext context, {
+  ItemType initialType = ItemType.lost,
+}) {
   return showCasamaSheet<void>(
     context,
     icon: Icons.sell_outlined,
-    title: 'Post an Item',
-    subtitle: 'Lost, found, or shared belongings in your home',
-    builder: (sheetCtx) => _ReportItemSheetBody(hostContext: context),
+    title: 'Report an Item',
+    subtitle: 'Post a lost or found item',
+    builder: (sheetCtx) =>
+        _ReportItemSheetBody(hostContext: context, initialType: initialType),
   );
 }
 
 class _ReportItemSheetBody extends ConsumerStatefulWidget {
   final BuildContext hostContext;
+  final ItemType initialType;
 
-  const _ReportItemSheetBody({required this.hostContext});
+  const _ReportItemSheetBody({
+    required this.hostContext,
+    required this.initialType,
+  });
 
   @override
   ConsumerState<_ReportItemSheetBody> createState() =>
@@ -35,16 +45,18 @@ class _ReportItemSheetBody extends ConsumerStatefulWidget {
 }
 
 class _ReportItemSheetBodyState extends ConsumerState<_ReportItemSheetBody> {
-  ItemType _type = ItemType.lost;
-  late final TextEditingController _titleController;
-  late final TextEditingController _descController;
-  String? _selectedImageBase64;
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _descController = TextEditingController();
+  late ItemType _selectedType;
+  String? _pickedImageBase64;
+  Uint8List? _pickedImageBytes;
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController();
-    _descController = TextEditingController();
+    _selectedType = widget.initialType == ItemType.found
+        ? ItemType.found
+        : ItemType.lost;
   }
 
   @override
@@ -54,29 +66,24 @@ class _ReportItemSheetBodyState extends ConsumerState<_ReportItemSheetBody> {
     super.dispose();
   }
 
-  Future<void> _pickImage(ImageSource source) async {
+  Future<void> _pickPhoto(ImageSource source) async {
     try {
       final picker = ImagePicker();
-      final file = await picker.pickImage(
+      final XFile? image = await picker.pickImage(
         source: source,
         maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 80,
+        imageQuality: 70,
       );
-      if (file != null && mounted) {
-        final bytes = await file.readAsBytes();
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        if (!mounted) return;
         setState(() {
-          _selectedImageBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          _pickedImageBytes = bytes;
+          _pickedImageBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
         });
       }
     } catch (_) {
-      if (widget.hostContext.mounted) {
-        showCasamaToast(
-          widget.hostContext,
-          'Could not attach that photo',
-          icon: Icons.info_outline_rounded,
-        );
-      }
+      // Gracefully ignore missing camera permissions in tests.
     }
   }
 
@@ -85,32 +92,27 @@ class _ReportItemSheetBodyState extends ConsumerState<_ReportItemSheetBody> {
     if (title.isEmpty) {
       showCasamaToast(
         widget.hostContext,
-        'Please enter an item title',
+        'Please enter an item title.',
         icon: Icons.info_outline_rounded,
       );
       return;
     }
 
-    final fallbackImage = _type == ItemType.lost
-        ? 'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?auto=format&fit=crop&w=300&q=80'
-        : (_type == ItemType.found
-              ? 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=300&q=80'
-              : 'https://images.unsplash.com/photo-1558317374-067fb5f30001?auto=format&fit=crop&w=300&q=80');
-
+    final desc = _descController.text.trim();
     ref
         .read(repositoryProvider)
         .postItem(
-          type: _type,
           title: title,
-          description: _descController.text.trim(),
-          imageUrl: _selectedImageBase64 ?? fallbackImage,
+          description: desc.isEmpty ? 'Posted via Casama' : desc,
+          type: _selectedType,
+          imageUrl: _pickedImageBase64,
         );
 
     Navigator.of(context).pop();
     if (widget.hostContext.mounted) {
       showCasamaToast(
         widget.hostContext,
-        'Posted "$title" to Lost & Found',
+        'Posted "$title" to Lost & Found!',
         icon: Icons.check_circle_outline_rounded,
       );
     }
@@ -119,143 +121,226 @@ class _ReportItemSheetBodyState extends ConsumerState<_ReportItemSheetBody> {
   @override
   Widget build(BuildContext context) {
     final pal = context.palette;
+    final theme = Theme.of(context);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        Text(
+          'Type',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: pal.textSecondary,
+          ),
+        ),
+        const SizedBox(height: CasamaSpacing.xs),
+        Row(
           children: [
-            ChoiceChip(
-              label: const Text('Lost Item'),
-              selected: _type == ItemType.lost,
-              onSelected: (_) => setState(() => _type = ItemType.lost),
-              selectedColor: pal.softBlush,
-              backgroundColor: pal.track,
-              side: BorderSide(
-                color: _type == ItemType.lost ? pal.primaryCoral : pal.border,
-              ),
-              labelStyle: TextStyle(
-                color: _type == ItemType.lost
-                    ? pal.primaryCoral
-                    : pal.textPrimary,
-                fontWeight: FontWeight.w600,
+            Expanded(
+              child: _TypePill(
+                label: 'Lost Item',
+                selected: _selectedType == ItemType.lost,
+                onTap: () => setState(() => _selectedType = ItemType.lost),
               ),
             ),
-            ChoiceChip(
-              label: const Text('Found Item'),
-              selected: _type == ItemType.found,
-              onSelected: (_) => setState(() => _type = ItemType.found),
-              selectedColor: pal.amberBg,
-              backgroundColor: pal.track,
-              side: BorderSide(
-                color: _type == ItemType.found ? pal.amberFg : pal.border,
-              ),
-              labelStyle: TextStyle(
-                color: _type == ItemType.found ? pal.amberFg : pal.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            ChoiceChip(
-              label: const Text('Borrowed / Shared'),
-              selected: _type == ItemType.shared,
-              onSelected: (_) => setState(() => _type = ItemType.shared),
-              selectedColor: pal.successBg,
-              backgroundColor: pal.track,
-              side: BorderSide(
-                color: _type == ItemType.shared ? pal.successFg : pal.border,
-              ),
-              labelStyle: TextStyle(
-                color: _type == ItemType.shared
-                    ? pal.successFg
-                    : pal.textPrimary,
-                fontWeight: FontWeight.w600,
+            const SizedBox(width: CasamaSpacing.xs),
+            Expanded(
+              child: _TypePill(
+                label: 'Found Item',
+                selected: _selectedType == ItemType.found,
+                onTap: () => setState(() => _selectedType = ItemType.found),
               ),
             ),
           ],
         ),
         const SizedBox(height: CasamaSpacing.md),
 
-        TextField(
+        CasamaTextField(
           controller: _titleController,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Item Title',
-            hintText: 'e.g., AirPods, Keys, Blue Backpack',
-          ),
+          label: 'Item Title',
+          hint: 'e.g., Hydroflask Water Bottle',
+          textCapitalization: TextCapitalization.sentences,
         ),
         const SizedBox(height: CasamaSpacing.md),
 
-        TextField(
+        CasamaTextField(
           controller: _descController,
+          label: 'Description / Location (optional)',
+          hint: 'e.g., Left near kitchen counter',
+          maxLines: 2,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Location / Details',
-            hintText: 'e.g., Common room counter, available to borrow',
-          ),
         ),
         const SizedBox(height: CasamaSpacing.md),
 
         Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: pal.track,
-                  border: Border.all(color: pal.border),
-                  borderRadius: BorderRadius.circular(10),
+            Expanded(
+              child: CasamaPressable(
+                onTap: () => _pickPhoto(ImageSource.camera),
+                child: Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: pal.track,
+                    borderRadius: CasamaSpacing.roundedMd,
+                    border: Border.all(color: pal.border),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.camera_alt_outlined,
+                        size: 16,
+                        color: pal.primaryCoral,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Take Photo',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: pal.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: _selectedImageBase64 != null
-                    ? Image.memory(
-                        base64Decode(_selectedImageBase64!.split(',').last),
-                        fit: BoxFit.cover,
-                      )
-                    : Icon(Icons.photo_camera_outlined, color: pal.textMuted),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: CasamaSpacing.xs),
             Expanded(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(0, 48),
-                      side: BorderSide(color: pal.border),
-                    ),
-                    icon: const Icon(Icons.photo_camera_outlined, size: 16),
-                    label: const Text('Camera'),
-                    onPressed: () => _pickImage(ImageSource.camera),
+              child: CasamaPressable(
+                onTap: () => _pickPhoto(ImageSource.gallery),
+                child: Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: pal.track,
+                    borderRadius: CasamaSpacing.roundedMd,
+                    border: Border.all(color: pal.border),
                   ),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(0, 48),
-                      side: BorderSide(color: pal.border),
-                    ),
-                    icon: const Icon(Icons.photo_library_outlined, size: 16),
-                    label: const Text('Gallery'),
-                    onPressed: () => _pickImage(ImageSource.gallery),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.photo_library_outlined,
+                        size: 16,
+                        color: pal.forestTeal,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Gallery',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: pal.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ],
         ),
+        if (_pickedImageBytes != null) ...[
+          const SizedBox(height: CasamaSpacing.sm),
+          ClipRRect(
+            borderRadius: CasamaSpacing.roundedMd,
+            child: Stack(
+              children: [
+                Image.memory(
+                  _pickedImageBytes!,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: CasamaPressable(
+                    onTap: () => setState(() {
+                      _pickedImageBytes = null;
+                      _pickedImageBase64 = null;
+                    }),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: CasamaSpacing.lg),
 
         CasamaButton(
-          label: 'Post to Housemates',
-          isPill: true,
-          height: 50,
+          label: 'Post to Board',
+          icon: Icons.send_rounded,
           onPressed: _submit,
         ),
       ],
+    );
+  }
+}
+
+class _TypePill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TypePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: CasamaPressable(
+        onTap: onTap,
+        enableHaptic: true,
+        child: Container(
+          constraints: const BoxConstraints(
+            minHeight: CasamaSpacing.minTouchTarget,
+          ),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? pal.primaryCoral : pal.track,
+            borderRadius: CasamaSpacing.roundedPill,
+            border: Border.all(
+              color: selected ? pal.primaryCoral : pal.border,
+            ),
+          ),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: selected ? pal.onPrimaryCoral : pal.textSecondary,
+              fontWeight: FontWeight.w600,
+              fontSize: 12.5,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

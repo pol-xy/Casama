@@ -47,7 +47,7 @@ class CasMascotView extends StatelessWidget {
       case CasPose.deliveries:
         return 'assets/images/cas/migo_deliveries.png';
       case CasPose.tasks:
-        return 'assets/images/cas/migo_tasks.png';
+        return 'assets/images/cas/migo_chores.png';
       case CasPose.chores:
         return 'assets/images/cas/migo_chores.png';
     }

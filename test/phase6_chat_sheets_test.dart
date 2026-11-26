@@ -45,17 +45,25 @@ void main() {
       expect(find.textContaining('CONNECT'), findsOneWidget);
       expect(find.text('Household Group Chat'), findsOneWidget);
       expect(find.text('Grocery & Supplies'), findsOneWidget);
+      expect(find.text('Join Code'), findsNothing);
+      expect(find.text('SPC-101'), findsNothing);
+      expect(find.text('+ Space'), findsNothing);
 
       // Open Create Chat Space sheet
-      await tester.tap(find.text('+ Space'));
+      await tester.tap(find.text('Space'));
       await tester.pumpAndSettle();
       expect(find.text('Create Chat Space'), findsOneWidget);
+      expect(
+        find.textContaining('automatically included in this space'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('ADD HOUSEMATES DIRECTLY'), findsNothing);
 
       await tester.enterText(
         find.byType(TextFormField).first,
         'Weekend Movie Club',
       );
-      await tester.tap(find.text('Create Space & Generate Code'));
+      await tester.tap(find.text('Create Space'));
       await tester.pumpAndSettle();
       expect(repo.chatSpaces.length, initialSpaceCount + 1);
       expect(
@@ -169,7 +177,11 @@ void main() {
       // Open Space details sheet
       await tester.tap(find.byIcon(Icons.info_outline_rounded));
       await tester.pumpAndSettle();
-      expect(find.text('SPACE INVITATION CODE'), findsOneWidget);
+      expect(find.text('SPACE INVITATION CODE'), findsNothing);
+      expect(
+        find.textContaining('automatically included in this space'),
+        findsOneWidget,
+      );
       await tester.tap(find.bySemanticsLabel('Close ${firstSpace.iconEmoji} ${firstSpace.name}'));
       await tester.pumpAndSettle();
 

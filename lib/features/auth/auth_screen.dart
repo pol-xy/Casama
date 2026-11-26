@@ -1,7 +1,11 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
@@ -32,6 +36,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _loginPasswordController = TextEditingController();
   final _loginPasswordFocus = FocusNode();
   bool _isLoginLoading = false;
+  bool _showResendVerification = false;
+  bool _isResendingVerification = false;
+  int _resendCooldownSeconds = 0;
+  Timer? _resendCooldownTimer;
 
   // Register controllers
   final _registerFormKey = GlobalKey<FormState>();
@@ -50,6 +58,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   void initState() {
     super.initState();
     _activeTab = widget.initialTabIndex.clamp(0, 1);
+    _loginEmailController.addListener(_onLoginEmailChanged);
     _termsTap = TapGestureRecognizer()
       ..onTap = () => _openLegalTab('terms');
     _privacyTap = TapGestureRecognizer()
@@ -58,6 +67,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   @override
   void dispose() {
+    _resendCooldownTimer?.cancel();
+    _loginEmailController.removeListener(_onLoginEmailChanged);
     _loginEmailController.dispose();
     _loginPasswordController.dispose();
     _loginPasswordFocus.dispose();
@@ -93,6 +104,70 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     return null;
   }
 
+  void _onLoginEmailChanged() {
+    if (_showResendVerification && _loginEmailController.text.trim().isEmpty) {
+      setState(() => _showResendVerification = false);
+    }
+  }
+
+  void _startResendCooldown() {
+    _resendCooldownTimer?.cancel();
+    setState(() => _resendCooldownSeconds = 60);
+    _resendCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendCooldownSeconds <= 1) {
+        timer.cancel();
+        setState(() => _resendCooldownSeconds = 0);
+      } else {
+        setState(() => _resendCooldownSeconds--);
+      }
+    });
+  }
+
+  Future<void> _handleResendVerification() async {
+    final email = _loginEmailController.text.trim();
+    if (email.isEmpty) {
+      showCasamaToast(
+        context,
+        'Please enter your email address first.',
+        icon: Icons.info_outline_rounded,
+      );
+      return;
+    }
+
+    setState(() => _isResendingVerification = true);
+    try {
+      await ref
+          .read(repositoryProvider)
+          .resendSignupVerificationEmail(email);
+      if (!mounted) return;
+      setState(() => _isResendingVerification = false);
+      _startResendCooldown();
+      showCasamaToast(
+        context,
+        'Verification email sent to $email. Please check your inbox.',
+        icon: Icons.mark_email_read_outlined,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isResendingVerification = false);
+      final isRateLimited = e is AuthException &&
+          (e.code == 'over_email_send_rate_limit' ||
+              e.statusCode == '429' ||
+              e.message.toLowerCase().contains('rate limit'));
+      showCasamaToast(
+        context,
+        isRateLimited
+            ? 'Too many verification emails requested. Please wait a minute before trying again.'
+            : 'Could not resend verification email right now. Please try again later.',
+        icon: Icons.error_outline_rounded,
+      );
+    }
+  }
+
   Future<void> _handleLogin() async {
     if (!_loginFormKey.currentState!.validate()) return;
     setState(() => _isLoginLoading = true);
@@ -100,27 +175,59 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     try {
       final email = _loginEmailController.text.trim();
       final password = _loginPasswordController.text.trim();
-      final client = SupabaseConfig.client;
-      if (client != null) {
-        await client.auth.signInWithPassword(email: email, password: password);
-      } else {
-        await Future.delayed(const Duration(milliseconds: 350));
-      }
-
-      ref.read(repositoryProvider).login(email: email, password: password);
+      final repo = ref.read(repositoryProvider);
+      await repo.signInWithPassword(email: email, password: password);
 
       if (mounted) {
-        setState(() => _isLoginLoading = false);
-        context.go('/dashboard');
+        _resendCooldownTimer?.cancel();
+        setState(() {
+          _isLoginLoading = false;
+          _showResendVerification = false;
+          _resendCooldownSeconds = 0;
+        });
+        context.go(repo.hasActiveHousehold ? '/dashboard' : '/household-setup');
       }
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Casama sign-in failed (${e.runtimeType}): $e');
+      }
+      final isEmailNotConfirmed = e is AuthException &&
+          (e.code == 'email_not_confirmed' ||
+              e.message.toLowerCase().contains('email not confirmed'));
       if (mounted) {
-        setState(() => _isLoginLoading = false);
+        setState(() {
+          _isLoginLoading = false;
+          _showResendVerification = isEmailNotConfirmed;
+        });
         showCasamaToast(
           context,
-          'Could not sign in. Check your email and password, or try Demo Login.',
-          icon: Icons.error_outline_rounded,
+          isEmailNotConfirmed
+              ? 'Your email is not verified yet. Please confirm it or resend the verification email below.'
+              : 'Could not sign in. Check your email and password, or configure Demo Login.',
+          icon: isEmailNotConfirmed
+              ? Icons.mark_email_unread_outlined
+              : Icons.error_outline_rounded,
         );
+      }
+    }
+  }
+
+  Future<void> _handleDemoLogin() async {
+    setState(() => _isLoginLoading = true);
+    try {
+      final repo = ref.read(repositoryProvider);
+      await repo.signInWithDemoAccount();
+      if (mounted) {
+        setState(() => _isLoginLoading = false);
+        context.go(repo.hasActiveHousehold ? '/dashboard' : '/household-setup');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoginLoading = false);
+        final msg = e is StateError
+            ? e.message
+            : 'Demo login failed. Verify SUPABASE_DEMO_EMAIL and SUPABASE_DEMO_PASSWORD.';
+        showCasamaToast(context, msg, icon: Icons.info_outline_rounded);
       }
     }
   }
@@ -142,22 +249,34 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final password = _registerPasswordController.text.trim();
 
     try {
-      final client = SupabaseConfig.client;
-      if (client != null) {
-        await client.auth.signUp(email: email, password: password);
-      } else {
-        await Future.delayed(const Duration(milliseconds: 350));
+      final repo = ref.read(repositoryProvider);
+      final hasSession = await repo.signUpWithPassword(
+        email: email,
+        password: password,
+      );
+      if (!hasSession) {
+        if (mounted) {
+          setState(() => _isRegisterLoading = false);
+          showCasamaToast(
+            context,
+            'Account created! Please check your email to confirm before signing in.',
+            icon: Icons.mark_email_read_outlined,
+          );
+          _switchTab(1);
+        }
+        return;
       }
 
-      final repo = ref.read(repositoryProvider);
-      repo.register(email: email, password: password);
       repo.recordTermsConsent();
 
       if (mounted) {
         setState(() => _isRegisterLoading = false);
         context.push('/profile-setup');
       }
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Casama sign-up failed (${e.runtimeType}): $e');
+      }
       if (mounted) {
         setState(() => _isRegisterLoading = false);
         showCasamaToast(
@@ -491,6 +610,58 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ),
           ),
           const SizedBox(height: CasamaSpacing.xs),
+          if (_showResendVerification) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: pal.warningBg,
+                borderRadius: CasamaSpacing.roundedMd,
+                border: Border.all(color: pal.warningFg.withValues(alpha: 0.35)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.mark_email_unread_outlined,
+                        color: pal.warningFg,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Your email is not verified yet. Please check your inbox or resend the verification email.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: pal.textPrimary,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: CasamaSpacing.sm),
+                  CasamaButton(
+                    label: _resendCooldownSeconds > 0
+                        ? 'Resend available in ${_resendCooldownSeconds}s'
+                        : 'Resend Verification Email',
+                    icon: Icons.send_outlined,
+                    style: CasamaButtonStyle.secondary,
+                    isLoading: _isResendingVerification,
+                    onPressed:
+                        (_resendCooldownSeconds > 0 || _isResendingVerification)
+                        ? null
+                        : _handleResendVerification,
+                    height: 44,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: CasamaSpacing.md),
+          ],
           CasamaButton(
             label: 'Log In',
             onPressed: _handleLogin,
@@ -518,10 +689,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           CasamaButton(
             label: 'One-Tap Demo Login',
             style: CasamaButtonStyle.secondary,
-            onPressed: () {
-              ref.read(repositoryProvider).login();
-              context.go('/dashboard');
-            },
+            onPressed: _isLoginLoading ? null : _handleDemoLogin,
             height: 50,
           ),
         ],

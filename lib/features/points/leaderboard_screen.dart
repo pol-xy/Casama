@@ -23,36 +23,18 @@ class LeaderboardScreen extends ConsumerWidget {
         ? CasamaBreakpoints.maxContentWidth
         : double.infinity;
 
+    final standings = repo.leaderboardStandings;
+    const medals = ['🥇', '🥈', '🥉'];
     final entries = [
-      _LeaderboardEntry(
-        repo.currentUser.fullName ?? repo.currentUser.displayName,
-        repo.currentUser.handle,
-        repo.kasamaPoints,
-        '🥇',
-        repo.currentUser.avatarUrl,
-        isCurrentUser: true,
-      ),
-      const _LeaderboardEntry(
-        'Maria Santos',
-        '@maria',
-        85,
-        '🥈',
-        null,
-      ),
-      const _LeaderboardEntry(
-        'Alex Rivera',
-        '@alex',
-        65,
-        '🥉',
-        null,
-      ),
-      const _LeaderboardEntry(
-        'Ria Garcia',
-        '@ria',
-        55,
-        '🎖️',
-        null,
-      ),
+      for (var i = 0; i < standings.length; i++)
+        _LeaderboardEntry(
+          standings[i].displayName,
+          standings[i].handle,
+          standings[i].points,
+          i < medals.length ? medals[i] : '🎖️',
+          standings[i].avatarUrl,
+          isCurrentUser: standings[i].isCurrentUser,
+        ),
     ];
 
     return Scaffold(

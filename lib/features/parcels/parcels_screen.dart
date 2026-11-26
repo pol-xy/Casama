@@ -112,7 +112,7 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
     final currentList = _selectedSegment == 0 ? upcomingParcels : historyParcels;
 
     return SingleChildScrollView(
-      padding: EdgeInsets.only(top: 26, bottom: widget.bottomPadding),
+      padding: EdgeInsets.only(top: 46, bottom: widget.bottomPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -395,9 +395,42 @@ class _ParcelCard extends ConsumerWidget {
                     ),
                   )
               else
-                const StatusChip(
-                  label: 'Received',
-                  variant: ChipVariant.returned,
+                Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (isCod && !parcel.codSettled)
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: pal.forestTeal,
+                          side: BorderSide(color: pal.forestTeal),
+                          shape: const StadiumBorder(),
+                          minimumSize: const Size(0, 38),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        onPressed: () {
+                          ref
+                              .read(repositoryProvider)
+                              .settleParcelClaim(parcel.id);
+                          showCasamaToast(
+                            context,
+                            'Marked COD as settled!',
+                            icon: Icons.check_circle_outline_rounded,
+                          );
+                        },
+                        child: const Text(
+                          'Mark Settled',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    const StatusChip(
+                      label: 'Received',
+                      variant: ChipVariant.returned,
+                    ),
+                  ],
                 ),
             ],
           ),

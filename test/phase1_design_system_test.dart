@@ -21,7 +21,7 @@ void main() {
         CasPose.hero: 'assets/images/cas/together_cards.png',
         CasPose.waving: 'assets/images/cas/migo_chat.png',
         CasPose.deliveries: 'assets/images/cas/migo_deliveries.png',
-        CasPose.tasks: 'assets/images/cas/migo_tasks.png',
+        CasPose.tasks: 'assets/images/cas/migo_chores.png',
         CasPose.roulette: 'assets/images/cas/migo_roulette.png',
         CasPose.chores: 'assets/images/cas/migo_chores.png',
       };

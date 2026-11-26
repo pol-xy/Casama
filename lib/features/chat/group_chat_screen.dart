@@ -161,16 +161,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                     (m) => CasamaMessageBubble(
                       message: m,
                       timeLabel: DateFormat('h:mm a').format(m.createdAt),
-                      onJoinSpaceCode: (code) {
-                        final space = ref
-                            .read(repositoryProvider)
-                            .joinChatSpaceByCode(code);
-                        if (space != null) {
-                          GoRouter.maybeOf(
-                            context,
-                          )?.push('/space-chat?id=${space.id}');
-                        }
-                      },
                     ),
                   ),
                   const SizedBox(height: CasamaSpacing.sm),
@@ -431,18 +421,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
               _scrollToBottom();
             },
           ),
-          if (ref.read(repositoryProvider).chatSpaces.isNotEmpty)
-            CasamaSheetActionRow(
-              icon: Icons.groups_outlined,
-              iconColor: pal.primaryCoral,
-              iconBg: pal.softBlush,
-              title: 'Share Space Code...',
-              subtitle: 'Post a custom space code to invite housemates',
-              onTap: () {
-                Navigator.pop(ctx);
-                _showSelectSpaceToShareSheet(context);
-              },
-            ),
           Divider(height: 16, color: pal.divider),
           CasamaSheetActionRow(
             icon: Icons.celebration_outlined,
@@ -466,67 +444,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  void _showSelectSpaceToShareSheet(BuildContext context) {
-    final spaces = ref.read(repositoryProvider).chatSpaces;
-    showCasamaSheet<void>(
-      context,
-      icon: Icons.groups_outlined,
-      title: 'Select a Space to Share',
-      subtitle: 'Post an instant join card in group chat',
-      builder: (ctx) {
-        final pal = ctx.palette;
-        final theme = Theme.of(ctx);
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: spaces.map((s) {
-            return CasamaPressable(
-              onTap: () {
-                Navigator.pop(ctx);
-                ref.read(repositoryProvider).shareInviteCodeToGroupChat(
-                  code: s.inviteCode,
-                  title: '${s.iconEmoji} ${s.name}',
-                );
-                _scrollToBottom();
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  children: [
-                    Text(s.iconEmoji, style: const TextStyle(fontSize: 24)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            s.name,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: pal.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            'Code: ${s.inviteCode} • ${s.memberNames.length} members',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontSize: 11.5,
-                              color: pal.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.send_rounded, size: 18, color: pal.primaryCoral),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        );
-      },
     );
   }
 

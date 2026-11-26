@@ -430,21 +430,22 @@ void main() {
       await tester.pumpAndSettle();
 
       // Form is displayed
-      expect(find.text('Post an Item'), findsWidgets);
+      expect(find.text('Report an Item'), findsOneWidget);
+      expect(find.text('Borrowed / Shared'), findsNothing);
       expect(find.text('Lost Item'), findsOneWidget);
       expect(find.text('Found Item'), findsOneWidget);
       expect(find.text('Item Title'), findsOneWidget);
-      expect(find.text('Post to Housemates'), findsOneWidget);
+      expect(find.text('Post to Board'), findsOneWidget);
 
       // Enter title
       await tester.enterText(
-        find.widgetWithText(TextField, 'e.g., AirPods, Keys, Blue Backpack'),
+        find.widgetWithText(TextField, 'e.g., Hydroflask Water Bottle'),
         'Blue Water Bottle',
       );
       await tester.pumpAndSettle();
 
       // Submit
-      await tester.tap(find.text('Post to Housemates'));
+      await tester.tap(find.text('Post to Board'));
       await tester.pumpAndSettle();
 
       // Verify data saved to repository
@@ -454,7 +455,7 @@ void main() {
   );
 
   testWidgets(
-    'Add a Household Task action launches existing maintenance form and saves data to repository',
+    'Add a Household Task action launches Create Task form and saves unassigned task to repository',
     (WidgetTester tester) async {
       final mockRepo = MockRepository();
       final initialCount = mockRepo.tasks.length;
@@ -471,28 +472,33 @@ void main() {
       await tester.pumpAndSettle();
 
       // Form is displayed
-      expect(find.text('Create Maintenance Task'), findsOneWidget);
+      expect(find.text('Create Task'), findsNWidgets(2));
       expect(find.text('Task Title'), findsOneWidget);
       expect(find.text('Category'), findsOneWidget);
-      expect(find.text('Add Task'), findsOneWidget);
+      expect(find.text('Cleaning'), findsOneWidget);
+      expect(find.text('Repair / Maintenance'), findsOneWidget);
+      expect(find.text('Restock'), findsOneWidget);
+      expect(find.text('Personal Request'), findsOneWidget);
+      expect(find.text('Assign Housemate'), findsNothing);
 
       // Enter task title
       await tester.enterText(
         find.widgetWithText(
           TextField,
-          'e.g., Fix front door knob, Restock detergent',
+          'e.g., Restock bathroom tissues',
         ),
         'Clean kitchen microwave',
       );
       await tester.pumpAndSettle();
 
       // Submit
-      await tester.tap(find.text('Add Task'));
+      await tester.tap(find.text('Create Task').last);
       await tester.pumpAndSettle();
 
-      // Verify data saved to repository
+      // Verify data saved to repository as unassigned
       expect(mockRepo.tasks.length, initialCount + 1);
       expect(mockRepo.tasks.first.title, 'Clean kitchen microwave');
+      expect(mockRepo.tasks.first.assigneeName, isNull);
     },
   );
 

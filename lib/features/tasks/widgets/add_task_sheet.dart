@@ -8,16 +8,19 @@ import '../../../data/models.dart';
 import '../../../data/repository_provider.dart';
 import '../../../shared/widgets/casama_button.dart';
 import '../../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../../shared/widgets/casama_text_field.dart';
+import '../task_ui_state_provider.dart';
 
-/// Opens the unified slide-up New Task sheet matching `casama-app-mockup.html`
-/// while keeping test-covered labels and repository bindings intact.
+/// Opens the unified slide-up Create Task sheet (`280ms` ease-out rise,
+/// Light/Dark parity). New tasks start unassigned so housemates can claim
+/// them or spin them via Task Roulette.
 Future<void> showNewTaskSheet(BuildContext context) {
   return showCasamaSheet<void>(
     context,
-    icon: Icons.checklist_rounded,
-    title: 'Create Maintenance Task',
-    subtitle: 'Repair, chore or restock for your household',
-    builder: (sheetContext) => _AddTaskSheetBody(hostContext: context),
+    icon: Icons.build_outlined,
+    title: 'Create Task',
+    subtitle: 'Add a chore, repair, restock, or request',
+    builder: (sheetCtx) => _AddTaskSheetBody(hostContext: context),
   );
 }
 
@@ -31,16 +34,9 @@ class _AddTaskSheetBody extends ConsumerStatefulWidget {
 }
 
 class _AddTaskSheetBodyState extends ConsumerState<_AddTaskSheetBody> {
-  TaskCategory _category = TaskCategory.diy;
-  TaskUrgency _urgency = TaskUrgency.medium;
-  late final TextEditingController _titleController;
-  String? _selectedAssignee;
-
-  @override
-  void initState() {
-    super.initState();
-    _titleController = TextEditingController();
-  }
+  final TextEditingController _titleController = TextEditingController();
+  CasamaTaskUiCategory _selectedCategory = CasamaTaskUiCategory.cleaning;
+  TaskUrgency _selectedUrgency = TaskUrgency.medium;
 
   @override
   void dispose() {
@@ -53,28 +49,38 @@ class _AddTaskSheetBodyState extends ConsumerState<_AddTaskSheetBody> {
     if (title.isEmpty) {
       showCasamaToast(
         widget.hostContext,
-        'Please enter a task title',
+        'Please enter a task title.',
         icon: Icons.info_outline_rounded,
       );
       return;
     }
 
+    final repo = ref.read(repositoryProvider);
+    final selectedUiCategory = _selectedCategory;
+    repo.addTask(
+      title: title,
+      category: selectedUiCategory.backendCategory,
+      urgency: _selectedUrgency,
+      assigneeName: null,
+    );
+
+    final createdTask = repo.tasks.cast<MaintenanceTask?>().firstWhere(
+      (t) => t?.title.trim() == title,
+      orElse: () => null,
+    );
     ref
-        .read(repositoryProvider)
-        .addTask(
+        .read(taskUiOverridesProvider.notifier)
+        .setCategoryForTask(
+          taskId: createdTask?.id,
           title: title,
-          category: _category,
-          urgency: _urgency,
-          assigneeName: _selectedAssignee == 'Unassigned'
-              ? null
-              : _selectedAssignee,
+          category: selectedUiCategory,
         );
 
     Navigator.of(context).pop();
     if (widget.hostContext.mounted) {
       showCasamaToast(
         widget.hostContext,
-        'Added task "$title"',
+        'Task "$title" added to board!',
         icon: Icons.check_circle_outline_rounded,
       );
     }
@@ -82,98 +88,245 @@ class _AddTaskSheetBodyState extends ConsumerState<_AddTaskSheetBody> {
 
   @override
   Widget build(BuildContext context) {
-    final repo = ref.watch(repositoryProvider);
-    final memberOptions = [
-      ...repo.members.map((m) => m.profile.displayName).toSet(),
-      'Unassigned',
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    const topRow = [
+      CasamaTaskUiCategory.cleaning,
+      CasamaTaskUiCategory.repair,
     ];
-    _selectedAssignee ??= memberOptions.first;
-    if (!memberOptions.contains(_selectedAssignee)) {
-      _selectedAssignee = memberOptions.first;
-    }
+    const bottomRow = [
+      CasamaTaskUiCategory.restock,
+      CasamaTaskUiCategory.request,
+    ];
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        CasamaTextField(
           controller: _titleController,
+          label: 'Task Title',
+          hint: 'e.g., Restock bathroom tissues',
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Task Title',
-            hintText: 'e.g., Fix front door knob, Restock detergent',
+        ),
+        const SizedBox(height: CasamaSpacing.md),
+
+        Text(
+          'Category',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: pal.textSecondary,
           ),
         ),
-        const SizedBox(height: CasamaSpacing.md),
-
-        DropdownButtonFormField<TaskCategory>(
-          initialValue: _category,
-          decoration: const InputDecoration(labelText: 'Category'),
-          items: const [
-            DropdownMenuItem(
-              value: TaskCategory.diy,
-              child: Text('DIY / Roommate'),
+        const SizedBox(height: CasamaSpacing.xs),
+        Row(
+          children: [
+            Expanded(
+              child: _CategoryOptionCard(
+                category: topRow[0],
+                selected: _selectedCategory == topRow[0],
+                onTap: () => setState(() => _selectedCategory = topRow[0]),
+              ),
             ),
-            DropdownMenuItem(
-              value: TaskCategory.landlord,
-              child: Text('Landlord / Admin'),
-            ),
-            DropdownMenuItem(
-              value: TaskCategory.restock,
-              child: Text('Household Restock'),
+            const SizedBox(width: CasamaSpacing.xs),
+            Expanded(
+              child: _CategoryOptionCard(
+                category: topRow[1],
+                selected: _selectedCategory == topRow[1],
+                onTap: () => setState(() => _selectedCategory = topRow[1]),
+              ),
             ),
           ],
-          onChanged: (val) {
-            if (val != null) setState(() => _category = val);
-          },
+        ),
+        const SizedBox(height: CasamaSpacing.xs),
+        Row(
+          children: [
+            Expanded(
+              child: _CategoryOptionCard(
+                category: bottomRow[0],
+                selected: _selectedCategory == bottomRow[0],
+                onTap: () => setState(() => _selectedCategory = bottomRow[0]),
+              ),
+            ),
+            const SizedBox(width: CasamaSpacing.xs),
+            Expanded(
+              child: _CategoryOptionCard(
+                category: bottomRow[1],
+                selected: _selectedCategory == bottomRow[1],
+                onTap: () => setState(() => _selectedCategory = bottomRow[1]),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: CasamaSpacing.md),
 
-        DropdownButtonFormField<TaskUrgency>(
-          initialValue: _urgency,
-          decoration: const InputDecoration(labelText: 'Urgency Level'),
-          items: const [
-            DropdownMenuItem(
-              value: TaskUrgency.urgent,
-              child: Text('Urgent (Immediate)'),
+        Text(
+          'Urgency Level',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: pal.textSecondary,
+          ),
+        ),
+        const SizedBox(height: CasamaSpacing.xs),
+        Row(
+          children: [
+            _UrgencyChip(
+              label: 'Low',
+              selected: _selectedUrgency == TaskUrgency.low,
+              color: pal.forestTeal,
+              bg: pal.softSage,
+              onTap: () => setState(() => _selectedUrgency = TaskUrgency.low),
             ),
-            DropdownMenuItem(
-              value: TaskUrgency.medium,
-              child: Text('Medium Priority'),
+            const SizedBox(width: CasamaSpacing.xs),
+            _UrgencyChip(
+              label: 'Medium',
+              selected: _selectedUrgency == TaskUrgency.medium,
+              color: pal.warningFg,
+              bg: pal.warningBg,
+              onTap: () =>
+                  setState(() => _selectedUrgency = TaskUrgency.medium),
             ),
-            DropdownMenuItem(
-              value: TaskUrgency.low,
-              child: Text('Low Priority'),
+            const SizedBox(width: CasamaSpacing.xs),
+            _UrgencyChip(
+              label: 'Urgent',
+              selected: _selectedUrgency == TaskUrgency.urgent,
+              color: pal.dangerFg,
+              bg: pal.dangerBg,
+              onTap: () =>
+                  setState(() => _selectedUrgency = TaskUrgency.urgent),
             ),
           ],
-          onChanged: (val) {
-            if (val != null) setState(() => _urgency = val);
-          },
-        ),
-        const SizedBox(height: CasamaSpacing.md),
-
-        DropdownButtonFormField<String>(
-          initialValue: _selectedAssignee,
-          decoration: const InputDecoration(labelText: 'Assign Housemate'),
-          items: memberOptions
-              .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-              .toList(),
-          onChanged: (val) {
-            if (val != null) setState(() => _selectedAssignee = val);
-          },
         ),
         const SizedBox(height: CasamaSpacing.lg),
 
         CasamaButton(
-          label: 'Add Task',
-          style: context.isDark
-              ? CasamaButtonStyle.primary
-              : CasamaButtonStyle.navy,
-          isPill: true,
-          height: 50,
+          label: 'Create Task',
+          icon: Icons.add_task_rounded,
           onPressed: _submit,
         ),
       ],
+    );
+  }
+}
+
+class _CategoryOptionCard extends StatelessWidget {
+  final CasamaTaskUiCategory category;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CategoryOptionCard({
+    required this.category,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final (tintBg, tintFg) = category.badgeColors(pal);
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: category.label,
+      child: CasamaPressable(
+        onTap: onTap,
+        enableHaptic: true,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 52),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? tintBg : pal.track,
+            borderRadius: CasamaSpacing.roundedMd,
+            border: Border.all(
+              color: selected ? tintFg : pal.border,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                category.icon,
+                size: 18,
+                color: selected ? tintFg : pal.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  category.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: selected ? tintFg : pal.textPrimary,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    fontSize: 12,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UrgencyChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color color;
+  final Color bg;
+  final VoidCallback onTap;
+
+  const _UrgencyChip({
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.bg,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: '$label urgency',
+        child: CasamaPressable(
+          onTap: onTap,
+          enableHaptic: true,
+          child: Container(
+            constraints: const BoxConstraints(
+              minHeight: CasamaSpacing.minTouchTarget,
+            ),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? bg : pal.track,
+              borderRadius: CasamaSpacing.roundedPill,
+              border: Border.all(
+                color: selected ? color : pal.border,
+                width: selected ? 1.5 : 1,
+              ),
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: selected ? color : pal.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

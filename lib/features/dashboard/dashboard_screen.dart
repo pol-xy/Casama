@@ -764,41 +764,43 @@ class DashboardScreen extends ConsumerWidget {
       builder: (sheetCtx) {
         final pal = sheetCtx.palette;
         final theme = Theme.of(sheetCtx);
+        final items = ref.watch(repositoryProvider).notifications;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _NotificationRow(
-              icon: Icons.local_shipping_outlined,
-              iconBg: pal.softBlush,
-              iconColor: pal.primaryCoral,
-              title: 'Your parcel is expected today at 4 PM',
-              subtitle: 'Shopee delivery • COD ₱350',
-              time: 'Just now',
-              pal: pal,
-              theme: theme,
-            ),
-            Divider(height: 16, color: pal.border),
-            _NotificationRow(
-              icon: Icons.star_rounded,
-              iconBg: pal.amberBg,
-              iconColor: pal.amberFg,
-              title: '+5 Good Kasama points received',
-              subtitle: "For receiving Maria's delivery package",
-              time: '2h ago',
-              pal: pal,
-              theme: theme,
-            ),
-            Divider(height: 16, color: pal.border),
-            _NotificationRow(
-              icon: Icons.school_outlined,
-              iconBg: pal.softSage,
-              iconColor: pal.forestTeal,
-              title: 'Meet-up: Study Session',
-              subtitle: 'Dorm Common Area • 3 housemates going',
-              time: '4h ago',
-              pal: pal,
-              theme: theme,
-            ),
+            if (items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: CasamaSpacing.md),
+                child: Text(
+                  "You're all caught up! No new notifications.",
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: pal.textSecondary,
+                  ),
+                ),
+              )
+            else
+              for (var i = 0; i < items.length; i++) ...[
+                if (i > 0) Divider(height: 16, color: pal.border),
+                _NotificationRow(
+                  icon: items[i].type == 'parcel_received'
+                      ? Icons.local_shipping_outlined
+                      : items[i].type == 'roulette_chosen'
+                      ? Icons.casino_outlined
+                      : Icons.notifications_none_rounded,
+                  iconBg: items[i].type == 'parcel_received'
+                      ? pal.softBlush
+                      : pal.softSage,
+                  iconColor: items[i].type == 'parcel_received'
+                      ? pal.primaryCoral
+                      : pal.forestTeal,
+                  title: items[i].title,
+                  subtitle: items[i].subtitle,
+                  time: DateFormat('h:mm a').format(items[i].createdAt),
+                  pal: pal,
+                  theme: theme,
+                ),
+              ],
             const SizedBox(height: CasamaSpacing.md),
             CasamaButton(
               label: 'Mark all read',

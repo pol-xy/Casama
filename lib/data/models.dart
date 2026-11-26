@@ -196,7 +196,14 @@ class ParcelItem {
     this.notes,
     this.availableMemberNames = const [],
     this.isAllUnavailable = false,
+    this.codSettled = false,
+    this.claimedById,
+    this.claimedByName,
   });
+
+  final bool codSettled;
+  final String? claimedById;
+  final String? claimedByName;
 
   factory ParcelItem.fromJson(Map<String, dynamic> json) {
     ParcelStatus parseStatus(String? st) {
@@ -233,6 +240,9 @@ class ParcelItem {
               .toList() ??
           const [],
       isAllUnavailable: json['is_all_unavailable'] as bool? ?? false,
+      codSettled: json['cod_settled'] as bool? ?? false,
+      claimedById: json['claimed_by_id'] as String?,
+      claimedByName: json['claimed_by_name'] as String?,
     );
   }
 
@@ -243,7 +253,7 @@ class ParcelItem {
     'courier': courier,
     'expected_arrival': expectedArrival.toIso8601String(),
     'payment_type': paymentType == ParcelPaymentType.cod ? 'cod' : 'paid',
-    'cod_amount': codAmount,
+    'cod_amount': paymentType == ParcelPaymentType.cod ? codAmount : null,
     'currency': currency,
     'status': status.name,
     'notes': notes,
@@ -252,7 +262,7 @@ class ParcelItem {
 
 enum ItemType { lost, found, shared }
 
-enum ItemStatus { open, unclaimed, claimed, returned }
+enum ItemStatus { open, found, unclaimed, claimed, returned }
 
 class LostFoundItem {
   final String id;
@@ -264,6 +274,8 @@ class LostFoundItem {
   final ItemStatus status;
   final String reportedBy;
   final String reportedByName;
+  final String? foundById;
+  final String? claimedById;
   final DateTime createdAt;
 
   const LostFoundItem({
@@ -276,11 +288,17 @@ class LostFoundItem {
     required this.status,
     required this.reportedBy,
     required this.reportedByName,
+    this.foundById,
+    this.claimedById,
     required this.createdAt,
   });
 
-  factory LostFoundItem.fromJson(Map<String, dynamic> json) {
+  factory LostFoundItem.fromJson(
+    Map<String, dynamic> json, {
+    ItemType? forcedType,
+  }) {
     ItemType parseType(String? t) {
+      if (forcedType != null) return forcedType;
       switch (t?.toLowerCase()) {
         case 'found':
           return ItemType.found;
@@ -293,6 +311,8 @@ class LostFoundItem {
 
     ItemStatus parseStatus(String? s) {
       switch (s?.toLowerCase()) {
+        case 'found':
+          return ItemStatus.found;
         case 'unclaimed':
           return ItemStatus.unclaimed;
         case 'claimed':
@@ -314,6 +334,8 @@ class LostFoundItem {
       status: parseStatus(json['status'] as String?),
       reportedBy: json['reported_by'] as String? ?? '',
       reportedByName: json['reported_by_name'] as String? ?? 'Housemate',
+      foundById: json['found_by_id'] as String?,
+      claimedById: json['claimed_by_id'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -333,7 +355,49 @@ class LostFoundItem {
   };
 }
 
-enum TaskCategory { diy, landlord, restock }
+enum TaskCategory {
+  cleaning,
+  repairMaintenance,
+  restock,
+  personalRequest,
+  diy,
+  landlord,
+}
+
+extension TaskCategoryDbX on TaskCategory {
+  String get dbValue => switch (this) {
+    TaskCategory.cleaning || TaskCategory.diy => 'cleaning',
+    TaskCategory.repairMaintenance ||
+    TaskCategory.landlord => 'repair_maintenance',
+    TaskCategory.restock => 'restock',
+    TaskCategory.personalRequest => 'personal_request',
+  };
+
+  String get label => switch (this) {
+    TaskCategory.cleaning || TaskCategory.diy => 'Cleaning',
+    TaskCategory.repairMaintenance ||
+    TaskCategory.landlord => 'Repair / Maintenance',
+    TaskCategory.restock => 'Restock',
+    TaskCategory.personalRequest => 'Personal Request',
+  };
+
+  static TaskCategory fromDbValue(String? raw) {
+    switch (raw?.toLowerCase()) {
+      case 'cleaning':
+      case 'diy':
+        return TaskCategory.cleaning;
+      case 'repair_maintenance':
+      case 'landlord':
+        return TaskCategory.repairMaintenance;
+      case 'restock':
+        return TaskCategory.restock;
+      case 'personal_request':
+        return TaskCategory.personalRequest;
+      default:
+        return TaskCategory.cleaning;
+    }
+  }
+}
 
 enum TaskUrgency { low, medium, urgent }
 
@@ -369,12 +433,16 @@ class MaintenanceTask {
   final String id;
   final String householdId;
   final String title;
+  final String? description;
   final TaskCategory category;
   final TaskUrgency urgency;
   final TaskStatus status;
+  final String? assigneeId;
   final String? assigneeName;
   final String? assigneeAvatar;
   final String createdByName;
+  final String? completedById;
+  final DateTime? completedAt;
   final DateTime createdAt;
   final DateTime? dueDate;
 
@@ -382,28 +450,59 @@ class MaintenanceTask {
     required this.id,
     required this.householdId,
     required this.title,
+    this.description,
     required this.category,
     required this.urgency,
     required this.status,
+    this.assigneeId,
     this.assigneeName,
     this.assigneeAvatar,
     required this.createdByName,
+    this.completedById,
+    this.completedAt,
     required this.createdAt,
     this.dueDate,
   });
 
-  factory MaintenanceTask.fromJson(Map<String, dynamic> json) {
-    TaskCategory parseCat(String? c) {
-      switch (c?.toLowerCase()) {
-        case 'landlord':
-          return TaskCategory.landlord;
-        case 'restock':
-          return TaskCategory.restock;
-        default:
-          return TaskCategory.diy;
-      }
-    }
+  MaintenanceTask copyWith({
+    String? title,
+    String? description,
+    TaskCategory? category,
+    TaskUrgency? urgency,
+    TaskStatus? status,
+    String? assigneeId,
+    String? assigneeName,
+    String? assigneeAvatar,
+    String? completedById,
+    DateTime? completedAt,
+    DateTime? dueDate,
+    bool clearAssignee = false,
+    bool clearCompleted = false,
+  }) {
+    return MaintenanceTask(
+      id: id,
+      householdId: householdId,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      urgency: urgency ?? this.urgency,
+      status: status ?? this.status,
+      assigneeId: clearAssignee ? null : (assigneeId ?? this.assigneeId),
+      assigneeName: clearAssignee ? null : (assigneeName ?? this.assigneeName),
+      assigneeAvatar: clearAssignee
+          ? null
+          : (assigneeAvatar ?? this.assigneeAvatar),
+      createdByName: createdByName,
+      completedById: clearCompleted
+          ? null
+          : (completedById ?? this.completedById),
+      completedAt: clearCompleted ? null : (completedAt ?? this.completedAt),
+      createdAt: createdAt,
+      dueDate: dueDate ?? this.dueDate,
+    );
+  }
 
+  factory MaintenanceTask.fromJson(Map<String, dynamic> json) {
     TaskUrgency parseUrg(String? u) {
       switch (u?.toLowerCase()) {
         case 'urgent':
@@ -431,17 +530,23 @@ class MaintenanceTask {
       id: json['id'] as String,
       householdId: json['household_id'] as String? ?? '',
       title: json['title'] as String? ?? 'Task',
-      category: parseCat(json['category'] as String?),
+      description: json['description'] as String?,
+      category: TaskCategoryDbX.fromDbValue(json['category'] as String?),
       urgency: parseUrg(json['urgency'] as String?),
       status: parseStatus(json['status'] as String?),
+      assigneeId: json['assignee_id'] as String?,
       assigneeName: json['assignee_name'] as String?,
       assigneeAvatar: json['assignee_avatar'] as String?,
       createdByName: json['created_by_name'] as String? ?? 'Housemate',
+      completedById: json['completed_by'] as String?,
+      completedAt: json['completed_at'] != null
+          ? DateTime.tryParse(json['completed_at'] as String)
+          : null,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
       dueDate: json['due_date'] != null
-          ? DateTime.parse(json['due_date'] as String)
+          ? DateTime.tryParse(json['due_date'] as String)
           : null,
     );
   }
@@ -450,9 +555,11 @@ class MaintenanceTask {
     'id': id,
     'household_id': householdId,
     'title': title,
-    'category': category.name,
+    'description': description,
+    'category': category.dbValue,
     'urgency': urgency.name,
     'status': status == TaskStatus.inProgress ? 'in_progress' : status.name,
+    'assignee_id': assigneeId,
     'created_at': createdAt.toIso8601String(),
     'due_date': dueDate?.toIso8601String(),
   };
@@ -853,12 +960,16 @@ class HouseholdBill {
         case 'on_due_date':
           return ReminderTiming.onDueDate;
         case '1_day_before':
+        case 'one_day_before':
           return ReminderTiming.oneDayBefore;
         case '2_days_before':
+        case 'two_days_before':
           return ReminderTiming.twoDaysBefore;
         case '3_days_before':
+        case 'three_days_before':
           return ReminderTiming.threeDaysBefore;
         case '1_week_before':
+        case 'one_week_before':
           return ReminderTiming.oneWeekBefore;
         default:
           return ReminderTiming.oneDayBefore;
@@ -870,6 +981,7 @@ class HouseholdBill {
         case 'only_me':
           return BillRecipientType.onlyMe;
         case 'selected_members':
+        case 'specific_members':
           return BillRecipientType.selectedMembers;
         default:
           return BillRecipientType.allMembers;
@@ -880,20 +992,32 @@ class HouseholdBill {
       id: json['id'] as String,
       householdId: json['household_id'] as String? ?? '',
       creatorId: json['created_by'] as String? ?? '',
-      creatorName: json['creator_name'] as String? ?? 'Housemate',
+      creatorName:
+          json['created_by_name'] as String? ??
+          json['creator_name'] as String? ??
+          'Housemate',
       category: parseCategory(json['category'] as String?),
-      customCategoryLabel: json['custom_category'] as String?,
-      billName: json['name'] as String?,
+      customCategoryLabel:
+          json['custom_category_name'] as String? ??
+          json['custom_category'] as String?,
+      billName: json['title'] as String? ?? json['name'] as String?,
       amount: (json['amount'] as num?)?.toDouble(),
       deadline: json['deadline'] != null
           ? DateTime.parse(json['deadline'] as String)
           : DateTime.now(),
       notes: json['notes'] as String?,
       status: parseStatus(json['status'] as String?),
-      reminderEnabled: json['has_reminder'] as bool? ?? true,
+      reminderEnabled:
+          json['reminder_enabled'] as bool? ??
+          json['has_reminder'] as bool? ??
+          true,
       reminderTiming: parseReminder(json['reminder_timing'] as String?),
-      recipientType: parseRecipient(json['reminder_recipients'] as String?),
-      responsibleMember: json['responsible_member_name'] as String? ??
+      recipientType: parseRecipient(
+        json['recipient_type'] as String? ??
+            json['reminder_recipients'] as String?,
+      ),
+      responsibleMember:
+          json['responsible_member_name'] as String? ??
           json['responsible_member'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -905,86 +1029,42 @@ class HouseholdBill {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    String categoryString() {
-      switch (category) {
-        case BillCategory.electricity:
-          return 'electricity';
-        case BillCategory.water:
-          return 'water';
-        case BillCategory.internet:
-          return 'internet';
-        case BillCategory.appliance:
-          return 'appliance';
-        case BillCategory.rent:
-          return 'rent';
-        case BillCategory.associationDues:
-          return 'association_dues';
-        case BillCategory.gas:
-          return 'gas';
-        case BillCategory.maintenanceFee:
-          return 'maintenance_fee';
-        case BillCategory.other:
-          return 'other';
-      }
-    }
-
-    String statusString() {
-      switch (status) {
-        case BillStatus.paid:
-          return 'paid';
-        case BillStatus.overdue:
-          return 'overdue';
-        case BillStatus.unpaid:
-          return 'unpaid';
-      }
-    }
-
-    String reminderString() {
-      switch (reminderTiming) {
-        case ReminderTiming.onDueDate:
-          return 'on_due_date';
-        case ReminderTiming.oneDayBefore:
-          return '1_day_before';
-        case ReminderTiming.twoDaysBefore:
-          return '2_days_before';
-        case ReminderTiming.threeDaysBefore:
-          return '3_days_before';
-        case ReminderTiming.oneWeekBefore:
-          return '1_week_before';
-      }
-    }
-
-    String recipientString() {
-      switch (recipientType) {
-        case BillRecipientType.onlyMe:
-          return 'only_me';
-        case BillRecipientType.allMembers:
-          return 'all_members';
-        case BillRecipientType.selectedMembers:
-          return 'selected_members';
-      }
-    }
-
-    return {
-      'id': id,
+  Map<String, dynamic> toSupabaseJson({bool includeId = true}) {
+    final base = <String, dynamic>{
+      if (includeId) 'id': id,
       'household_id': householdId,
-      'name': billName ?? effectiveCategoryLabel,
-      'category': categoryString(),
-      'custom_category': customCategoryLabel,
+      'title': billName ?? effectiveCategoryLabel,
+      'category': switch (category) {
+        BillCategory.associationDues => 'association_dues',
+        BillCategory.maintenanceFee => 'maintenance_fee',
+        _ => category.name,
+      },
+      'custom_category_name': customCategoryLabel,
       'amount': amount ?? 0.0,
-      'currency': 'PHP',
-      'deadline': deadline.toIso8601String().split('T').first,
-      'status': statusString(),
-      'has_reminder': reminderEnabled,
-      'reminder_timing': reminderString(),
-      'reminder_recipients': recipientString(),
+      'deadline': deadline.toIso8601String(),
+      'status': status.name,
+      'responsible_member': responsibleMember,
       'notes': notes,
-      'created_by': creatorId,
-      'created_at': createdAt.toIso8601String(),
+      'reminder_enabled': reminderEnabled,
+      'reminder_timing': switch (reminderTiming) {
+        ReminderTiming.onDueDate => 'on_due_date',
+        ReminderTiming.oneDayBefore => 'one_day_before',
+        ReminderTiming.twoDaysBefore => 'three_days_before',
+        ReminderTiming.threeDaysBefore => 'three_days_before',
+        ReminderTiming.oneWeekBefore => 'one_week_before',
+      },
+      'recipient_type': recipientType == BillRecipientType.allMembers
+          ? 'all_members'
+          : 'specific_members',
+      'created_by': creatorId.isNotEmpty ? creatorId : null,
+      'created_by_name': creatorName,
       'paid_at': paidAt?.toIso8601String(),
+      'paid_by_name': paidByName,
     };
+    return base;
   }
+
+  Map<String, dynamic> toJson() => toSupabaseJson();
 
   HouseholdBill copyWith({
     String? billName,
@@ -1087,7 +1167,7 @@ class QuickSnapComment {
       userId: json['user_id'] as String? ?? '',
       userName: json['user_name'] as String? ?? 'Housemate',
       userAvatar: json['user_avatar'] as String?,
-      text: json['text'] as String? ?? '',
+      text: (json['message'] ?? json['text'] ?? '') as String,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -1097,7 +1177,9 @@ class QuickSnapComment {
   Map<String, dynamic> toJson() => {
     'id': id,
     'user_id': userId,
-    'text': text,
+    'user_name': userName,
+    'user_avatar': userAvatar,
+    'message': text,
     'created_at': createdAt.toIso8601String(),
   };
 }
@@ -1132,29 +1214,40 @@ class QuickSnap {
   });
 
   factory QuickSnap.fromJson(Map<String, dynamic> json) {
+    final recType = json['recipient_type'] as String?;
     return QuickSnap(
       id: json['id'] as String,
       householdId: json['household_id'] as String? ?? '',
-      senderId: json['creator_id'] as String? ?? json['sender_id'] as String? ?? '',
-      senderName: json['sender_name'] as String? ?? 'Housemate',
-      senderAvatar: json['sender_avatar'] as String?,
+      senderId:
+          json['creator_id'] as String? ?? json['sender_id'] as String? ?? '',
+      senderName:
+          json['creator_name'] as String? ??
+          json['sender_name'] as String? ??
+          'Housemate',
+      senderAvatar:
+          json['creator_avatar'] as String? ??
+          json['sender_avatar'] as String?,
       imageUrl: json['image_url'] as String,
       caption: json['caption'] as String?,
-      recipientType: (json['recipient_type'] as String?) == 'selected'
+      recipientType: (recType == 'selected_friends' || recType == 'selected')
           ? QuickSnapRecipientType.selectedHousemates
           : QuickSnapRecipientType.everyone,
-      recipientNames: (json['recipient_names'] as List<dynamic>?)
+      recipientNames:
+          (json['recipient_names'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
-      reactions: (json['reactions'] as List<dynamic>?)
+      reactions:
+          ((json['quick_snap_reactions'] ?? json['reactions'])
+                  as List<dynamic>?)
               ?.map((e) => QuickSnapReaction.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      comments: (json['comments'] as List<dynamic>?)
+      comments:
+          ((json['quick_snap_comments'] ?? json['comments']) as List<dynamic>?)
               ?.map((e) => QuickSnapComment.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
@@ -1165,12 +1258,13 @@ class QuickSnap {
     'id': id,
     'household_id': householdId,
     'creator_id': senderId,
+    'creator_name': senderName,
+    'creator_avatar': senderAvatar,
     'image_url': imageUrl,
     'caption': caption,
-    'recipient_type':
-        recipientType == QuickSnapRecipientType.selectedHousemates
-            ? 'selected'
-            : 'everyone',
+    'recipient_type': recipientType == QuickSnapRecipientType.selectedHousemates
+        ? 'selected_friends'
+        : 'everyone',
     'created_at': createdAt.toIso8601String(),
   };
 
@@ -1272,4 +1366,49 @@ class NotificationPreferences {
       chatNotifications: chatNotifications ?? this.chatNotifications,
     );
   }
+}
+
+class RepositoryActionError {
+  final String message;
+  final Future<void> Function()? onRetry;
+
+  const RepositoryActionError(this.message, {this.onRetry});
+}
+
+class LeaderboardStanding {
+  final String userId;
+  final String displayName;
+  final String handle;
+  final String? avatarUrl;
+  final int points;
+  final bool isCurrentUser;
+
+  const LeaderboardStanding({
+    required this.userId,
+    required this.displayName,
+    required this.handle,
+    this.avatarUrl,
+    required this.points,
+    this.isCurrentUser = false,
+  });
+}
+
+class HouseholdNotificationItem {
+  final String id;
+  final String type;
+  final String title;
+  final String subtitle;
+  final DateTime createdAt;
+  final bool isRead;
+  final Map<String, dynamic> payload;
+
+  const HouseholdNotificationItem({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.subtitle,
+    required this.createdAt,
+    required this.isRead,
+    this.payload = const {},
+  });
 }

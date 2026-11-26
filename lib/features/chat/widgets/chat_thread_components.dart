@@ -205,7 +205,6 @@ class CasamaMessageBubble extends StatelessWidget {
   final String timeLabel;
   final bool showSenderName;
   final String? fallbackAvatarUrl;
-  final void Function(String inviteCode)? onJoinSpaceCode;
   final bool showReadCheck;
 
   const CasamaMessageBubble({
@@ -214,7 +213,6 @@ class CasamaMessageBubble extends StatelessWidget {
     required this.timeLabel,
     this.showSenderName = true,
     this.fallbackAvatarUrl,
-    this.onJoinSpaceCode,
     this.showReadCheck = true,
   });
 
@@ -296,7 +294,6 @@ class CasamaMessageBubble extends StatelessWidget {
                         code: message.inviteCode!,
                         spaceName: message.inviteSpaceName ?? 'Invite Code',
                         isMe: isMe,
-                        onJoinSpaceCode: onJoinSpaceCode,
                       )
                     else
                       Text(
@@ -370,13 +367,11 @@ class _InviteCodeCard extends StatelessWidget {
   final String code;
   final String spaceName;
   final bool isMe;
-  final void Function(String inviteCode)? onJoinSpaceCode;
 
   const _InviteCodeCard({
     required this.code,
     required this.spaceName,
     required this.isMe,
-    this.onJoinSpaceCode,
   });
 
   @override
@@ -473,28 +468,6 @@ class _InviteCodeCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (code.startsWith('SPC-') && onJoinSpaceCode != null)
-                CasamaPressable(
-                  onTap: () => onJoinSpaceCode!(code),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isMe ? Colors.white : pal.primaryCoral,
-                      borderRadius: CasamaSpacing.roundedPill,
-                    ),
-                    child: Text(
-                      'Join Space',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: isMe ? pal.forestTeal : pal.onPrimaryCoral,
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
         ],

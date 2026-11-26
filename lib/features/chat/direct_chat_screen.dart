@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/colors.dart';
@@ -34,6 +33,16 @@ class DirectChatScreen extends ConsumerStatefulWidget {
 class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(repositoryProvider).markDirectChatAsRead(widget.contactKey);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -152,84 +161,8 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
               _scrollToBottom();
             },
           ),
-          if (ref.read(repositoryProvider).chatSpaces.isNotEmpty)
-            CasamaSheetActionRow(
-              icon: Icons.groups_outlined,
-              iconColor: pal.primaryCoral,
-              iconBg: pal.softBlush,
-              title: 'Share Space Code...',
-              subtitle: 'Invite $contactName to a custom chat space',
-              onTap: () {
-                Navigator.pop(ctx);
-                _showSelectSpaceToShareSheet(context);
-              },
-            ),
         ],
       ),
-    );
-  }
-
-  void _showSelectSpaceToShareSheet(BuildContext context) {
-    final spaces = ref.read(repositoryProvider).chatSpaces;
-    showCasamaSheet<void>(
-      context,
-      icon: Icons.groups_outlined,
-      title: 'Select a Space to Share',
-      subtitle: 'Send a direct invitation card',
-      builder: (ctx) {
-        final pal = ctx.palette;
-        final theme = Theme.of(ctx);
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: spaces.map((s) {
-            return CasamaPressable(
-              onTap: () {
-                Navigator.pop(ctx);
-                ref
-                    .read(repositoryProvider)
-                    .shareInviteCodeToDirectChat(
-                      contactKey: widget.contactKey,
-                      code: s.inviteCode,
-                      title: '${s.iconEmoji} ${s.name}',
-                    );
-                _scrollToBottom();
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  children: [
-                    Text(s.iconEmoji, style: const TextStyle(fontSize: 22)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            s.name,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: pal.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            'Code: ${s.inviteCode} • ${s.memberNames.length} members',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontSize: 11.5,
-                              color: pal.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.send_rounded, size: 18, color: pal.primaryCoral),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        );
-      },
     );
   }
 
@@ -544,16 +477,6 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
                           showSenderName: false,
                           fallbackAvatarUrl: avatar,
                           showReadCheck: false,
-                          onJoinSpaceCode: (code) {
-                            final space = ref
-                                .read(repositoryProvider)
-                                .joinChatSpaceByCode(code);
-                            if (space != null) {
-                              GoRouter.maybeOf(
-                                context,
-                              )?.push('/space-chat?id=${space.id}');
-                            }
-                          },
                         );
                       },
                     ),
