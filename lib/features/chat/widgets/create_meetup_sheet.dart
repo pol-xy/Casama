@@ -6,7 +6,6 @@ import '../../../core/constants/colors.dart';
 import '../../../core/constants/dimensions.dart';
 import '../../../core/motion/casama_motion.dart';
 import '../../../data/repository_provider.dart';
-import '../../../shared/widgets/casama_avatar.dart';
 import '../../../shared/widgets/casama_button.dart';
 import '../../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../../shared/widgets/casama_text_field.dart';
@@ -35,17 +34,40 @@ class _CreateMeetupSheetBody extends ConsumerStatefulWidget {
 
 class _CreateMeetupSheetBodyState
     extends ConsumerState<_CreateMeetupSheetBody> {
-  final _activityController = TextEditingController(text: 'Study Session 🎓');
-  final _locationController = TextEditingController(text: 'Dorm Common Area');
+  static const List<String> _activitySuggestions = [
+    'Study Session',
+    'Dinner',
+    'Movie Night',
+    'Coffee Run',
+    'Grocery Run',
+  ];
+
+  static const List<String> _locationSuggestions = [
+    'Dorm Common Area',
+    'Kitchen',
+    'Living Room',
+    'Study Room',
+  ];
+
+  final _activityController = TextEditingController();
+  final _locationController = TextEditingController();
   late DateTime _selectedDate;
-  TimeOfDay _selectedTime = const TimeOfDay(hour: 19, minute: 0);
-  final Set<String> _selectedInvitees = {'all'};
+  late TimeOfDay _selectedTime;
+  String? _validationError;
 
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _selectedDate = DateTime(now.year, now.month, now.day);
+    final defaultDateTime = DateTime.now().add(const Duration(hours: 3));
+    _selectedDate = DateTime(
+      defaultDateTime.year,
+      defaultDateTime.month,
+      defaultDateTime.day,
+    );
+    _selectedTime = TimeOfDay(
+      hour: defaultDateTime.hour,
+      minute: defaultDateTime.minute,
+    );
   }
 
   @override
@@ -96,22 +118,12 @@ class _CreateMeetupSheetBodyState
     }
   }
 
-  void _toggleInvitee(String key) {
+  void _applySuggestion(TextEditingController controller, String value) {
+    controller.text = value;
+    controller.selection = TextSelection.collapsed(offset: value.length);
     setState(() {
-      if (key == 'all') {
-        _selectedInvitees
-          ..clear()
-          ..add('all');
-      } else {
-        _selectedInvitees.remove('all');
-        if (_selectedInvitees.contains(key)) {
-          _selectedInvitees.remove(key);
-        } else {
-          _selectedInvitees.add(key);
-        }
-        if (_selectedInvitees.isEmpty) {
-          _selectedInvitees.add('all');
-        }
+      if (_validationError != null) {
+        _validationError = null;
       }
     });
   }
@@ -120,6 +132,9 @@ class _CreateMeetupSheetBodyState
     final activity = _activityController.text.trim();
     final location = _locationController.text.trim();
     if (activity.isEmpty || location.isEmpty) {
+      setState(() {
+        _validationError = 'Please enter an activity and location.';
+      });
       showCasamaToast(
         widget.hostContext,
         'Please enter an activity and location.',
@@ -156,10 +171,6 @@ class _CreateMeetupSheetBodyState
   Widget build(BuildContext context) {
     final pal = context.palette;
     final theme = Theme.of(context);
-    final repo = ref.watch(repositoryProvider);
-    final otherMembers = repo.members
-        .where((m) => m.profile.id != repo.currentUser.id)
-        .toList();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -167,10 +178,21 @@ class _CreateMeetupSheetBodyState
       children: [
         CasamaTextField(
           controller: _activityController,
-          label: 'Activity Title',
-          hint: 'e.g., Dinner, Study Session, Movie Night',
+          label: 'Activity',
+          hint: "What's the plan?",
           prefixIcon: Icons.event_note_outlined,
           textCapitalization: TextCapitalization.sentences,
+          onChanged: (_) {
+            if (_validationError != null) {
+              setState(() => _validationError = null);
+            }
+          },
+        ),
+        const SizedBox(height: CasamaSpacing.xs),
+        _SuggestionPillRow(
+          suggestions: _activitySuggestions,
+          selectedValue: _activityController.text.trim(),
+          onSelected: (value) => _applySuggestion(_activityController, value),
         ),
         const SizedBox(height: CasamaSpacing.md),
 
@@ -201,10 +223,21 @@ class _CreateMeetupSheetBodyState
 
         CasamaTextField(
           controller: _locationController,
-          label: 'Location / Shared Spot',
-          hint: 'e.g., Dorm Common Area, Kitchen',
+          label: 'Location',
+          hint: 'Where are we meeting?',
           prefixIcon: Icons.location_on_outlined,
           textCapitalization: TextCapitalization.words,
+          onChanged: (_) {
+            if (_validationError != null) {
+              setState(() => _validationError = null);
+            }
+          },
+        ),
+        const SizedBox(height: CasamaSpacing.xs),
+        _SuggestionPillRow(
+          suggestions: _locationSuggestions,
+          selectedValue: _locationController.text.trim(),
+          onSelected: (value) => _applySuggestion(_locationController, value),
         ),
         const SizedBox(height: CasamaSpacing.sm),
 
@@ -223,34 +256,16 @@ class _CreateMeetupSheetBodyState
             ),
           ],
         ),
-        const SizedBox(height: CasamaSpacing.md),
-
-        Text(
-          'INVITEES',
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: pal.textSecondary,
-            letterSpacing: 0.6,
-          ),
-        ),
-        const SizedBox(height: CasamaSpacing.xs),
-        Wrap(
-          spacing: CasamaSpacing.xs,
-          runSpacing: CasamaSpacing.xs,
-          children: [
-            _InviteeChip(
-              label: 'All Housemates',
-              selected: _selectedInvitees.contains('all'),
-              onTap: () => _toggleInvitee('all'),
+        if (_validationError != null) ...[
+          const SizedBox(height: CasamaSpacing.sm),
+          Text(
+            _validationError!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: pal.dangerFg,
+              fontWeight: FontWeight.w600,
             ),
-            for (final m in otherMembers)
-              _InviteeChip(
-                label: m.profile.displayName,
-                avatarUrl: m.profile.avatarUrl,
-                selected: _selectedInvitees.contains(m.profile.id),
-                onTap: () => _toggleInvitee(m.profile.id),
-              ),
-          ],
-        ),
+          ),
+        ],
         const SizedBox(height: CasamaSpacing.lg),
 
         CasamaButton(
@@ -263,17 +278,15 @@ class _CreateMeetupSheetBodyState
   }
 }
 
-class _InviteeChip extends StatelessWidget {
-  final String label;
-  final String? avatarUrl;
-  final bool selected;
-  final VoidCallback onTap;
+class _SuggestionPillRow extends StatelessWidget {
+  final List<String> suggestions;
+  final String selectedValue;
+  final ValueChanged<String> onSelected;
 
-  const _InviteeChip({
-    required this.label,
-    this.avatarUrl,
-    required this.selected,
-    required this.onTap,
+  const _SuggestionPillRow({
+    required this.suggestions,
+    required this.selectedValue,
+    required this.onSelected,
   });
 
   @override
@@ -281,52 +294,55 @@ class _InviteeChip extends StatelessWidget {
     final pal = context.palette;
     final theme = Theme.of(context);
 
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: CasamaPressable(
-        onTap: onTap,
-        enableHaptic: true,
-        child: Container(
-          constraints: const BoxConstraints(
-            minHeight: CasamaSpacing.minTouchTarget,
-          ),
-          padding: EdgeInsets.only(
-            left: avatarUrl != null ? 6 : 14,
-            right: 14,
-            top: 6,
-            bottom: 6,
-          ),
-          decoration: BoxDecoration(
-            color: selected ? pal.forestTeal : pal.track,
-            borderRadius: CasamaSpacing.roundedPill,
-            border: Border.all(
-              color: selected ? pal.forestTeal : pal.border,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (avatarUrl != null || label != 'All Housemates') ...[
-                CasamaAvatar(
-                  avatarUrl: avatarUrl,
-                  radius: 13,
-                  name: label,
-                ),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: selected ? pal.onForestTeal : pal.textPrimary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12.5,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < suggestions.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Semantics(
+              button: true,
+              label: suggestions[i],
+              child: CasamaPressable(
+                onTap: () => onSelected(suggestions[i]),
+                enableHaptic: true,
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 40),
+                  alignment: Alignment.center,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selectedValue == suggestions[i]
+                          ? pal.softSage
+                          : pal.surface,
+                      borderRadius: CasamaSpacing.roundedPill,
+                      border: Border.all(
+                        color: selectedValue == suggestions[i]
+                            ? pal.forestTeal
+                            : pal.border,
+                      ),
+                    ),
+                    child: Text(
+                      suggestions[i],
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: selectedValue == suggestions[i]
+                            ? pal.forestTeal
+                            : pal.textPrimary,
+                        fontWeight: selectedValue == suggestions[i]
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          ],
+        ],
       ),
     );
   }

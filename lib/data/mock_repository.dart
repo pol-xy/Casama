@@ -89,6 +89,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       items: List<LostFoundItem>.from(_items),
       tasks: List<MaintenanceTask>.from(_tasks),
       bills: List<HouseholdBill>.from(_bills),
+      meetUpInvitations: List<MeetUpInvitation>.from(_meetUpInvitations),
       activeMeetUp: _activeMeetUp,
       groupMessages: List<ChatMessage>.from(_groupMessages),
       chatSpaces: List<ChatSpace>.from(_chatSpaces),
@@ -96,6 +97,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         for (final entry in _directMessages.entries)
           entry.key: List<ChatMessage>.from(entry.value),
       },
+      directUnreadCounts: Map<String, int>.from(_directUnreadCounts),
       quickSnaps: List<QuickSnap>.from(_quickSnaps),
       invitations: List<HouseholdInvitation>.from(_invitations),
       pointHistory: List<PointAuditEntry>.from(_pointHistory),
@@ -125,6 +127,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _bills
       ..clear()
       ..addAll(ws.bills);
+    _meetUpInvitations
+      ..clear()
+      ..addAll(ws.meetUpInvitations);
     _activeMeetUp = ws.activeMeetUp;
     _groupMessages
       ..clear()
@@ -138,6 +143,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         for (final entry in ws.directMessages.entries)
           entry.key: List<ChatMessage>.from(entry.value),
       });
+    _directUnreadCounts
+      ..clear()
+      ..addAll(ws.directUnreadCounts);
     _quickSnaps
       ..clear()
       ..addAll(ws.quickSnaps);
@@ -238,6 +246,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _items.clear();
     _tasks.clear();
     _bills.clear();
+    _meetUpInvitations.clear();
     _activeMeetUp = MeetUpInvitation(
       id: 'placeholder_$newId',
       activity: '',
@@ -247,6 +256,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _groupMessages.clear();
     _chatSpaces.clear();
     _directMessages.clear();
+    _directUnreadCounts.clear();
     _quickSnaps.clear();
     _invitations.clear();
     _pointHistory.clear();
@@ -309,6 +319,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _items.clear();
     _tasks.clear();
     _bills.clear();
+    _meetUpInvitations.clear();
     _activeMeetUp = MeetUpInvitation(
       id: 'placeholder_$newId',
       activity: '',
@@ -318,6 +329,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _groupMessages.clear();
     _chatSpaces.clear();
     _directMessages.clear();
+    _directUnreadCounts.clear();
     _quickSnaps.clear();
     _invitations.clear();
     _pointHistory.clear();
@@ -472,6 +484,13 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     notifyListeners();
   }
 
+  void setMembersForTest(List<MemberPresence> members) {
+    _members
+      ..clear()
+      ..addAll(members);
+    notifyListeners();
+  }
+
   // Current user (defaults to clean placeholder)
   UserProfile _currentUser = const UserProfile(
     id: 'user_initial',
@@ -498,6 +517,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   final List<LostFoundItem> _items = [];
   final List<MaintenanceTask> _tasks = [];
   final List<HouseholdBill> _bills = [];
+  final List<MeetUpInvitation> _meetUpInvitations = [];
   MeetUpInvitation _activeMeetUp = MeetUpInvitation(
     id: 'placeholder_m',
     activity: '',
@@ -507,9 +527,33 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     maybeCount: 0,
     cantMakeCount: 0,
   );
+
+  void _recomputeActiveMeetUp() {
+    final active = _meetUpInvitations
+        .where((m) => m.hasValidData && m.isActive)
+        .toList()
+      ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
+    if (active.isNotEmpty) {
+      _activeMeetUp = active.first;
+      return;
+    }
+    final valid = _meetUpInvitations.where((m) => m.hasValidData).toList()
+      ..sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
+    if (valid.isNotEmpty) {
+      _activeMeetUp = valid.first;
+      return;
+    }
+    _activeMeetUp = MeetUpInvitation(
+      id: 'placeholder_m',
+      activity: '',
+      location: '',
+      scheduledTime: DateTime.now().add(const Duration(days: 30)),
+    );
+  }
   final List<ChatMessage> _groupMessages = [];
   final List<ChatSpace> _chatSpaces = [];
   final Map<String, List<ChatMessage>> _directMessages = {};
+  final Map<String, int> _directUnreadCounts = {};
   final List<QuickSnap> _quickSnaps = [];
   final Map<String, Map<String, int>> _pendingReactionDeltas = {};
   final Map<String, Timer> _reactionFlushTimers = {};
@@ -688,8 +732,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     ]);
 
     // Meet-up Invitation
-    _activeMeetUp = MeetUpInvitation(
+    final seededMeetup = MeetUpInvitation(
       id: 'm1',
+      creatorId: _currentUser.id,
       activity: 'Study Session 🎓',
       location: 'Dorm Common Area',
       scheduledTime: DateTime.now().add(const Duration(hours: 3)),
@@ -707,6 +752,10 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
           ),
       ],
     );
+    _meetUpInvitations
+      ..clear()
+      ..add(seededMeetup);
+    _activeMeetUp = seededMeetup;
 
     // Group Messages
     _groupMessages.addAll([
@@ -993,6 +1042,8 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   List<LostFoundItem> get items => List.unmodifiable(_items);
   List<MaintenanceTask> get tasks => List.unmodifiable(_tasks);
   MeetUpInvitation get activeMeetUp => _activeMeetUp;
+  List<MeetUpInvitation> get meetUpInvitations =>
+      List.unmodifiable(_meetUpInvitations);
 
   /// Bills getter — auto-detects overdue on read
   List<HouseholdBill> get bills {
@@ -1013,13 +1064,16 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   List<ChatMessage> get groupMessages => List.unmodifiable(_groupMessages);
   List<ChatMessage> getDirectMessages(String contactKey) =>
       List.unmodifiable(_directMessages[contactKey.toLowerCase()] ?? []);
+  int getDirectUnreadCount(String contactKey) =>
+      _directUnreadCounts[contactKey.toLowerCase()] ?? 0;
   List<ChatSpace> get chatSpaces => List.unmodifiable(_chatSpaces);
   int get groupChatUnreadCount => _groupChatUnreadCount;
   int get unreadNotificationCount =>
       _notifications.where((n) => n.isUnread).length;
   int get totalUnreadChatCount =>
       _groupChatUnreadCount +
-      _chatSpaces.fold<int>(0, (sum, s) => sum + s.unreadCount);
+      _chatSpaces.fold<int>(0, (sum, s) => sum + s.unreadCount) +
+      _directUnreadCounts.values.fold<int>(0, (sum, c) => sum + c);
 
   // QuickSnap getters
   List<QuickSnap> get quickSnaps {
@@ -1124,6 +1178,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       _chatSpaces.clear();
       _directMessages.clear();
       _groupMessages.clear();
+      _meetUpInvitations.clear();
       _activeMeetUp = MeetUpInvitation(
         id: 'placeholder_m',
         activity: '',
@@ -1177,6 +1232,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _bills.clear();
     _chatSpaces.clear();
     _directMessages.clear();
+    _directUnreadCounts.clear();
     _groupMessages.clear();
     _invitations.clear();
     _pointHistory.clear();
@@ -1184,6 +1240,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _kasamaPoints = 0;
     _groupChatUnreadCount = 0;
     _notifications.clear();
+    _meetUpInvitations.clear();
     _activeMeetUp = MeetUpInvitation(
       id: 'placeholder_m',
       activity: '',
@@ -1578,7 +1635,25 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     }
   }
 
-  void markDirectChatAsRead(String contactKey) {}
+  void markDirectChatAsRead(String contactKey) {
+    final key = contactKey.toLowerCase();
+    if ((_directUnreadCounts[key] ?? 0) > 0) {
+      _directUnreadCounts[key] = 0;
+      notifyListeners();
+    }
+  }
+
+  void addIncomingDirectMessageForTest(
+    String contactKey,
+    ChatMessage message,
+  ) {
+    final key = contactKey.toLowerCase();
+    _directMessages.putIfAbsent(key, () => []).add(message);
+    if (!message.isCurrentUser) {
+      _directUnreadCounts[key] = (_directUnreadCounts[key] ?? 0) + 1;
+    }
+    notifyListeners();
+  }
 
   Future<void> createMeetUp({
     required String activity,
@@ -1586,8 +1661,35 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     required DateTime scheduledTime,
     String? announcementText,
   }) async {
-    _activeMeetUp = MeetUpInvitation(
-      id: 'mu_${DateTime.now().millisecondsSinceEpoch}',
+    if (activity.trim().isEmpty && location.trim().isEmpty) {
+      _meetUpInvitations.clear();
+      _recomputeActiveMeetUp();
+      notifyListeners();
+      return;
+    }
+
+    final otherMembers = _members
+        .where((m) => m.profile.id != _currentUser.id)
+        .toList();
+    final seededResponders = <MeetUpResponder>[
+      MeetUpResponder(
+        userId: _currentUser.id,
+        displayName: _currentUser.displayName,
+        avatarUrl: _currentUser.avatarUrl,
+        response: 'going',
+      ),
+      for (final m in otherMembers)
+        MeetUpResponder(
+          userId: m.profile.id,
+          displayName: m.profile.displayName,
+          avatarUrl: m.profile.avatarUrl,
+          response: 'maybe',
+        ),
+    ];
+
+    final created = MeetUpInvitation(
+      id: 'mu_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}',
+      creatorId: _currentUser.id,
       activity: activity,
       location: location,
       scheduledTime: scheduledTime.toLocal(),
@@ -1595,21 +1697,35 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       reminderSent: false,
       arrivalHandled: false,
       goingCount: 1,
+      maybeCount: otherMembers.length,
+      cantMakeCount: 0,
       currentUserResponse: 'going',
-      responders: [
-        MeetUpResponder(
-          userId: _currentUser.id,
-          displayName: _currentUser.displayName,
-          avatarUrl: _currentUser.avatarUrl,
-          response: 'going',
-        ),
-      ],
+      responders: seededResponders,
     );
+    _meetUpInvitations.add(created);
+    _meetUpInvitations.sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
+    _recomputeActiveMeetUp();
+    notifyListeners();
+  }
+
+  Future<void> deleteMeetUpInvitation(String invitationId) async {
+    _meetUpInvitations.removeWhere((m) => m.id == invitationId);
+    _recomputeActiveMeetUp();
     notifyListeners();
   }
 
   void setActiveMeetUpForTest(MeetUpInvitation meetup) {
+    _meetUpInvitations
+      ..clear()
+      ..addAll([if (meetup.hasValidData) meetup]);
     _activeMeetUp = meetup;
+    notifyListeners();
+  }
+
+  void addMeetUpForTest(MeetUpInvitation meetup) {
+    _meetUpInvitations.add(meetup);
+    _meetUpInvitations.sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
+    _recomputeActiveMeetUp();
     notifyListeners();
   }
 
@@ -1869,22 +1985,26 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     notifyListeners();
   }
 
-  void respondMeetUp(String response) {
-    if (!_activeMeetUp.isActive) return;
-    int g = _activeMeetUp.goingCount;
-    int m = _activeMeetUp.maybeCount;
-    int c = _activeMeetUp.cantMakeCount;
+  void respondMeetUp(String response, {String? invitationId}) {
+    final targetId = invitationId ?? _activeMeetUp.id;
+    final idx = _meetUpInvitations.indexWhere((m) => m.id == targetId);
+    final target = idx != -1 ? _meetUpInvitations[idx] : _activeMeetUp;
+    if (!target.hasValidData || !target.isActive) return;
 
-    if (_activeMeetUp.currentUserResponse == 'going') g--;
-    if (_activeMeetUp.currentUserResponse == 'maybe') m--;
-    if (_activeMeetUp.currentUserResponse == 'cant_make_it') c--;
+    int g = target.goingCount;
+    int m = target.maybeCount;
+    int c = target.cantMakeCount;
+
+    if (target.currentUserResponse == 'going') g--;
+    if (target.currentUserResponse == 'maybe') m--;
+    if (target.currentUserResponse == 'cant_make_it') c--;
 
     if (response == 'going') g++;
     if (response == 'maybe') m++;
     if (response == 'cant_make_it') c++;
 
     final updatedResponders = [
-      ..._activeMeetUp.responders.where((r) => r.userId != _currentUser.id),
+      ...target.responders.where((r) => r.userId != _currentUser.id),
       MeetUpResponder(
         userId: _currentUser.id,
         displayName: _currentUser.displayName,
@@ -1893,13 +2013,17 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       ),
     ];
 
-    _activeMeetUp = _activeMeetUp.copyWith(
+    final updated = target.copyWith(
       goingCount: max(0, g),
       maybeCount: max(0, m),
       cantMakeCount: max(0, c),
       currentUserResponse: response,
       responders: updatedResponders,
     );
+    if (idx != -1) {
+      _meetUpInvitations[idx] = updated;
+    }
+    _recomputeActiveMeetUp();
     notifyListeners();
   }
 
@@ -1974,6 +2098,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
               isCurrentUser: false,
             ),
           );
+          _directUnreadCounts[key] = (_directUnreadCounts[key] ?? 0) + 1;
           notifyListeners();
         }
       });
@@ -2689,10 +2814,12 @@ class _MockHouseholdWorkspace {
   final List<LostFoundItem> items;
   final List<MaintenanceTask> tasks;
   final List<HouseholdBill> bills;
+  final List<MeetUpInvitation> meetUpInvitations;
   final MeetUpInvitation activeMeetUp;
   final List<ChatMessage> groupMessages;
   final List<ChatSpace> chatSpaces;
   final Map<String, List<ChatMessage>> directMessages;
+  final Map<String, int> directUnreadCounts;
   final List<QuickSnap> quickSnaps;
   final List<HouseholdInvitation> invitations;
   final List<PointAuditEntry> pointHistory;
@@ -2708,10 +2835,12 @@ class _MockHouseholdWorkspace {
     required this.items,
     required this.tasks,
     required this.bills,
+    required this.meetUpInvitations,
     required this.activeMeetUp,
     required this.groupMessages,
     required this.chatSpaces,
     required this.directMessages,
+    this.directUnreadCounts = const {},
     required this.quickSnaps,
     required this.invitations,
     required this.pointHistory,

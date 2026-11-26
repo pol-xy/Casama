@@ -925,6 +925,7 @@ class MeetUpResponder {
 
 class MeetUpInvitation {
   final String id;
+  final String creatorId;
   final String activity;
   final String location;
   final DateTime scheduledTime;
@@ -939,6 +940,7 @@ class MeetUpInvitation {
 
   const MeetUpInvitation({
     required this.id,
+    this.creatorId = '',
     required this.activity,
     required this.location,
     required this.scheduledTime,
@@ -977,6 +979,7 @@ class MeetUpInvitation {
   }) {
     return MeetUpInvitation(
       id: json['id'] as String? ?? '',
+      creatorId: json['creator_id'] as String? ?? '',
       activity: json['activity'] as String? ?? '',
       location: json['location'] as String? ?? '',
       scheduledTime: parseSupabaseTimestamp(json['scheduled_time']),
@@ -994,7 +997,7 @@ class MeetUpInvitation {
   Map<String, dynamic> toJson({String? conversationId, String? creatorId}) => {
     'id': id,
     'conversation_id': ?conversationId,
-    'creator_id': ?creatorId,
+    'creator_id': creatorId ?? this.creatorId,
     'activity': activity,
     'location': location,
     'scheduled_time': toSupabaseUtcIso(scheduledTime),
@@ -1005,6 +1008,7 @@ class MeetUpInvitation {
 
   MeetUpInvitation copyWith({
     String? id,
+    String? creatorId,
     String? activity,
     String? location,
     DateTime? scheduledTime,
@@ -1019,6 +1023,7 @@ class MeetUpInvitation {
   }) {
     return MeetUpInvitation(
       id: id ?? this.id,
+      creatorId: creatorId ?? this.creatorId,
       activity: activity ?? this.activity,
       location: location ?? this.location,
       scheduledTime: scheduledTime ?? this.scheduledTime,

@@ -4,6 +4,7 @@ import 'package:casama/data/models.dart';
 import 'package:casama/data/repository_provider.dart';
 import 'package:casama/features/chat/group_chat_screen.dart';
 import 'package:casama/features/dashboard/main_navigation_shell.dart';
+import 'package:casama/shared/widgets/casama_avatar.dart';
 import 'package:casama/shared/widgets/casama_button.dart';
 import 'package:casama/shared/widgets/casama_notifications_sheet.dart';
 import 'package:casama/shared/widgets/casama_wave_header.dart';
@@ -262,6 +263,66 @@ void main() {
       expect(repo.notifications.single.readAt, isNotNull);
       expect(repo.unreadNotificationCount, 0);
       expect(find.byType(GroupChatScreen), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'meetup_reminder notification renders creator CasamaAvatar when creator_id or invitation_id resolves',
+    (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
+      });
+
+      final repo = MockRepository()..login();
+      final creator = repo.members.firstWhere(
+        (m) => m.profile.id != repo.currentUser.id,
+      );
+      repo.setNotificationsForTest([
+        HouseholdNotificationItem(
+          id: 'notif_meetup_creator',
+          type: 'meetup_reminder',
+          title: 'Meet-up Reminder: Coffee Run',
+          subtitle: '',
+          createdAt: DateTime.now(),
+          isRead: false,
+          payload: {
+            'creator_id': creator.profile.id,
+            'title': 'Coffee Run',
+            'location': 'Kitchen',
+            'message': 'Starts in 1 hour at Kitchen',
+          },
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          key: const ValueKey('meetup_creator_avatar_scope'),
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp(
+            theme: CasamaTheme.lightTheme,
+            home: const MainNavigationShell(initialIndex: 0),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(CasamaNotificationBellButton));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.event_rounded), findsNothing);
+      final avatarFinder = find.byWidgetPredicate(
+        (w) =>
+            w is CasamaAvatar &&
+            w.name == creator.profile.displayName &&
+            w.radius == 20,
+      );
+      expect(avatarFinder, findsOneWidget);
     },
   );
 }

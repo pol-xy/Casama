@@ -8,6 +8,7 @@ import 'package:casama/features/chat/chat_space_screen.dart';
 import 'package:casama/features/chat/direct_chat_screen.dart';
 import 'package:casama/features/chat/group_chat_screen.dart';
 import 'package:casama/features/chat/widgets/chat_thread_components.dart';
+import 'package:casama/features/dashboard/main_navigation_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -84,17 +85,45 @@ void main() {
       await tester.tap(find.text('New'));
       await tester.pumpAndSettle();
       expect(find.text('Plan a Meet-up'), findsOneWidget);
+      expect(find.text('INVITEES'), findsNothing);
+      expect(find.text('All Housemates'), findsNothing);
       expect(
         find.text('Manual spot label only — zero GPS tracking used.'),
         findsOneWidget,
       );
 
+      // Empty submit is blocked until Activity & Location are filled
+      final beforeCreateCount = repo.meetUpInvitations.length;
+      await tester.tap(find.text('Send Invitation'));
+      await tester.pumpAndSettle();
+      expect(repo.meetUpInvitations.length, beforeCreateCount);
+      expect(
+        find.text('Please enter an activity and location.'),
+        findsWidgets,
+      );
+
+      // Tap quick-fill suggestion chips for Activity and Location
+      await tester.ensureVisible(find.text('Coffee Run'));
+      await tester.tap(find.text('Coffee Run'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Kitchen'));
+      await tester.tap(find.text('Kitchen'));
+      await tester.pumpAndSettle();
+
       await tester.tap(find.text('Send Invitation'));
       await tester.pumpAndSettle();
       expect(repo.groupMessages.length, initialGroupMsgs);
-      expect(repo.activeMeetUp.activity, 'Study Session 🎓');
-      expect(repo.activeMeetUp.scheduledTime.hour, 19);
-      expect(repo.activeMeetUp.scheduledTime.minute, 0);
+      expect(repo.meetUpInvitations.length, beforeCreateCount + 1);
+      final created = repo.meetUpInvitations.firstWhere(
+        (m) => m.activity == 'Coffee Run',
+      );
+      expect(created.location, 'Kitchen');
+      expect(created.creatorId, repo.currentUser.id);
+      expect(created.goingCount, 1);
+      expect(
+        created.maybeCount,
+        repo.members.where((m) => m.profile.id != repo.currentUser.id).length,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -251,11 +280,11 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-        find.text('No meet-up invitations yet'),
+        find.text('No upcoming meet-ups'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('No meet-up invitations yet'), findsOneWidget);
+      expect(find.text('No upcoming meet-ups'), findsOneWidget);
       expect(find.text('View'), findsNothing);
 
       final activeRepo = MockRepository()..login();
@@ -271,7 +300,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('No meet-up invitations yet'), findsNothing);
+      expect(find.text('No upcoming meet-ups'), findsNothing);
       await tester.ensureVisible(find.text('View'));
       await tester.tap(find.text('View'));
       await tester.pumpAndSettle();
@@ -390,13 +419,13 @@ void main() {
       await tester.tap(find.text('New'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Today'));
+      await tester.tap(find.byIcon(Icons.calendar_today_rounded));
       await tester.pumpAndSettle();
       expect(find.byType(DatePickerDialog), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('7:00 PM'));
+      await tester.tap(find.byIcon(Icons.schedule_rounded));
       await tester.pumpAndSettle();
       expect(find.byType(TimePickerDialog), findsOneWidget);
       await tester.tap(find.text('Cancel'));
@@ -722,7 +751,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('No meet-up invitations yet'), findsOneWidget);
+      expect(find.text('No upcoming meet-ups'), findsOneWidget);
       expect(find.text('Evening Study'), findsNothing);
 
       // 2. HouseholdCalendarView excludes done meetup from Casa Schedule
@@ -790,6 +819,288 @@ void main() {
       await tester.pumpAndSettle();
       expect(chatRepo.activeMeetUp.goingCount, 2);
       expect(chatRepo.activeMeetUp.currentUserResponse, 'maybe');
+    },
+  );
+
+  testWidgets(
+    'ChatDirectoryScreen filters All Upcoming vs My Invitations, shows 2-line cards, and lets creators delete with confirmation',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
+      });
+
+      final repo = MockRepository()..login();
+      final otherMember = repo.members.firstWhere(
+        (m) => m.profile.id != repo.currentUser.id,
+      );
+      repo.addMeetUpForTest(
+        MeetUpInvitation(
+          id: 'm_other_1',
+          creatorId: otherMember.profile.id,
+          activity: 'Movie Marathon',
+          location: 'Living Room',
+          scheduledTime: DateTime.now().add(const Duration(hours: 6)),
+          goingCount: 2,
+          maybeCount: 2,
+          currentUserResponse: 'maybe',
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          key: const ValueKey('meetup_filter_delete_scope'),
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp(
+            theme: CasamaTheme.lightTheme,
+            home: const ChatDirectoryScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Movie Marathon'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+
+      // Both active meetups appear under All Upcoming
+      expect(find.text('All Upcoming'), findsOneWidget);
+      expect(find.text('My Invitations'), findsOneWidget);
+      expect(find.text('Study Session 🎓'), findsOneWidget);
+      expect(find.text('Movie Marathon'), findsOneWidget);
+      expect(find.text('Living Room • 2 going'), findsOneWidget);
+
+      // Non-creator sheet hides Delete button
+      final viewButtons = find.text('View');
+      expect(viewButtons, findsNWidgets(2));
+      await tester.ensureVisible(viewButtons.last);
+      await tester.tap(viewButtons.last);
+      await tester.pumpAndSettle();
+      expect(find.text('Meet-up Invitation'), findsOneWidget);
+      expect(find.text('Movie Marathon'), findsWidgets);
+      expect(find.byKey(const Key('meetup_delete_button')), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Close Meet-up Invitation'));
+      await tester.pumpAndSettle();
+
+      // Switch to My Invitations: only creator's meetup remains
+      await tester.tap(find.text('My Invitations'));
+      await tester.pumpAndSettle();
+      expect(find.text('Study Session 🎓'), findsOneWidget);
+      expect(find.text('Movie Marathon'), findsNothing);
+
+      // Open creator's meetup sheet -> Delete button is visible
+      await tester.ensureVisible(find.text('View'));
+      await tester.tap(find.text('View'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('meetup_delete_button')), findsOneWidget);
+
+      // Tap Delete -> confirmation dialog appears; Cancel keeps meetup
+      await tester.tap(find.byKey(const Key('meetup_delete_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete Meet-up?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(
+        repo.meetUpInvitations.any((m) => m.id == 'm1'),
+        isTrue,
+      );
+
+      // Confirm Delete -> removes meetup, closes sheet, shows My Invitations empty state
+      await tester.tap(find.byKey(const Key('meetup_delete_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('meetup_confirm_delete_button')));
+      await tester.pumpAndSettle();
+      expect(
+        repo.meetUpInvitations.any((m) => m.id == 'm1'),
+        isFalse,
+      );
+      expect(find.text('Meet-up Invitation'), findsNothing);
+      expect(
+        find.text("You haven't created any upcoming meet-ups yet."),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'Individual Conversations show unread badges, sort newest message first with alphabetical empty threads, and clear unread on open',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
+      });
+
+      final repo = MockRepository.clean()..login();
+      final maria = UserProfile(
+        id: 'u_maria',
+        displayName: 'Maria',
+        handle: '@maria',
+      );
+      final alex = UserProfile(
+        id: 'u_alex',
+        displayName: 'Alex',
+        handle: '@alex',
+      );
+      final zoe = UserProfile(
+        id: 'u_zoe',
+        displayName: 'Zoe',
+        handle: '@zoe',
+      );
+      final bea = UserProfile(
+        id: 'u_bea',
+        displayName: 'Bea',
+        handle: '@bea',
+      );
+      repo.setMembersForTest([
+        MemberPresence(
+          profile: repo.currentUser,
+          isHome: true,
+          updatedAt: DateTime.now(),
+        ),
+        MemberPresence(profile: zoe, isHome: true, updatedAt: DateTime.now()),
+        MemberPresence(profile: maria, isHome: true, updatedAt: DateTime.now()),
+        MemberPresence(profile: bea, isHome: false, updatedAt: DateTime.now()),
+        MemberPresence(profile: alex, isHome: true, updatedAt: DateTime.now()),
+      ]);
+
+      final now = DateTime.now();
+      final yesterday350Pm = DateTime(now.year, now.month, now.day - 1, 15, 50);
+      final today128Am = DateTime(now.year, now.month, now.day, 1, 28);
+
+      // Alex has an older message (yesterday 3:50 PM), Maria has a newer message (today 1:28 AM) with 2 unread
+      repo.addIncomingDirectMessageForTest(
+        'alex',
+        ChatMessage(
+          id: 'dm_alex_1',
+          senderId: repo.currentUser.id,
+          senderName: repo.currentUser.displayName,
+          content: 'Hey Alex',
+          createdAt: yesterday350Pm,
+          isCurrentUser: true,
+        ),
+      );
+      repo.addIncomingDirectMessageForTest(
+        'maria',
+        ChatMessage(
+          id: 'dm_maria_1',
+          senderId: maria.id,
+          senderName: maria.displayName,
+          content: 'First unread',
+          createdAt: today128Am.subtract(const Duration(minutes: 2)),
+          isCurrentUser: false,
+        ),
+      );
+      repo.addIncomingDirectMessageForTest(
+        'maria',
+        ChatMessage(
+          id: 'dm_maria_2',
+          senderId: maria.id,
+          senderName: maria.displayName,
+          content: 'Latest from Maria',
+          createdAt: today128Am,
+          isCurrentUser: false,
+        ),
+      );
+
+      Widget wrapWithRepo(Widget home) => ProviderScope(
+            overrides: [repositoryProvider.overrideWith((ref) => repo)],
+            child: MaterialApp(theme: CasamaTheme.lightTheme, home: home),
+          );
+
+      await tester.pumpWidget(wrapWithRepo(const ChatDirectoryScreen()));
+      await tester.pumpAndSettle();
+
+      // Unread badge visible for Maria ('2'), hidden for Alex (0)
+      expect(find.byKey(const Key('dm_unread_badge_maria')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('dm_unread_badge_maria')),
+          matching: find.text('2'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('dm_unread_badge_alex')), findsNothing);
+      expect(find.textContaining('2 Unread'), findsOneWidget);
+
+      // Verify order: Maria (today 1:28 AM) -> Alex (yesterday 3:50 PM) -> Bea -> Zoe (alphabetical empty)
+      final mariaY = tester.getTopLeft(find.text('Maria')).dy;
+      final alexY = tester.getTopLeft(find.text('Alex')).dy;
+      final beaY = tester.getTopLeft(find.text('Bea')).dy;
+      final zoeY = tester.getTopLeft(find.text('Zoe')).dy;
+      expect(mariaY, lessThan(alexY));
+      expect(alexY, lessThan(beaY));
+      expect(beaY, lessThan(zoeY));
+
+      // Incoming message to Zoe re-sorts Zoe above Maria and updates badge live
+      repo.addIncomingDirectMessageForTest(
+        'zoe',
+        ChatMessage(
+          id: 'dm_zoe_1',
+          senderId: zoe.id,
+          senderName: zoe.displayName,
+          content: 'Just arrived!',
+          createdAt: today128Am.add(const Duration(minutes: 10)),
+          isCurrentUser: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('dm_unread_badge_zoe')), findsOneWidget);
+      expect(find.textContaining('3 Unread'), findsOneWidget);
+      final zoeYAfter = tester.getTopLeft(find.text('Zoe')).dy;
+      final mariaYAfter = tester.getTopLeft(find.text('Maria')).dy;
+      expect(zoeYAfter, lessThan(mariaYAfter));
+
+      // Opening DirectChatScreen for Maria clears Maria's unread badge & decrements totalUnreadChatCount
+      await tester.pumpWidget(
+        wrapWithRepo(
+          const DirectChatScreen(contactKey: 'maria', contactName: 'Maria'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(repo.getDirectUnreadCount('maria'), 0);
+      expect(repo.totalUnreadChatCount, 1);
+
+      // Receiving a new message while viewing Maria's DirectChatScreen keeps it read
+      repo.addIncomingDirectMessageForTest(
+        'maria',
+        ChatMessage(
+          id: 'dm_maria_3',
+          senderId: maria.id,
+          senderName: maria.displayName,
+          content: 'While viewing',
+          createdAt: today128Am.add(const Duration(minutes: 12)),
+          isCurrentUser: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(repo.getDirectUnreadCount('maria'), 0);
+      expect(repo.totalUnreadChatCount, 1);
+
+      // Bottom-nav Chat badge reflects remaining unread (1 from Zoe) and clears when Zoe's DM is read
+      await tester.pumpWidget(
+        wrapWithRepo(const MainNavigationShell(initialIndex: 3)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('1 Unread'), findsOneWidget);
+      expect(find.text('1'), findsWidgets);
+
+      repo.markDirectChatAsRead('zoe');
+      await tester.pumpAndSettle();
+      expect(repo.totalUnreadChatCount, 0);
+      expect(find.textContaining('0 Unread'), findsOneWidget);
     },
   );
 }

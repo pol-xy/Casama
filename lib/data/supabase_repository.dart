@@ -55,6 +55,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   Map<String, List<ChatMessage>> _directMessages = {};
   Map<String, int> _directUnreadCounts = {};
   final Map<String, XFile> _pendingAttachmentFilesByMessageId = {};
+  List<MeetUpInvitation> _meetUpInvitations = [];
   MeetUpInvitation _activeMeetUp = MeetUpInvitation(
     id: '',
     activity: '',
@@ -218,6 +219,27 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   MeetUpInvitation get activeMeetUp => _activeMeetUp;
 
   @override
+  List<MeetUpInvitation> get meetUpInvitations =>
+      List.unmodifiable(_meetUpInvitations);
+
+  MeetUpInvitation _pickActiveMeetUp(List<MeetUpInvitation> invitations) {
+    final active = invitations
+        .where((m) => m.hasValidData && m.isActive)
+        .toList()
+      ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
+    if (active.isNotEmpty) return active.first;
+    final valid = invitations.where((m) => m.hasValidData).toList()
+      ..sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
+    if (valid.isNotEmpty) return valid.first;
+    return MeetUpInvitation(
+      id: '',
+      activity: '',
+      location: '',
+      scheduledTime: DateTime.now().add(const Duration(days: 30)),
+    );
+  }
+
+  @override
   List<PointAuditEntry> get pointHistory => List.unmodifiable(_pointHistory);
 
   @override
@@ -278,6 +300,13 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final member = _resolveMemberByKey(contactKey);
     if (member == null) return const [];
     return List.unmodifiable(_directMessages[member.profile.id] ?? const []);
+  }
+
+  @override
+  int getDirectUnreadCount(String contactKey) {
+    final member = _resolveMemberByKey(contactKey);
+    if (member == null) return 0;
+    return _directUnreadCounts[member.profile.id] ?? 0;
   }
 
   @override
@@ -485,6 +514,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     _directConversationIdsByKey = {};
     _directMessages = {};
     _directUnreadCounts = {};
+    _meetUpInvitations = [];
     _activeMeetUp = MeetUpInvitation(
       id: '',
       activity: '',
@@ -1493,8 +1523,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
             .from('meet_up_invitations')
             .select('*, meet_up_responses(*)')
             .eq('conversation_id', groupId)
-            .order('created_at', ascending: false)
-            .limit(5);
+            .order('scheduled_time', ascending: true);
 
     final convData = await Future.wait<dynamic>([
       msgsFuture,
@@ -1645,12 +1674,12 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
       final parsedMeetups = meetupsRes
           .map((raw) => parseMeetup(Map<String, dynamic>.from(raw as Map)))
-          .toList();
-      _activeMeetUp = parsedMeetups.firstWhere(
-        (m) => m.isActive,
-        orElse: () => parsedMeetups.first,
-      );
+          .toList()
+        ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
+      _meetUpInvitations = parsedMeetups;
+      _activeMeetUp = _pickActiveMeetUp(parsedMeetups);
     } else {
+      _meetUpInvitations = [];
       _activeMeetUp = MeetUpInvitation(
         id: '',
         activity: '',
@@ -1707,7 +1736,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     const conversationScopedTables = [
       'conversation_reads',
       'messages',
-      'meet_up_invitations',
       'meet_up_responses',
       'quick_snap_reactions',
       'quick_snap_comments',
@@ -1720,6 +1748,37 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         callback: scheduleRefresh,
       );
     }
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'meet_up_invitations',
+      callback: (payload) {
+        final deletedId = payload.oldRecord['id'] as String?;
+        if (deletedId != null && deletedId.isNotEmpty) {
+          final before = _meetUpInvitations.length;
+          _meetUpInvitations =
+              _meetUpInvitations.where((m) => m.id != deletedId).toList();
+          if (_meetUpInvitations.length != before ||
+              _activeMeetUp.id == deletedId) {
+            _activeMeetUp = _pickActiveMeetUp(_meetUpInvitations);
+            _safeNotify();
+          }
+        }
+        scheduleRefresh(payload);
+      },
+    );
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'meet_up_invitations',
+      callback: scheduleRefresh,
+    );
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.update,
+      schema: 'public',
+      table: 'meet_up_invitations',
+      callback: scheduleRefresh,
+    );
     _realtimeChannel = channel..subscribe();
   }
 
@@ -3203,23 +3262,38 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   void markDirectChatAsRead(String contactKey) {
     final member = _resolveMemberByKey(contactKey);
     if (member == null) return;
+    final prev = _directUnreadCounts[member.profile.id] ?? 0;
     _directUnreadCounts[member.profile.id] = 0;
-    _safeNotify();
+    if (prev != 0) {
+      _safeNotify();
+    }
     final cid = _directConversationIdsByKey[member.profile.id];
     if (cid != null) {
-      unawaited(_upsertConversationRead(cid));
+      final latestMessageAt =
+          _directMessages[member.profile.id]?.lastOrNull?.createdAt;
+      unawaited(
+        _upsertConversationRead(cid, latestMessageAt: latestMessageAt),
+      );
     }
   }
 
-  Future<void> _upsertConversationRead(String conversationId) async {
+  Future<void> _upsertConversationRead(
+    String conversationId, {
+    DateTime? latestMessageAt,
+  }) async {
     final client = _client;
     if (client == null || _currentUser.id.isEmpty) return;
+    final now = DateTime.now();
+    final effectiveReadAt =
+        (latestMessageAt != null && latestMessageAt.isAfter(now))
+            ? latestMessageAt
+            : now;
     try {
       await client.from('conversation_reads').upsert(
         {
           'conversation_id': conversationId,
           'user_id': _currentUser.id,
-          'last_read_at': nowSupabaseUtcIso(),
+          'last_read_at': toSupabaseUtcIso(effectiveReadAt),
         },
         onConflict: 'conversation_id,user_id',
       );
@@ -3864,34 +3938,41 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       'scheduled_time': toSupabaseUtcIso(scheduledTime),
       'status': 'active',
     });
-    await client.from('meet_up_responses').upsert(
-      {
-        'invitation_id': invId,
-        'user_id': _currentUser.id,
-        'response': 'going',
-      },
-      onConflict: 'invitation_id,user_id',
-    );
 
     await _fetchHouseholdData();
     _safeNotify();
   }
 
   @override
-  void respondMeetUp(String response) {
-    unawaited(_respondMeetUpAsync(response));
+  Future<void> deleteMeetUpInvitation(String invitationId) async {
+    final client = _requireClient();
+    await client.from('meet_up_invitations').delete().eq('id', invitationId);
+    _meetUpInvitations =
+        _meetUpInvitations.where((m) => m.id != invitationId).toList();
+    _activeMeetUp = _pickActiveMeetUp(_meetUpInvitations);
+    _safeNotify();
   }
 
-  Future<void> _respondMeetUpAsync(String response) async {
+  @override
+  void respondMeetUp(String response, {String? invitationId}) {
+    unawaited(_respondMeetUpAsync(response, invitationId: invitationId));
+  }
+
+  Future<void> _respondMeetUpAsync(
+    String response, {
+    String? invitationId,
+  }) async {
     final client = _client;
+    final targetId = invitationId ?? _activeMeetUp.id;
+    final idx = _meetUpInvitations.indexWhere((m) => m.id == targetId);
+    final prev = idx != -1 ? _meetUpInvitations[idx] : _activeMeetUp;
     if (client == null ||
         _currentUser.id.isEmpty ||
-        _activeMeetUp.id.isEmpty ||
-        !_activeMeetUp.isActive) {
+        prev.id.isEmpty ||
+        !prev.isActive) {
       return;
     }
 
-    final prev = _activeMeetUp;
     var g = prev.goingCount;
     var m = prev.maybeCount;
     var c = prev.cantMakeCount;
@@ -3912,13 +3993,20 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       ),
     ];
 
-    _activeMeetUp = prev.copyWith(
+    final updated = prev.copyWith(
       goingCount: g,
       maybeCount: m,
       cantMakeCount: c,
       currentUserResponse: response,
       responders: updatedResponders,
     );
+    final prevList = List<MeetUpInvitation>.from(_meetUpInvitations);
+    if (idx != -1) {
+      final next = List<MeetUpInvitation>.from(_meetUpInvitations);
+      next[idx] = updated;
+      _meetUpInvitations = next;
+    }
+    _activeMeetUp = _pickActiveMeetUp(_meetUpInvitations);
     _safeNotify();
 
     try {
@@ -3932,7 +4020,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         onConflict: 'invitation_id,user_id',
       );
     } catch (e) {
-      _activeMeetUp = prev;
+      _meetUpInvitations = prevList;
+      _activeMeetUp = _pickActiveMeetUp(_meetUpInvitations);
       _recordError('Could not update meet-up RSVP.', error: e);
     }
   }

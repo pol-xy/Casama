@@ -29,6 +29,7 @@ abstract class CasamaRepository extends ChangeNotifier {
   int get unreadNotificationCount;
   int get totalUnreadChatCount;
   MeetUpInvitation get activeMeetUp;
+  List<MeetUpInvitation> get meetUpInvitations;
   List<PointAuditEntry> get pointHistory;
   List<LeaderboardStanding> get leaderboardStandings;
   List<HouseholdNotificationItem> get notifications;
@@ -43,6 +44,7 @@ abstract class CasamaRepository extends ChangeNotifier {
 
   // Chat queries
   List<ChatMessage> getDirectMessages(String contactKey);
+  int getDirectUnreadCount(String contactKey);
   bool isHousemateAuthorized(String contactKey);
   List<UserProfile> searchUsers(String query);
 
@@ -217,7 +219,8 @@ abstract class CasamaRepository extends ChangeNotifier {
     required DateTime scheduledTime,
     String? announcementText,
   });
-  void respondMeetUp(String response);
+  void respondMeetUp(String response, {String? invitationId});
+  Future<void> deleteMeetUpInvitation(String invitationId);
 
   // Household Invitations
   bool sendInvitation({

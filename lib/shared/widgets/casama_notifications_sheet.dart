@@ -6,9 +6,11 @@ import 'package:intl/intl.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../features/chat/group_chat_screen.dart';
+import 'casama_avatar.dart';
 import 'casama_button.dart';
 import 'casama_sheet_scaffold.dart';
 import 'casama_wave_header.dart';
@@ -45,7 +47,8 @@ Future<void> showCasamaNotificationsSheet(BuildContext context) {
       builder: (ctx, ref, _) {
         final pal = ctx.palette;
         final theme = Theme.of(ctx);
-        final items = ref.watch(repositoryProvider).notifications;
+        final repo = ref.watch(repositoryProvider);
+        final items = repo.notifications;
         final hasUnread = items.any((n) => n.readAt == null && !n.isRead);
 
         return Column(
@@ -71,19 +74,33 @@ Future<void> showCasamaNotificationsSheet(BuildContext context) {
                     final isParcel = item.type == 'parcel_received';
                     final isRoulette = item.type == 'roulette_chosen';
                     final isMeetupReminder = item.type == 'meetup_reminder';
+                    final isMeetupNotification =
+                        isMeetupReminder || item.type.startsWith('meetup_');
 
                     final icon = isParcel
                         ? Icons.local_shipping_outlined
                         : isRoulette
                         ? Icons.casino_outlined
-                        : isMeetupReminder
+                        : isMeetupNotification
                         ? Icons.event_rounded
                         : Icons.notifications_none_rounded;
                     final iconBg = isParcel ? pal.softBlush : pal.softSage;
                     final iconColor =
                         isParcel ? pal.primaryCoral : pal.forestTeal;
 
+                    final creatorProfile = isMeetupNotification
+                        ? _resolveNotificationCreatorProfile(repo, item)
+                        : null;
+                    final Widget? leading = creatorProfile != null
+                        ? CasamaAvatar(
+                            radius: 20,
+                            avatarUrl: creatorProfile.avatarUrl,
+                            name: creatorProfile.displayName,
+                          )
+                        : null;
+
                     return _CasamaNotificationRow(
+                      leading: leading,
                       icon: icon,
                       iconBg: iconBg,
                       iconColor: iconColor,
@@ -159,7 +176,38 @@ void _handleMeetupReminderTap(
   );
 }
 
+UserProfile? _resolveNotificationCreatorProfile(
+  CasamaRepository repo,
+  HouseholdNotificationItem item,
+) {
+  var creatorId = (item.payload['creator_id'] as String?)?.trim() ?? '';
+  if (creatorId.isEmpty) {
+    final invitationId =
+        (item.payload['invitation_id'] as String?)?.trim() ?? '';
+    if (invitationId.isNotEmpty) {
+      for (final inv in repo.meetUpInvitations) {
+        if (inv.id == invitationId && inv.creatorId.trim().isNotEmpty) {
+          creatorId = inv.creatorId.trim();
+          break;
+        }
+      }
+      if (creatorId.isEmpty &&
+          repo.activeMeetUp.id == invitationId &&
+          repo.activeMeetUp.creatorId.trim().isNotEmpty) {
+        creatorId = repo.activeMeetUp.creatorId.trim();
+      }
+    }
+  }
+  if (creatorId.isEmpty) return null;
+  if (repo.currentUser.id == creatorId) return repo.currentUser;
+  for (final member in repo.members) {
+    if (member.profile.id == creatorId) return member.profile;
+  }
+  return null;
+}
+
 class _CasamaNotificationRow extends StatelessWidget {
+  final Widget? leading;
   final IconData icon;
   final Color iconBg;
   final Color iconColor;
@@ -172,6 +220,7 @@ class _CasamaNotificationRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _CasamaNotificationRow({
+    this.leading,
     required this.icon,
     required this.iconBg,
     required this.iconColor,
@@ -191,12 +240,13 @@ class _CasamaNotificationRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-            child: Icon(icon, color: iconColor, size: 19),
-          ),
+          leading ??
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+                child: Icon(icon, color: iconColor, size: 19),
+              ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

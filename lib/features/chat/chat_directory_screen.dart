@@ -6,11 +6,14 @@ import 'package:intl/intl.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../core/theme/app_theme.dart';
+import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_filter_controls.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../dashboard/main_navigation_shell.dart';
@@ -30,6 +33,12 @@ class ChatDirectoryScreen extends ConsumerStatefulWidget {
 class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _meetupFilter = 'all';
+
+  static const List<CasamaFilterOption<String>> _meetupFilterOptions = [
+    CasamaFilterOption(value: 'all', label: 'All Upcoming'),
+    CasamaFilterOption(value: 'mine', label: 'My Invitations'),
+  ];
 
   @override
   void dispose() {
@@ -54,6 +63,17 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
     return msg.content;
   }
 
+  ChatMessage? _latestDirectMessage(List<ChatMessage> messages) {
+    if (messages.isEmpty) return null;
+    var latest = messages.first;
+    for (var i = 1; i < messages.length; i++) {
+      if (!messages[i].createdAt.isBefore(latest.createdAt)) {
+        latest = messages[i];
+      }
+    }
+    return latest;
+  }
+
   void _openRoute(BuildContext context, String location) {
     GoRouter.maybeOf(context)?.push(location);
   }
@@ -63,7 +83,13 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
     final pal = context.palette;
     final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
-    final meetup = repo.activeMeetUp;
+    final upcomingMeetups = repo.meetUpInvitations
+        .where((m) => m.hasValidData && m.isActive)
+        .where(
+          (m) => _meetupFilter == 'all' || m.creatorId == repo.currentUser.id,
+        )
+        .toList()
+      ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
     final members = repo.members;
     final activeCount = members.where((m) => m.isHome).length;
     final otherMembers = members
@@ -118,6 +144,24 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
           note.contains(query) ||
           msgContent.contains(query);
     }).toList();
+
+    final sortedMembers = List<MemberPresence>.from(filteredMembers)
+      ..sort((a, b) {
+        final aLast = _latestDirectMessage(
+          repo.getDirectMessages(a.profile.displayName.toLowerCase()),
+        );
+        final bLast = _latestDirectMessage(
+          repo.getDirectMessages(b.profile.displayName.toLowerCase()),
+        );
+        if (aLast != null && bLast != null) {
+          return bLast.createdAt.compareTo(aLast.createdAt);
+        }
+        if (aLast != null) return -1;
+        if (bLast != null) return 1;
+        return a.profile.displayName.toLowerCase().compareTo(
+          b.profile.displayName.toLowerCase(),
+        );
+      });
 
     return Scaffold(
       backgroundColor: pal.scaffoldBg,
@@ -409,23 +453,25 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                   children: [
                                     for (
                                       var i = 0;
-                                      i < filteredMembers.length;
+                                      i < sortedMembers.length;
                                       i++
                                     ) ...[
                                       if (i > 0)
                                         Divider(height: 1, color: pal.divider),
                                       Builder(
                                         builder: (context) {
-                                          final m = filteredMembers[i];
+                                          final m = sortedMembers[i];
                                           final contactKey = m
                                               .profile
                                               .displayName
                                               .toLowerCase();
                                           final dmMessages = repo
                                               .getDirectMessages(contactKey);
-                                          final lastMsg = dmMessages.isNotEmpty
-                                              ? dmMessages.last
-                                              : null;
+                                          final lastMsg = _latestDirectMessage(
+                                            dmMessages,
+                                          );
+                                          final unreadCount = repo
+                                              .getDirectUnreadCount(contactKey);
                                           final preview = lastMsg != null
                                               ? (lastMsg.isCurrentUser
                                                     ? 'You: ${_messagePreviewText(lastMsg)}'
@@ -433,11 +479,11 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                               : (m.note != null
                                                     ? 'Status: ${m.note}'
                                                     : 'Tap to message ${m.profile.displayName}');
-                                          final timeStr = DateFormat('h:mm a')
-                                              .format(
-                                                lastMsg?.createdAt ??
-                                                    m.updatedAt,
-                                              );
+                                          final timeStr = lastMsg != null
+                                              ? DateFormat('h:mm a').format(
+                                                  lastMsg.createdAt,
+                                                )
+                                              : '';
 
                                           return _HousemateConversationRow(
                                             name: m.profile.displayName,
@@ -445,10 +491,18 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                             isHome: m.isHome,
                                             preview: preview,
                                             time: timeStr,
-                                            onTap: () => _openRoute(
-                                              context,
-                                              '/direct-chat?contact=$contactKey&name=${Uri.encodeComponent(m.profile.displayName)}&avatar=${Uri.encodeComponent(m.profile.avatarUrl ?? '')}',
-                                            ),
+                                            unreadCount: unreadCount,
+                                            onTap: () {
+                                              ref
+                                                  .read(repositoryProvider)
+                                                  .markDirectChatAsRead(
+                                                    contactKey,
+                                                  );
+                                              _openRoute(
+                                                context,
+                                                '/direct-chat?contact=$contactKey&name=${Uri.encodeComponent(m.profile.displayName)}&avatar=${Uri.encodeComponent(m.profile.avatarUrl ?? '')}',
+                                              );
+                                            },
                                           );
                                         },
                                       ),
@@ -487,7 +541,14 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                               ),
                             ),
                             const SizedBox(height: CasamaSpacing.xs),
-                            if (!meetup.hasValidData || !meetup.isActive)
+                            CasamaPillFilterRail<String>(
+                              options: _meetupFilterOptions,
+                              selectedValue: _meetupFilter,
+                              onSelected: (val) =>
+                                  setState(() => _meetupFilter = val),
+                            ),
+                            const SizedBox(height: CasamaSpacing.xs),
+                            if (upcomingMeetups.isEmpty)
                               CasamaCard(
                                 padding: const EdgeInsets.all(14),
                                 child: Row(
@@ -512,7 +573,9 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            'No meet-up invitations yet',
+                                            _meetupFilter == 'mine'
+                                                ? "You haven't created any upcoming meet-ups yet."
+                                                : 'No upcoming meet-ups',
                                             style: theme.textTheme.titleSmall
                                                 ?.copyWith(
                                                   fontWeight: FontWeight.w700,
@@ -521,7 +584,9 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
-                                            'Tap + New to invite your housemates.',
+                                            _meetupFilter == 'mine'
+                                                ? 'Tap + New to plan one for the household.'
+                                                : 'Tap + New to invite your housemates.',
                                             style: theme.textTheme.bodySmall
                                                 ?.copyWith(
                                                   color: pal.textSecondary,
@@ -535,81 +600,135 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                 ),
                               )
                             else
-                              CasamaCard(
-                                padding: const EdgeInsets.all(14),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 44,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        color: pal.softSage,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        Icons.groups_rounded,
-                                        color: pal.forestTeal,
-                                        size: 22,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            meetup.activity,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.textTheme.titleMedium
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.w700,
-                                                  color: pal.textPrimary,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '${DateFormat('EEE, MMM d • h:mm a').format(meetup.scheduledTime)} • ${meetup.location} • ${meetup.goingCount} going',
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: pal.textSecondary,
-                                                  fontSize: 12.5,
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    CasamaPressable(
-                                      onTap: () =>
-                                          _showMeetupDetailsSheet(context),
-                                      child: Container(
-                                        height: 48,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: pal.track,
-                                          borderRadius:
-                                              CasamaSpacing.roundedPill,
-                                          border: Border.all(color: pal.border),
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          'View',
-                                          style: theme.textTheme.labelMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w700,
-                                                color: pal.textPrimary,
+                              Column(
+                                children: [
+                                  for (
+                                    var i = 0;
+                                    i < upcomingMeetups.length;
+                                    i++
+                                  ) ...[
+                                    if (i > 0)
+                                      const SizedBox(height: CasamaSpacing.xs),
+                                    Builder(
+                                      builder: (context) {
+                                        final m = upcomingMeetups[i];
+                                        final creator = _resolveMeetupCreator(
+                                          repo,
+                                          m.creatorId,
+                                        );
+                                        return CasamaCard(
+                                          padding: const EdgeInsets.all(14),
+                                          child: Row(
+                                            children: [
+                                              CasamaAvatar(
+                                                avatarUrl: creator?.avatarUrl,
+                                                radius: 22,
+                                                name:
+                                                    creator?.displayName ??
+                                                    'Housemate',
                                               ),
-                                        ),
-                                      ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      m.activity,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: theme
+                                                          .textTheme
+                                                          .titleMedium
+                                                          ?.copyWith(
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            color:
+                                                                pal.textPrimary,
+                                                          ),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      _formatMeetupRelativeTime(
+                                                        m.scheduledTime,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodySmall
+                                                          ?.tabular
+                                                          .copyWith(
+                                                            color:
+                                                                pal.textPrimary,
+                                                            fontWeight:
+                                                                FontWeight.w500,
+                                                            fontSize: 12.5,
+                                                          ),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      '${m.location} • ${m.goingCount} going',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodySmall
+                                                          ?.copyWith(
+                                                            color: pal
+                                                                .textSecondary,
+                                                            fontSize: 12,
+                                                          ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              CasamaPressable(
+                                                onTap: () =>
+                                                    _showMeetupDetailsSheet(
+                                                      context,
+                                                      invitationId: m.id,
+                                                    ),
+                                                child: Container(
+                                                  height: 48,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 16,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: pal.track,
+                                                    borderRadius: CasamaSpacing
+                                                        .roundedPill,
+                                                    border: Border.all(
+                                                      color: pal.border,
+                                                    ),
+                                                  ),
+                                                  alignment: Alignment.center,
+                                                  child: Text(
+                                                    'View',
+                                                    style: theme
+                                                        .textTheme
+                                                        .labelMedium
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color:
+                                                              pal.textPrimary,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ],
-                                ),
+                                ],
                               ),
                           ],
                         ),
@@ -916,10 +1035,10 @@ class _SpaceCard extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          '$unreadCount',
-                          style: const TextStyle(
+                          unreadCount > 99 ? '99+' : '$unreadCount',
+                          style: theme.textTheme.labelSmall?.tabular.copyWith(
                             color: Colors.white,
-                            fontSize: 10.5,
+                            fontSize: 11,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -942,6 +1061,7 @@ class _HousemateConversationRow extends StatelessWidget {
   final bool isHome;
   final String preview;
   final String time;
+  final int unreadCount;
   final VoidCallback onTap;
 
   const _HousemateConversationRow({
@@ -950,6 +1070,7 @@ class _HousemateConversationRow extends StatelessWidget {
     required this.isHome,
     required this.preview,
     required this.time,
+    required this.unreadCount,
     required this.onTap,
   });
 
@@ -988,9 +1109,8 @@ class _HousemateConversationRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Flexible(
+                      Expanded(
                         child: Text(
                           name,
                           maxLines: 1,
@@ -1001,25 +1121,67 @@ class _HousemateConversationRow extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        time,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: pal.textMuted,
-                          fontSize: 11,
+                      if (time.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          time,
+                          style: theme.textTheme.labelSmall?.tabular.copyWith(
+                            color: unreadCount > 0
+                                ? pal.textPrimary
+                                : pal.textMuted,
+                            fontWeight: unreadCount > 0
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            fontSize: 11,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    preview,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: pal.textSecondary,
-                      fontSize: 13,
-                    ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          preview,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: unreadCount > 0
+                                ? pal.textPrimary
+                                : pal.textSecondary,
+                            fontWeight: unreadCount > 0
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                      if (unreadCount > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          key: Key('dm_unread_badge_${name.toLowerCase()}'),
+                          constraints: const BoxConstraints(
+                            minWidth: 20,
+                            minHeight: 20,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            color: pal.coralFab,
+                            borderRadius: CasamaSpacing.roundedPill,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            unreadCount > 99 ? '99+' : '$unreadCount',
+                            style: theme.textTheme.labelSmall?.tabular.copyWith(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -1082,154 +1244,332 @@ class _MiniHeaderPill extends StatelessWidget {
   }
 }
 
-void _showMeetupDetailsSheet(BuildContext context) {
+UserProfile? _resolveMeetupCreator(CasamaRepository repo, String creatorId) {
+  final cleanId = creatorId.trim();
+  if (cleanId.isEmpty) return null;
+  if (repo.currentUser.id == cleanId) return repo.currentUser;
+  for (final member in repo.members) {
+    if (member.profile.id == cleanId) return member.profile;
+  }
+  return null;
+}
+
+String _formatMeetupRelativeTime(DateTime scheduledTime) {
+  final local = scheduledTime.toLocal();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final tomorrow = today.add(const Duration(days: 1));
+  final targetDay = DateTime(local.year, local.month, local.day);
+  final timePart = DateFormat('h:mm a').format(local);
+  if (targetDay == today) return 'Today, $timePart';
+  if (targetDay == tomorrow) return 'Tomorrow, $timePart';
+  return DateFormat('EEE, MMM d • h:mm a').format(local);
+}
+
+void _showMeetupDetailsSheet(
+  BuildContext hostContext, {
+  String? invitationId,
+}) {
   showCasamaSheet<void>(
-    context,
+    hostContext,
     icon: Icons.event_available_rounded,
     title: 'Meet-up Invitation',
     subtitle: 'Coordinate plans & RSVP with your housemates',
-    builder: (ctx) {
-      return Consumer(
-        builder: (ctx, ref, _) {
-          final repo = ref.watch(repositoryProvider);
-          final meetup = repo.activeMeetUp;
-          final pal = ctx.palette;
-          final theme = Theme.of(ctx);
+    builder: (sheetCtx) => _MeetupDetailsSheetBody(
+      hostContext: hostContext,
+      sheetContext: sheetCtx,
+      invitationId: invitationId,
+    ),
+  );
+}
 
-          if (!meetup.hasValidData) {
-            return Text(
-              'No active meet-up invitation.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: pal.textSecondary,
+class _MeetupDetailsSheetBody extends ConsumerStatefulWidget {
+  final BuildContext hostContext;
+  final BuildContext sheetContext;
+  final String? invitationId;
+
+  const _MeetupDetailsSheetBody({
+    required this.hostContext,
+    required this.sheetContext,
+    this.invitationId,
+  });
+
+  @override
+  ConsumerState<_MeetupDetailsSheetBody> createState() =>
+      _MeetupDetailsSheetBodyState();
+}
+
+class _MeetupDetailsSheetBodyState
+    extends ConsumerState<_MeetupDetailsSheetBody> {
+  bool _isDeleting = false;
+
+  Future<void> _confirmAndDelete(MeetUpInvitation meetup) async {
+    if (_isDeleting) return;
+    final pal = context.palette;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Delete Meet-up?'),
+        content: Text(
+          'This will permanently remove "${meetup.activity}" and all housemate responses.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            key: const Key('meetup_confirm_delete_button'),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: pal.dangerFg),
+            child: const Text(
+              'Delete',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await ref.read(repositoryProvider).deleteMeetUpInvitation(meetup.id);
+      if (widget.sheetContext.mounted) {
+        Navigator.of(widget.sheetContext).pop();
+      }
+      if (widget.hostContext.mounted) {
+        showCasamaToast(
+          widget.hostContext,
+          'Meet-up deleted',
+          icon: Icons.delete_outline_rounded,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isDeleting = false);
+      showCasamaToast(
+        context,
+        'Could not delete meet-up. Please try again.',
+        icon: Icons.error_outline_rounded,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = ref.watch(repositoryProvider);
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    MeetUpInvitation meetup;
+    if (widget.invitationId != null) {
+      meetup = repo.meetUpInvitations.firstWhere(
+        (m) => m.id == widget.invitationId,
+        orElse: () => repo.activeMeetUp.id == widget.invitationId
+            ? repo.activeMeetUp
+            : MeetUpInvitation(
+                id: '',
+                activity: '',
+                location: '',
+                scheduledTime: DateTime.now(),
               ),
-            );
-          }
+      );
+    } else {
+      meetup = repo.activeMeetUp;
+    }
 
-          final timeLabel = DateFormat(
-            'EEE, MMM d • h:mm a',
-          ).format(meetup.scheduledTime);
-          final isCompleted = !meetup.isActive;
+    if (!meetup.hasValidData) {
+      return Text(
+        'No active meet-up invitation.',
+        style: theme.textTheme.bodyMedium?.copyWith(color: pal.textSecondary),
+      );
+    }
 
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      meetup.activity,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: pal.textPrimary,
-                      ),
+    final timeLabel = DateFormat(
+      'EEE, MMM d • h:mm a',
+    ).format(meetup.scheduledTime);
+    final isCompleted = !meetup.isActive;
+    final isCreator =
+        meetup.creatorId.isNotEmpty && meetup.creatorId == repo.currentUser.id;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                meetup.activity,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: pal.textPrimary,
+                ),
+              ),
+            ),
+            if (isCompleted) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: pal.neutralBg,
+                  borderRadius: CasamaSpacing.roundedPill,
+                  border: Border.all(color: pal.border),
+                ),
+                child: Text(
+                  'Completed',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: pal.neutralFg,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '$timeLabel • ${meetup.location}',
+          style: theme.textTheme.bodyMedium?.copyWith(color: pal.textSecondary),
+        ),
+        const SizedBox(height: CasamaSpacing.md),
+        Text(
+          isCompleted ? 'FINAL RESPONSES' : 'YOUR RESPONSE',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: pal.textSecondary,
+            letterSpacing: 0.6,
+          ),
+        ),
+        const SizedBox(height: CasamaSpacing.sm),
+        Row(
+          children: [
+            Expanded(
+              child: _MeetupRsvpChip(
+                label: 'Going (${meetup.goingCount})',
+                selected: meetup.currentUserResponse == 'going',
+                activeBg: pal.successFg,
+                onTap: isCompleted || _isDeleting
+                    ? null
+                    : () => ref
+                          .read(repositoryProvider)
+                          .respondMeetUp('going', invitationId: meetup.id),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _MeetupRsvpChip(
+                label: 'Maybe (${meetup.maybeCount})',
+                selected: meetup.currentUserResponse == 'maybe',
+                activeBg: pal.amberFg,
+                onTap: isCompleted || _isDeleting
+                    ? null
+                    : () => ref
+                          .read(repositoryProvider)
+                          .respondMeetUp('maybe', invitationId: meetup.id),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _MeetupRsvpChip(
+                label: "Can't (${meetup.cantMakeCount})",
+                selected: meetup.currentUserResponse == 'cant_make_it',
+                activeBg: pal.neutralFg,
+                onTap: isCompleted || _isDeleting
+                    ? null
+                    : () => ref
+                          .read(repositoryProvider)
+                          .respondMeetUp(
+                            'cant_make_it',
+                            invitationId: meetup.id,
+                          ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: CasamaSpacing.md),
+        _MeetupResponderRow(
+          label: 'Going',
+          accentColor: pal.successFg,
+          responders: meetup.goingResponders,
+        ),
+        const SizedBox(height: CasamaSpacing.sm),
+        _MeetupResponderRow(
+          label: 'Maybe',
+          accentColor: pal.amberFg,
+          responders: meetup.maybeResponders,
+        ),
+        const SizedBox(height: CasamaSpacing.sm),
+        _MeetupResponderRow(
+          label: "Can't",
+          accentColor: pal.neutralFg,
+          responders: meetup.cantMakeResponders,
+        ),
+        if (isCreator) ...[
+          const SizedBox(height: CasamaSpacing.md),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Semantics(
+              button: true,
+              label: 'Delete Meet-up',
+              child: CasamaPressable(
+                key: const Key('meetup_delete_button'),
+                onTap: _isDeleting ? null : () => _confirmAndDelete(meetup),
+                enableHaptic: !_isDeleting,
+                child: Container(
+                  constraints: const BoxConstraints(
+                    minHeight: CasamaSpacing.minTouchTarget,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: pal.dangerBg,
+                    borderRadius: CasamaSpacing.roundedPill,
+                    border: Border.all(
+                      color: pal.dangerFg.withValues(alpha: 0.28),
                     ),
                   ),
-                  if (isCompleted) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: pal.neutralBg,
-                        borderRadius: CasamaSpacing.roundedPill,
-                        border: Border.all(color: pal.border),
-                      ),
-                      child: Text(
-                        'Completed',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: pal.neutralFg,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_isDeleting)
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: pal.dangerFg,
+                          ),
+                        )
+                      else
+                        Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                          color: pal.dangerFg,
+                        ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Delete',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: pal.dangerFg,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '$timeLabel • ${meetup.location}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: pal.textSecondary,
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: CasamaSpacing.md),
-              Text(
-                isCompleted ? 'FINAL RESPONSES' : 'YOUR RESPONSE',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: pal.textSecondary,
-                  letterSpacing: 0.6,
-                ),
-              ),
-              const SizedBox(height: CasamaSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: _MeetupRsvpChip(
-                      label: 'Going (${meetup.goingCount})',
-                      selected: meetup.currentUserResponse == 'going',
-                      activeBg: pal.successFg,
-                      onTap: isCompleted
-                          ? null
-                          : () => ref
-                              .read(repositoryProvider)
-                              .respondMeetUp('going'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _MeetupRsvpChip(
-                      label: 'Maybe (${meetup.maybeCount})',
-                      selected: meetup.currentUserResponse == 'maybe',
-                      activeBg: pal.amberFg,
-                      onTap: isCompleted
-                          ? null
-                          : () => ref
-                              .read(repositoryProvider)
-                              .respondMeetUp('maybe'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _MeetupRsvpChip(
-                      label: "Can't (${meetup.cantMakeCount})",
-                      selected: meetup.currentUserResponse == 'cant_make_it',
-                      activeBg: pal.neutralFg,
-                      onTap: isCompleted
-                          ? null
-                          : () => ref
-                              .read(repositoryProvider)
-                              .respondMeetUp('cant_make_it'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: CasamaSpacing.md),
-              _MeetupResponderRow(
-                label: 'Going',
-                accentColor: pal.successFg,
-                responders: meetup.goingResponders,
-              ),
-              const SizedBox(height: CasamaSpacing.sm),
-              _MeetupResponderRow(
-                label: 'Maybe',
-                accentColor: pal.amberFg,
-                responders: meetup.maybeResponders,
-              ),
-              const SizedBox(height: CasamaSpacing.sm),
-              _MeetupResponderRow(
-                label: "Can't",
-                accentColor: pal.neutralFg,
-                responders: meetup.cantMakeResponders,
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _MeetupResponderRow extends StatelessWidget {

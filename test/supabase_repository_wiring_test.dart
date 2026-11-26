@@ -284,10 +284,12 @@ void main() {
 
       final parsedMeetup = MeetUpInvitation.fromJson({
         ...meetupJson,
+        'creator_id': 'u1',
         'status': 'done',
         'reminder_sent': true,
         'arrival_handled': true,
       });
+      expect(parsedMeetup.creatorId, 'u1');
       expect(parsedMeetup.isActive, isFalse);
       expect(parsedMeetup.isDone, isTrue);
       expect(parsedMeetup.reminderSent, isTrue);

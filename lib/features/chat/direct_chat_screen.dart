@@ -33,11 +33,19 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   XFile? _pendingAttachment;
+  bool _markReadScheduled = false;
 
   @override
   void initState() {
     super.initState();
+    _scheduleMarkRead();
+  }
+
+  void _scheduleMarkRead() {
+    if (_markReadScheduled) return;
+    _markReadScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markReadScheduled = false;
       if (mounted) {
         ref.read(repositoryProvider).markDirectChatAsRead(widget.contactKey);
       }
@@ -253,6 +261,9 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
     }
 
     final messages = repo.getDirectMessages(widget.contactKey);
+    if (repo.getDirectUnreadCount(widget.contactKey) > 0) {
+      _scheduleMarkRead();
+    }
     final member = repo.members.firstWhere(
       (m) =>
           m.profile.displayName.toLowerCase().contains(

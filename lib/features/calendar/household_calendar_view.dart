@@ -667,17 +667,18 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
       }
     }
 
-    final m = repo.activeMeetUp;
-    if (m.hasValidData && m.isActive && _isSameDay(m.scheduledTime, date)) {
-      list.add(
-        _CalendarEventItem(
-          title: m.activity,
-          subtitle: '${m.location} • ${m.goingCount} housemates going',
-          timeLabel:
-              '${m.scheduledTime.hour}:${m.scheduledTime.minute.toString().padLeft(2, '0')}',
-          type: _CalendarEventType.meetup,
-        ),
-      );
+    for (final m in repo.meetUpInvitations) {
+      if (m.hasValidData && m.isActive && _isSameDay(m.scheduledTime, date)) {
+        list.add(
+          _CalendarEventItem(
+            title: m.activity,
+            subtitle: '${m.location} • ${m.goingCount} housemates going',
+            timeLabel:
+                '${m.scheduledTime.hour}:${m.scheduledTime.minute.toString().padLeft(2, '0')}',
+            type: _CalendarEventType.meetup,
+          ),
+        );
+      }
     }
 
     for (final t in repo.tasks) {
