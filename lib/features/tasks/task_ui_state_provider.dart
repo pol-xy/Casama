@@ -59,27 +59,19 @@ extension CasamaTaskUiCategoryX on CasamaTaskUiCategory {
 class TaskUiOverridesState {
   final Map<String, CasamaTaskUiCategory> categoryByTaskId;
   final Map<String, CasamaTaskUiCategory> categoryByTitle;
-  final Map<String, String> assigneeByTaskId;
-  final Set<String> forcedPendingTaskIds;
 
   const TaskUiOverridesState({
     this.categoryByTaskId = const {},
     this.categoryByTitle = const {},
-    this.assigneeByTaskId = const {},
-    this.forcedPendingTaskIds = const {},
   });
 
   TaskUiOverridesState copyWith({
     Map<String, CasamaTaskUiCategory>? categoryByTaskId,
     Map<String, CasamaTaskUiCategory>? categoryByTitle,
-    Map<String, String>? assigneeByTaskId,
-    Set<String>? forcedPendingTaskIds,
   }) {
     return TaskUiOverridesState(
       categoryByTaskId: categoryByTaskId ?? this.categoryByTaskId,
       categoryByTitle: categoryByTitle ?? this.categoryByTitle,
-      assigneeByTaskId: assigneeByTaskId ?? this.assigneeByTaskId,
-      forcedPendingTaskIds: forcedPendingTaskIds ?? this.forcedPendingTaskIds,
     );
   }
 
@@ -87,15 +79,6 @@ class TaskUiOverridesState {
     return categoryByTaskId[task.id] ??
         categoryByTitle[task.title.trim()] ??
         CasamaTaskUiCategoryX.fromTaskCategory(task.category);
-  }
-
-  String? resolveAssignee(MaintenanceTask task) {
-    return assigneeByTaskId[task.id] ?? task.assigneeName;
-  }
-
-  bool isTaskDone(MaintenanceTask task) {
-    if (forcedPendingTaskIds.contains(task.id)) return false;
-    return task.status == TaskStatus.done;
   }
 }
 
@@ -120,25 +103,6 @@ class TaskUiOverridesNotifier extends StateNotifier<TaskUiOverridesState> {
       categoryByTaskId: nextById,
       categoryByTitle: nextByTitle,
     );
-  }
-
-  void assignTask(String taskId, String assigneeName) {
-    final nextAssignees = Map<String, String>.from(state.assigneeByTaskId)
-      ..[taskId] = assigneeName;
-    state = state.copyWith(assigneeByTaskId: nextAssignees);
-  }
-
-  void markDone(String taskId) {
-    if (!state.forcedPendingTaskIds.contains(taskId)) return;
-    final nextPending = Set<String>.from(state.forcedPendingTaskIds)
-      ..remove(taskId);
-    state = state.copyWith(forcedPendingTaskIds: nextPending);
-  }
-
-  void markUndone(String taskId) {
-    final nextPending = Set<String>.from(state.forcedPendingTaskIds)
-      ..add(taskId);
-    state = state.copyWith(forcedPendingTaskIds: nextPending);
   }
 }
 

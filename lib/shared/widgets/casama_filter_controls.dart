@@ -173,15 +173,19 @@ class CasamaSegmentedTrack<T> extends StatelessWidget {
                           : null,
                     ),
                     alignment: Alignment.center,
-                    child: Text(
-                      seg.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontSize: 13,
-                        fontWeight:
-                            selected ? FontWeight.w700 : FontWeight.w500,
-                        color: selected ? pal.textPrimary : pal.textSecondary,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        seg.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          fontSize: 13,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500,
+                          color: selected ? pal.textPrimary : pal.textSecondary,
+                        ),
                       ),
                     ),
                   ),

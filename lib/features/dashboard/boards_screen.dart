@@ -6,10 +6,11 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
+import '../../shared/widgets/casama_lost_found_icon.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../bills/bills_dashboard_screen.dart';
 import '../bills/widgets/edit_billings_sheet.dart';
-import '../chore_roulette/widgets/task_roulette_sheet.dart';
 import '../items/lost_found_screen.dart';
 import '../items/widgets/report_item_sheet.dart';
 import '../parcels/parcels_screen.dart';
@@ -44,6 +45,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       pillIcon: Icons.inventory_2_outlined,
       fabLabel: 'Add parcel',
       fabIcon: Icons.add_box_outlined,
+      mascotPose: CasPose.deliveries,
     ),
     _BoardTabMeta(
       headerTitle: 'Household Tasks',
@@ -52,6 +54,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       pillIcon: Icons.checklist_rounded,
       fabLabel: 'Add task',
       fabIcon: Icons.add_task_rounded,
+      mascotPose: CasPose.tasks,
     ),
     _BoardTabMeta(
       headerTitle: 'Bills & Payments',
@@ -60,14 +63,15 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       pillIcon: Icons.receipt_long_outlined,
       fabLabel: 'Edit billings',
       fabIcon: Icons.edit_note_rounded,
+      mascotPose: CasPose.chatting,
     ),
     _BoardTabMeta(
       headerTitle: 'Lost & Found',
       headerSubtitle: 'Missing & found items',
       pillLabel: 'Items',
-      pillIcon: Icons.sell_outlined,
       fabLabel: 'Report item',
-      fabIcon: Icons.sell_outlined,
+      useLostFoundIcon: true,
+      mascotPose: CasPose.together,
     ),
   ];
 
@@ -192,25 +196,11 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
                   title: meta.headerTitle,
                   subtitle:
                       '${repo.currentHousehold.name} • ${meta.headerSubtitle}',
+                  titleMascotPose: meta.mascotPose,
+                  extendedWave: true,
                   compact: true,
-                  unreadNotificationCount: repo.unreadNotificationCount,
+                  showNotificationBell: true,
                   onMenuTap: _openDrawer,
-                  onNotificationTap: () {
-                    ref.read(repositoryProvider).markAllNotificationsAsRead();
-                    showCasamaToast(
-                      context,
-                      'All notifications caught up',
-                      icon: Icons.done_all_rounded,
-                    );
-                  },
-                  rightActions: [
-                    if (_activeTab == 1)
-                      CasamaHeaderActionPill(
-                        icon: Icons.casino_outlined,
-                        label: 'Spin Roulette',
-                        onTap: () => showTaskRouletteSheet(context),
-                      ),
-                  ],
                   embeddedTabBar: _BoardsHeaderSwitcher(
                     tabs: _tabs,
                     activeIndex: _activeTab,
@@ -240,7 +230,10 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
               bottom: fabBottomOffset,
               child: CasamaMorphingFab(
                 visible: true,
-                icon: meta.fabIcon,
+                icon: meta.useLostFoundIcon ? null : meta.fabIcon,
+                iconWidget: meta.useLostFoundIcon
+                    ? const CasamaLostFoundIcon(size: 20, color: Colors.white)
+                    : null,
                 label: meta.fabLabel,
                 onPressed: _onContextualFabPressed,
               ),
@@ -300,13 +293,21 @@ class _BoardsHeaderSwitcher extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        t.pillIcon,
-                        size: 15,
-                        color: selected
-                            ? pal.forestTeal
-                            : Colors.white.withValues(alpha: 0.85),
-                      ),
+                      if (t.useLostFoundIcon)
+                        CasamaLostFoundIcon(
+                          size: 16,
+                          color: selected
+                              ? pal.forestTeal
+                              : Colors.white.withValues(alpha: 0.85),
+                        )
+                      else
+                        Icon(
+                          t.pillIcon,
+                          size: 15,
+                          color: selected
+                              ? pal.forestTeal
+                              : Colors.white.withValues(alpha: 0.85),
+                        ),
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
@@ -340,16 +341,20 @@ class _BoardTabMeta {
   final String headerTitle;
   final String headerSubtitle;
   final String pillLabel;
-  final IconData pillIcon;
+  final IconData? pillIcon;
   final String fabLabel;
-  final IconData fabIcon;
+  final IconData? fabIcon;
+  final bool useLostFoundIcon;
+  final CasPose mascotPose;
 
   const _BoardTabMeta({
     required this.headerTitle,
     required this.headerSubtitle,
     required this.pillLabel,
-    required this.pillIcon,
+    this.pillIcon,
     required this.fabLabel,
-    required this.fabIcon,
+    this.fabIcon,
+    this.useLostFoundIcon = false,
+    required this.mascotPose,
   });
 }

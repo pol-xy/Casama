@@ -35,13 +35,11 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
   void _sendInvitation() {
     final activity = _activityController.text.trim();
     final location = _locationController.text.trim();
-    final when = _timeController.text.trim();
 
     ref.read(repositoryProvider).createMeetUp(
       activity: activity,
       location: location,
       scheduledTime: DateTime.now().add(const Duration(hours: 3)),
-      announcementText: '📢 Meet-up Invitation: $activity at $location ($when)',
     );
     if (Navigator.canPop(context)) {
       Navigator.pop(context);

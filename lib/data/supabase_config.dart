@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class SupabaseConfig {
   static const String avatarsBucket = 'avatars';
   static const String casnapsBucket = 'casnaps';
+  static const String chatAttachmentsBucket = 'chat-attachments';
 
   static const String _envUrl = String.fromEnvironment(
     'SUPABASE_URL',

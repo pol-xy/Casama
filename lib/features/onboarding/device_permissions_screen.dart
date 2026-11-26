@@ -25,7 +25,6 @@ class _DevicePermissionsScreenState
     extends ConsumerState<DevicePermissionsScreen> {
   bool _notificationsAllowed = false;
   bool _cameraPhotosAllowed = false;
-  bool _contactsAllowed = false;
 
   @override
   void initState() {
@@ -53,6 +52,14 @@ class _DevicePermissionsScreenState
         );
   }
 
+  bool _hasCompletedProfileAndConsent() {
+    final user = ref.read(repositoryProvider).currentUser;
+    return user.hasConsentedTerms &&
+        user.birthday != null &&
+        (user.fullName ?? '').trim().isNotEmpty &&
+        (user.nickname ?? '').trim().isNotEmpty;
+  }
+
   void _continue() {
     _savePreferences(_notificationsAllowed);
     if (!widget.isOnboarding) {
@@ -68,17 +75,36 @@ class _DevicePermissionsScreenState
       }
       return;
     }
-    context.push('/intro');
+    if (!_hasCompletedProfileAndConsent()) {
+      showCasamaToast(
+        context,
+        'Please complete your profile and Terms & Privacy consent first.',
+        icon: Icons.info_outline_rounded,
+      );
+      GoRouter.maybeOf(context)?.go('/profile-setup');
+      return;
+    }
+    ref.read(repositoryProvider).completeOnboardingTutorial();
+    GoRouter.maybeOf(context)?.push('/intro');
   }
 
   void _skipAll() {
     setState(() {
       _notificationsAllowed = false;
       _cameraPhotosAllowed = false;
-      _contactsAllowed = false;
     });
     _savePreferences(false);
-    context.push('/intro');
+    if (!_hasCompletedProfileAndConsent()) {
+      showCasamaToast(
+        context,
+        'Please complete your profile and Terms & Privacy consent first.',
+        icon: Icons.info_outline_rounded,
+      );
+      GoRouter.maybeOf(context)?.go('/profile-setup');
+      return;
+    }
+    ref.read(repositoryProvider).completeOnboardingTutorial();
+    GoRouter.maybeOf(context)?.push('/intro');
   }
 
   @override
@@ -145,21 +171,6 @@ class _DevicePermissionsScreenState
                 'Capture CASnap moments, photograph parcel delivery slips, or attach photos for household items.',
             value: _cameraPhotosAllowed,
             onChanged: (val) => setState(() => _cameraPhotosAllowed = val),
-          ),
-          const SizedBox(height: CasamaSpacing.md),
-
-          _buildPermissionTile(
-            context: context,
-            icon: Icons.contacts_outlined,
-            iconBg: pal.infoBg,
-            iconColor: pal.infoFg,
-            title: 'Contacts Assistance',
-            badge: 'Optional',
-            isRecommended: false,
-            reason:
-                'Quickly invite housemates from your contact list using your household invite code.',
-            value: _contactsAllowed,
-            onChanged: (val) => setState(() => _contactsAllowed = val),
           ),
           const SizedBox(height: CasamaSpacing.xl),
 

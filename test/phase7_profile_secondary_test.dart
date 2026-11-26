@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
-    'ProfileScreen renders tucked mascot, points ledger sheet, and invite sheet cleanly at 390x844',
+    'ProfileScreen renders tucked mascot, points ledger sheet, and clean preferences card at 390x844',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
@@ -49,16 +49,20 @@ void main() {
       expect(find.text('Good Kasama Points'), findsOneWidget);
       expect(find.text('Gold Tier'), findsOneWidget);
 
-      // Open My Household invite sheet
-      await tester.scrollUntilVisible(
-        find.text('My Household'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.text('My Household'));
+      // Removed legacy rows must not appear on ProfileScreen
+      expect(find.text('My Household'), findsNothing);
+      expect(find.text('Kasama Leaderboard'), findsNothing);
+
+      // Remaining menu rows are present
+      expect(find.text('Application Settings'), findsOneWidget);
+      expect(find.text('Privacy & Permissions'), findsOneWidget);
+      expect(find.text('About Casama'), findsOneWidget);
+
+      // Open Good Kasama Points Ledger sheet
+      await tester.tap(find.text('Good Kasama Points'));
       await tester.pumpAndSettle();
-      expect(find.text('Invite Your Housemates 🏡'), findsOneWidget);
-      await tester.tap(find.text('Close'));
+      expect(find.text('Kasama Points Ledger'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.close_rounded));
       await tester.pumpAndSettle();
 
       // Open About Casama modal
@@ -105,10 +109,19 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Kasama Leaderboard'), findsOneWidget);
+      expect(find.text('Casama Leaderboard'), findsOneWidget);
       expect(find.text('Good Kasama Rank'), findsOneWidget);
       expect(find.text('Household Standings'), findsOneWidget);
       expect(find.text('How to Earn Points'), findsOneWidget);
+      expect(find.text('Complete cleaning or restock task'), findsOneWidget);
+      expect(find.text('+7 to +11 pts'), findsOneWidget);
+      expect(find.text('Complete repair or personal request'), findsOneWidget);
+      expect(find.text('+10 to +14 pts'), findsOneWidget);
+      expect(find.text("Find & return a housemate's lost item"), findsOneWidget);
+      expect(find.text('+5 pts'), findsNWidgets(2));
+      expect(find.text('Post a found item claimed by a housemate'), findsOneWidget);
+      expect(find.text('+2 pts'), findsOneWidget);
+      expect(find.text('Locate and return lost item'), findsNothing);
       expect(tester.takeException(), isNull);
 
       // AppSettingsScreen in Dark Mode

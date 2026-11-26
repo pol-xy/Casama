@@ -168,7 +168,8 @@ class CasamaDirectionalSwitcher extends StatelessWidget {
 /// exit, `0.90` tactile press, and smooth icon/label morphing across sub-tabs.
 class CasamaMorphingFab extends StatelessWidget {
   final bool visible;
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
   final String label;
   final VoidCallback onPressed;
   final String? semanticLabel;
@@ -176,11 +177,12 @@ class CasamaMorphingFab extends StatelessWidget {
   const CasamaMorphingFab({
     super.key,
     required this.visible,
-    required this.icon,
+    this.icon,
+    this.iconWidget,
     required this.label,
     required this.onPressed,
     this.semanticLabel,
-  });
+  }) : assert(icon != null || iconWidget != null);
 
   @override
   Widget build(BuildContext context) {
@@ -237,12 +239,17 @@ class CasamaMorphingFab extends StatelessWidget {
                               duration: reduced
                                   ? Duration.zero
                                   : CasamaMotion.press,
-                              child: Icon(
-                                icon,
-                                key: ValueKey(icon.codePoint),
-                                color: Colors.white,
-                                size: 22,
-                              ),
+                              child: iconWidget != null
+                                  ? KeyedSubtree(
+                                      key: ValueKey('fab_icon_$label'),
+                                      child: iconWidget!,
+                                    )
+                                  : Icon(
+                                      icon!,
+                                      key: ValueKey(icon!.codePoint),
+                                      color: Colors.white,
+                                      size: 22,
+                                    ),
                             ),
                             const SizedBox(width: 8),
                             AnimatedSwitcher(

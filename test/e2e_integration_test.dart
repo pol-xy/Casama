@@ -21,7 +21,9 @@ import 'package:casama/features/settings/app_settings_screen.dart';
 import 'package:casama/features/parcels/parcels_screen.dart';
 import 'package:casama/features/items/lost_found_screen.dart';
 import 'package:casama/features/tasks/maintenance_screen.dart';
+import 'package:casama/features/quicksnap/quicksnap_feed_screen.dart';
 import 'package:casama/shared/widgets/cas_mascot_view.dart';
+import 'package:casama/shared/widgets/casama_lost_found_icon.dart';
 
 void main() {
   setUp(() {
@@ -81,8 +83,9 @@ void main() {
       expect(find.text('Tell Us About You'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
       expect(find.text('Nickname'), findsOneWidget);
-      expect(find.text('Birthday (Optional)'), findsOneWidget);
-      expect(find.text('Skip Profile for Now'), findsOneWidget);
+      expect(find.text('Birthday'), findsOneWidget);
+      expect(find.text('Skip Profile for Now'), findsNothing);
+      expect(find.textContaining('Terms & Privacy Policy'), findsOneWidget);
 
       // 4. Terms and Privacy Consent Screen
       await tester.pumpWidget(
@@ -108,6 +111,7 @@ void main() {
       expect(find.text('Device Permissions'), findsOneWidget);
       expect(find.text('Push Notifications'), findsOneWidget);
       expect(find.text('Camera & Photo Library'), findsOneWidget);
+      expect(find.text('Contacts Assistance'), findsNothing);
       expect(find.text('Save & Continue'), findsOneWidget);
 
       // 6. Casama Introduction Screen
@@ -244,8 +248,74 @@ void main() {
         }
 
         // Verify QuickSnap Camera screen is displayed
-        expect(find.text('Everyone'), findsOneWidget);
+        expect(find.text('Shared with Casa 204'), findsOneWidget);
         expect(find.text('History'), findsOneWidget);
+        expect(find.byKey(const Key('gallery_picker_button')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'C2. CASnap Highlights -> All CASnaps -> unified viewer -> multi-tap reactions & reactors sheet',
+      (tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final mockRepo = MockRepository();
+        mockRepo.sendQuickSnap(
+          imageUrl: 'offline_e2e_snap.jpg',
+          caption: 'Study session',
+        );
+        final snap = mockRepo.quickSnaps.first;
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+            child: const MaterialApp(home: QuickSnapFeedScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Highlights'), findsOneWidget);
+        expect(find.text('All CASnaps'), findsOneWidget);
+
+        // Switch to All CASnaps and tap thumbnail
+        await tester.tap(find.text('All CASnaps'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.bySemanticsLabel(
+            'Open photo by ${mockRepo.currentUser.displayName}',
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Multi-tap 🔥 3x and ❤️ 2x inside unified viewer
+        for (var i = 0; i < 3; i++) {
+          await tester.tap(find.bySemanticsLabel('React 🔥'));
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        for (var i = 0; i < 2; i++) {
+          await tester.tap(find.bySemanticsLabel('React ❤️'));
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        await tester.pump(const Duration(milliseconds: 1300));
+        await tester.pumpAndSettle();
+
+        expect(mockRepo.flushedReactionBatches.length, 1);
+        expect(mockRepo.flushedReactionBatches.single.deltas, {'🔥': 3, '❤️': 2});
+
+        await tester.tap(
+          find.byKey(ValueKey('casnap_reactions_pill_${snap.id}')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Reactions'), findsOneWidget);
+        expect(find.text('🔥-3'), findsOneWidget);
+        expect(find.text('❤️-2'), findsOneWidget);
       },
     );
 
@@ -292,8 +362,10 @@ void main() {
         await tester.enterText(find.byType(TextField), '');
         await tester.pumpAndSettle();
 
-        // Open Add Housemate modal via icon
-        await tester.tap(find.byIcon(Icons.person_add_alt_1_outlined));
+        // Header no longer has Add Housemate button; use in-body Add Housemate pill
+        expect(find.byIcon(Icons.person_add_alt_1_outlined), findsNothing);
+        await tester.ensureVisible(find.text('Add Housemate'));
+        await tester.tap(find.text('Add Housemate'));
         await tester.pumpAndSettle();
 
         expect(find.text('Find User'), findsOneWidget);
@@ -469,8 +541,8 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Shopee'), findsOneWidget);
-        expect(find.text('Lazada'), findsOneWidget);
+        expect(find.text('J&T Express'), findsOneWidget);
+        expect(find.text('Flash Express'), findsOneWidget);
 
         // 2. Lost & Found Board
         await tester.pumpWidget(
@@ -481,11 +553,27 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('Lost AirPods'), findsOneWidget);
+        expect(find.byType(CasamaLostFoundIcon), findsWidgets);
+        expect(find.byIcon(Icons.sell_outlined), findsNothing);
 
         // Switch to Found tab
         await tester.tap(find.text('Found'));
         await tester.pumpAndSettle();
         expect(find.text('Found Backpack'), findsOneWidget);
+
+        // Switch to My Activity tab and confirm filter pills
+        await tester.tap(find.text('My Activity'));
+        await tester.pumpAndSettle();
+        expect(find.text('All'), findsOneWidget);
+        expect(find.text('My Lost'), findsOneWidget);
+        expect(find.text('My Found'), findsOneWidget);
+        expect(find.text('Interactions'), findsOneWidget);
+        expect(find.text('Lost AirPods'), findsOneWidget);
+
+        // Switch to Resolved tab
+        await tester.tap(find.text('Resolved'));
+        await tester.pumpAndSettle();
+        expect(find.text('No resolved items yet'), findsOneWidget);
 
         // 3. Maintenance Board
         await tester.pumpWidget(
@@ -495,9 +583,18 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        expect(find.text('3 Open Tasks'), findsOneWidget);
+        expect(find.text('30 pts'), findsOneWidget);
+        expect(find.text('Across ongoing requests'), findsOneWidget);
         expect(find.text('Leaking Faucet'), findsOneWidget);
         expect(find.text('Buy Drinking Water'), findsOneWidget);
         expect(find.text('Defrost Freezer'), findsOneWidget);
+        expect(find.text('Ongoing Requests'), findsOneWidget);
+        expect(find.text('Completed Requests'), findsOneWidget);
+
+        await tester.tap(find.text('Completed Requests'));
+        await tester.pumpAndSettle();
+        expect(find.text('No completed requests yet'), findsOneWidget);
       },
     );
   });

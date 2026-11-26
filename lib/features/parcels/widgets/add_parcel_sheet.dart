@@ -33,20 +33,12 @@ class _AddParcelSheetBody extends ConsumerStatefulWidget {
 }
 
 class _AddParcelSheetBodyState extends ConsumerState<_AddParcelSheetBody> {
-  String _courier = 'Shopee';
+  String _courier = CasamaCouriers.defaultCourier;
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = const TimeOfDay(hour: 16, minute: 0);
   ParcelPaymentType _paymentType = ParcelPaymentType.cod;
   late final TextEditingController _codController;
   late final TextEditingController _notesController;
-
-  static const _couriers = [
-    'Shopee',
-    'Lazada',
-    'TikTok Shop',
-    'FedEx',
-    'Other',
-  ];
 
   @override
   void initState() {
@@ -128,7 +120,7 @@ class _AddParcelSheetBodyState extends ConsumerState<_AddParcelSheetBody> {
         DropdownButtonFormField<String>(
           initialValue: _courier,
           decoration: const InputDecoration(labelText: 'Courier'),
-          items: _couriers
+          items: CasamaCouriers.options
               .map((c) => DropdownMenuItem(value: c, child: Text(c)))
               .toList(),
           onChanged: (val) {

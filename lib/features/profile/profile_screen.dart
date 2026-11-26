@@ -16,7 +16,6 @@ import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../shared/widgets/casama_wave_header.dart';
-import '../../shared/widgets/invite_housemate_sheet.dart';
 import '../dashboard/main_navigation_shell.dart';
 import '../dashboard/widgets/casama_household_drawer.dart';
 import 'edit_profile_dialog.dart';
@@ -49,8 +48,8 @@ class ProfileScreen extends ConsumerWidget {
         user.nickname != null && user.nickname!.trim().isNotEmpty
         ? user.nickname!.trim()
         : 'Not set';
-    final ageText = user.age != null
-        ? '${user.age} years old'
+    final birthdayText = user.birthday != null
+        ? '${DateFormat('MMM d, y').format(user.birthday!)}${user.computedAge != null ? ' (${user.computedAge} yrs)' : ''}'
         : 'Not specified';
 
     return Scaffold(
@@ -65,14 +64,8 @@ class ProfileScreen extends ConsumerWidget {
               CasamaWaveHeader(
                 title: 'Profile',
                 subtitle: '${repo.currentHousehold.name} • Member',
+                showNotificationBell: true,
                 onMenuTap: () => _openDrawer(context),
-                rightActions: [
-                  CasamaCircleIconButton(
-                    icon: Icons.settings_outlined,
-                    semanticLabel: 'Settings',
-                    onTap: () => GoRouter.maybeOf(context)?.push('/settings'),
-                  ),
-                ],
               ),
 
               Center(
@@ -311,7 +304,7 @@ class ProfileScreen extends ConsumerWidget {
                                     ),
                                   ),
                                   IconButton(
-                                    tooltip: 'Leaderboard',
+                                    tooltip: 'Casama Leaderboard',
                                     icon: Icon(
                                       Icons.chevron_right_rounded,
                                       color: pal.textSecondary,
@@ -380,7 +373,10 @@ class ProfileScreen extends ConsumerWidget {
                                     value: nicknameText,
                                   ),
                                   Divider(height: 1, color: pal.divider),
-                                  _InfoRow(label: 'Age', value: ageText),
+                                  _InfoRow(
+                                    label: 'Birthday',
+                                    value: birthdayText,
+                                  ),
                                   Divider(height: 1, color: pal.divider),
                                   _InfoRow(
                                     label: 'Handle',
@@ -392,42 +388,11 @@ class ProfileScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: CasamaSpacing.md),
 
-                            // 5. Account & Household Menu Card
+                            // 5. Account & Preferences Menu Card
                             CasamaCard(
                               padding: EdgeInsets.zero,
                               child: Column(
                                 children: [
-                                  _ProfileMenuRow(
-                                    icon: Icons.cottage_outlined,
-                                    title: 'My Household',
-                                    subtitle:
-                                        '${repo.currentHousehold.name} • Invite or manage roommates',
-                                    onTap: () => showInviteHousemateSheet(
-                                      context,
-                                      householdName: repo.currentHousehold.name,
-                                      inviteCode:
-                                          repo.currentHousehold.inviteCode,
-                                    ),
-                                  ),
-                                  Divider(
-                                    height: 1,
-                                    indent: 64,
-                                    color: pal.divider,
-                                  ),
-                                  _ProfileMenuRow(
-                                    icon: Icons.leaderboard_outlined,
-                                    title: 'Kasama Leaderboard',
-                                    subtitle:
-                                        'Household standings & point rules',
-                                    onTap: () => GoRouter.maybeOf(
-                                      context,
-                                    )?.push('/leaderboard'),
-                                  ),
-                                  Divider(
-                                    height: 1,
-                                    indent: 64,
-                                    color: pal.divider,
-                                  ),
                                   _ProfileMenuRow(
                                     icon: Icons.settings_outlined,
                                     title: 'Application Settings',

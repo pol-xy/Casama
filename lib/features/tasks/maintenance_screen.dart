@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
-import '../../shared/widgets/casama_avatar.dart';
+import '../../shared/widgets/casama_filter_controls.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../../shared/widgets/status_chip.dart';
 import '../chore_roulette/widgets/task_roulette_sheet.dart';
@@ -62,6 +63,8 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
             CasamaWaveHeader(
               title: 'Household Tasks',
               subtitle: '${repo.currentHousehold.name} • Chores & requests',
+              titleMascotPose: CasPose.tasks,
+              extendedWave: true,
               compact: true,
               onBackTap: () =>
                   context.canPop() ? context.pop() : context.go('/boards'),
@@ -94,64 +97,30 @@ class TasksBoardView extends ConsumerStatefulWidget {
 }
 
 class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
-  DateTime? _cooldownUntil;
   String? _expandedTaskId;
+  int _selectedSegment = 0;
+  int _previousSegment = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadCooldown();
+  Future<void> _openRoulette(MaintenanceTask task) {
+    return showTaskRouletteSheet(context, task: task);
   }
 
-  Future<void> _loadCooldown() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final lastMs = prefs.getInt(rouletteLastSpinPrefKey);
-      if (lastMs != null) {
-        final until = DateTime.fromMillisecondsSinceEpoch(
-          lastMs,
-        ).add(const Duration(hours: 24));
-        if (until.isAfter(DateTime.now()) && mounted) {
-          setState(() => _cooldownUntil = until);
-        }
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _openRoulette([MaintenanceTask? task]) async {
-    await showTaskRouletteSheet(context, task: task);
-    if (mounted) _loadCooldown();
-  }
-
-  void _toggleTaskCompletion(MaintenanceTask task, bool currentlyDone) {
-    final uiNotifier = ref.read(taskUiOverridesProvider.notifier);
+  void _completeTask(MaintenanceTask task) {
+    if (task.status == TaskStatus.done) return;
     final repo = ref.read(repositoryProvider);
-
-    if (currentlyDone) {
-      uiNotifier.markUndone(task.id);
-      repo.updateTaskStatus(task.id, TaskStatus.open);
-      if (_expandedTaskId == task.id) {
-        setState(() => _expandedTaskId = null);
-      }
-      showCasamaToast(
-        context,
-        'Reopened "${task.title}"',
-        icon: Icons.replay_rounded,
-      );
-    } else {
-      uiNotifier.markDone(task.id);
-      if (task.status != TaskStatus.done) {
-        repo.completeTask(task.id);
-      }
-      if (_expandedTaskId == task.id) {
-        setState(() => _expandedTaskId = null);
-      }
-      showCasamaToast(
-        context,
-        'Completed "${task.title}" (+5 pts)',
-        icon: Icons.check_circle_outline_rounded,
-      );
+    final isOwnTask =
+        task.createdBy.isNotEmpty && task.createdBy == repo.currentUser.id;
+    repo.completeTask(task.id);
+    if (_expandedTaskId == task.id) {
+      setState(() => _expandedTaskId = null);
     }
+    showCasamaToast(
+      context,
+      isOwnTask
+          ? 'Task marked as done'
+          : 'Completed "${task.title}" (+${task.computedPoints} pts)',
+      icon: Icons.check_circle_outline_rounded,
+    );
   }
 
   @override
@@ -160,174 +129,209 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
     final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
     final overrides = ref.watch(taskUiOverridesProvider);
+    final currentUserId = repo.currentUser.id;
 
     final tasks = repo.tasks;
-    final openTasks = tasks.where((t) => !overrides.isTaskDone(t)).toList();
-    final completedTasks = tasks.where((t) => overrides.isTaskDone(t)).toList();
-    final urgentCount = openTasks
+    final ongoingTasks = tasks
+        .where((t) => t.status != TaskStatus.done)
+        .toList();
+    final completedTasks = tasks
+        .where((t) => t.status == TaskStatus.done)
+        .toList();
+    final lowCount = ongoingTasks
+        .where((t) => t.urgency == TaskUrgency.low)
+        .length;
+    final mediumCount = ongoingTasks
+        .where((t) => t.urgency == TaskUrgency.medium)
+        .length;
+    final urgentCount = ongoingTasks
         .where((t) => t.urgency == TaskUrgency.urgent)
         .length;
-    final orderedTasks = [...openTasks, ...completedTasks];
-
-    final bool onCooldown =
-        _cooldownUntil != null && _cooldownUntil!.isAfter(DateTime.now());
-    final Duration remaining = onCooldown
-        ? _cooldownUntil!.difference(DateTime.now())
-        : Duration.zero;
-    final String cooldownLabel = onCooldown
-        ? '${remaining.inHours}h ${(remaining.inMinutes % 60)}m cooldown'
-        : 'Ready to spin';
+    final totalOngoingPoints = ongoingTasks.fold<int>(
+      0,
+      (sum, t) => sum + t.computedPoints,
+    );
+    final visibleTasks = _selectedSegment == 0 ? ongoingTasks : completedTasks;
+    final emptyTitle = _selectedSegment == 0
+        ? 'No ongoing requests'
+        : 'No completed requests yet';
+    final emptySubtitle = _selectedSegment == 0
+        ? 'Tap "New task" to create a chore, repair, restock, or request.'
+        : 'Finished household tasks and chores will appear here.';
 
     return SingleChildScrollView(
-      padding: EdgeInsets.only(top: 46, bottom: widget.bottomPadding),
+      padding: EdgeInsets.only(top: 4, bottom: widget.bottomPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           CasamaPeekingSummaryBar(
-            mascotPose: CasPose.tasks,
-            leftTitle: '${openTasks.length} Open Tasks',
-            leftSubtitle: '$urgentCount urgent • ${tasks.length} total',
-            rightTitle: '${completedTasks.length} Done',
-            rightSubtitle: 'Completed log',
+            leftTitle: '${ongoingTasks.length} Open Tasks',
+            leftSubtitleWidget: Semantics(
+              container: true,
+              excludeSemantics: true,
+              label: '$lowCount low, $mediumCount medium, $urgentCount urgent',
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  _UrgencyCountBadge(
+                    count: lowCount,
+                    bg: pal.successBg,
+                    fg: pal.successFg,
+                  ),
+                  _UrgencyCountBadge(
+                    count: mediumCount,
+                    bg: pal.warningBg,
+                    fg: pal.warningFg,
+                  ),
+                  _UrgencyCountBadge(
+                    count: urgentCount,
+                    bg: pal.dangerBg,
+                    fg: pal.dangerFg,
+                  ),
+                ],
+              ),
+            ),
+            rightTitle: '$totalOngoingPoints pts',
+            rightSubtitle: 'Across ongoing requests',
             rightTitleColor: pal.forestTeal,
           ),
-          const SizedBox(height: CasamaSpacing.md),
+          const SizedBox(height: CasamaSpacing.xs),
 
-          // Task Roulette Quick-Launch Card
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.md),
-            child: CasamaCard(
-              onTap: () => _openRoulette(),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: pal.softBlush,
-                      borderRadius: CasamaSpacing.roundedMd,
-                      border: Border.all(
-                        color: pal.primaryCoral.withValues(alpha: 0.25),
+          CasamaSegmentedTrack<int>(
+            selectedValue: _selectedSegment,
+            onSelected: (next) => setState(() {
+              _previousSegment = _selectedSegment;
+              _selectedSegment = next;
+              _expandedTaskId = null;
+            }),
+            segments: const [
+              CasamaFilterOption(value: 0, label: 'Ongoing Requests'),
+              CasamaFilterOption(value: 1, label: 'Completed Requests'),
+            ],
+          ),
+          const SizedBox(height: CasamaSpacing.xs),
+
+          CasamaDirectionalSwitcher(
+            index: _selectedSegment,
+            previousIndex: _previousSegment,
+            child: visibleTasks.isEmpty
+                ? Padding(
+                    key: ValueKey('tasks_empty_$_selectedSegment'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
+                    ),
+                    child: CasamaCard(
+                      padding: const EdgeInsets.all(CasamaSpacing.xl),
+                      child: Column(
+                        children: [
+                          CasMascotView(
+                            pose: CasPose.tasks,
+                            height: 88,
+                            semanticLabel: 'Tasks Mascot',
+                          ),
+                          const SizedBox(height: CasamaSpacing.sm),
+                          Text(
+                            emptyTitle,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: pal.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            emptySubtitle,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: pal.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Icon(
-                      Icons.casino_outlined,
-                      color: pal.primaryCoral,
-                      size: 22,
+                  )
+                : Padding(
+                    key: ValueKey('tasks_list_$_selectedSegment'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CasamaSpacing.md,
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Chore & Task Roulette',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: pal.textPrimary,
+                        for (final task in visibleTasks) ...[
+                          _TaskCard(
+                            task: task,
+                            uiCategory: overrides.resolveCategory(task),
+                            isDone: task.status == TaskStatus.done,
+                            isOwnTask:
+                                task.createdBy.isNotEmpty &&
+                                task.createdBy == currentUserId,
+                            isExpanded:
+                                task.status != TaskStatus.done &&
+                                _expandedTaskId == task.id,
+                            onToggleExpand: () {
+                              if (task.status == TaskStatus.done) return;
+                              setState(() {
+                                _expandedTaskId = _expandedTaskId == task.id
+                                    ? null
+                                    : task.id;
+                              });
+                            },
+                            onMarkDone: task.status == TaskStatus.done
+                                ? null
+                                : () => _completeTask(task),
+                            onSpin: () => _openRoulette(task),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Need a fair pick? $cooldownLabel',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 12,
-                            color: onCooldown ? pal.warningFg : pal.textSecondary,
-                          ),
-                        ),
+                          const SizedBox(height: CasamaSpacing.xs),
+                        ],
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: onCooldown ? pal.track : pal.primaryCoral,
-                      borderRadius: CasamaSpacing.roundedPill,
-                    ),
-                    child: Text(
-                      onCooldown ? 'Cooldown' : 'Quick Spin',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: onCooldown
-                            ? pal.textSecondary
-                            : pal.onPrimaryCoral,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UrgencyCountBadge extends StatelessWidget {
+  final int count;
+  final Color bg;
+  final Color fg;
+
+  const _UrgencyCountBadge({
+    required this.count,
+    required this.bg,
+    required this.fg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: CasamaSpacing.roundedPill,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: fg,
+              shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(height: CasamaSpacing.md),
-
-          if (orderedTasks.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.md),
-              child: CasamaCard(
-                padding: const EdgeInsets.all(CasamaSpacing.xl),
-                child: Column(
-                  children: [
-                    CasMascotView(
-                      pose: CasPose.tasks,
-                      height: 88,
-                      semanticLabel: 'Tasks Mascot',
-                    ),
-                    const SizedBox(height: CasamaSpacing.sm),
-                    Text(
-                      'No household tasks yet',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: pal.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Tap "Add task" below to create a chore, repair, restock, or request.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: pal.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.md),
-              child: Column(
-                children: [
-                  for (final task in orderedTasks) ...[
-                    _TaskCard(
-                      task: task,
-                      uiCategory: overrides.resolveCategory(task),
-                      assigneeName: overrides.resolveAssignee(task),
-                      isDone: overrides.isTaskDone(task),
-                      isExpanded: _expandedTaskId == task.id,
-                      onToggleExpand: () {
-                        setState(() {
-                          _expandedTaskId = _expandedTaskId == task.id
-                              ? null
-                              : task.id;
-                        });
-                      },
-                      onToggleDone: () => _toggleTaskCompletion(
-                        task,
-                        overrides.isTaskDone(task),
-                      ),
-                      onSpin: () => _openRoulette(task),
-                    ),
-                    const SizedBox(height: CasamaSpacing.xs),
-                  ],
-                ],
-              ),
+          const SizedBox(width: 4),
+          Text(
+            '$count',
+            style: Theme.of(context).textTheme.labelSmall?.tabular.copyWith(
+              color: fg,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
             ),
+          ),
         ],
       ),
     );
@@ -337,21 +341,21 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
 class _TaskCard extends StatelessWidget {
   final MaintenanceTask task;
   final CasamaTaskUiCategory uiCategory;
-  final String? assigneeName;
   final bool isDone;
+  final bool isOwnTask;
   final bool isExpanded;
   final VoidCallback onToggleExpand;
-  final VoidCallback onToggleDone;
+  final VoidCallback? onMarkDone;
   final VoidCallback onSpin;
 
   const _TaskCard({
     required this.task,
     required this.uiCategory,
-    required this.assigneeName,
     required this.isDone,
+    required this.isOwnTask,
     required this.isExpanded,
     required this.onToggleExpand,
-    required this.onToggleDone,
+    required this.onMarkDone,
     required this.onSpin,
   });
 
@@ -365,11 +369,20 @@ class _TaskCard extends StatelessWidget {
         : const Duration(milliseconds: 200);
 
     final (Color catBg, Color catFg) = uiCategory.badgeColors(pal);
-    final bool hasAssignee =
-        assigneeName != null && assigneeName!.trim().isNotEmpty;
-    final String subtitle = hasAssignee
-        ? '${uiCategory.shortLabel} • $assigneeName'
-        : '${uiCategory.shortLabel} • Unassigned';
+    final String subtitle;
+    if (isDone) {
+      final completer =
+          task.completedByName != null &&
+              task.completedByName!.trim().isNotEmpty
+          ? task.completedByName!.trim()
+          : 'Housemate';
+      subtitle = '${uiCategory.shortLabel} • Completed by $completer';
+    } else {
+      final dueSuffix = task.dueDate != null
+          ? ' • Due ${DateFormat('MMM d').format(task.dueDate!)}'
+          : '';
+      subtitle = '${uiCategory.shortLabel} • By ${task.createdByName}$dueSuffix';
+    }
 
     final (ChipVariant urgVariant, String urgLabel) = switch (task.urgency) {
       TaskUrgency.low => (ChipVariant.low, 'Low'),
@@ -377,9 +390,75 @@ class _TaskCard extends StatelessWidget {
       TaskUrgency.urgent => (ChipVariant.urgent, 'Urgent'),
     };
 
+    final headerContent = ConstrainedBox(
+      constraints: const BoxConstraints(
+        minHeight: CasamaSpacing.minTouchTarget,
+      ),
+      child: Row(
+        children: [
+          if (!isDone) ...[
+            AnimatedRotation(
+              turns: isExpanded ? 0.5 : 0.0,
+              duration: animDuration,
+              curve: CasamaMotion.easeOut,
+              child: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 22,
+                color: isExpanded ? pal.forestTeal : pal.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: catBg,
+              borderRadius: CasamaSpacing.roundedSm,
+            ),
+            child: Icon(uiCategory.icon, size: 17, color: catFg),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  task.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: isDone ? pal.textMuted : pal.textPrimary,
+                    decoration: isDone ? TextDecoration.lineThrough : null,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12,
+                    color: pal.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          StatusChip(
+            label: isDone ? 'Done' : urgLabel,
+            variant: isDone ? ChipVariant.paid : urgVariant,
+          ),
+        ],
+      ),
+    );
+
     return CasamaCard(
-      padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
-      borderSide: isExpanded
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      borderSide: !isDone && isExpanded
           ? BorderSide(
               color: pal.forestTeal.withValues(alpha: 0.45),
               width: 1.4,
@@ -388,133 +467,40 @@ class _TaskCard extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              // Independent 48x48dp completion checkbox
-              Semantics(
-                button: true,
-                checked: isDone,
-                label: isDone
-                    ? 'Mark ${task.title} undone'
-                    : 'Mark ${task.title} done',
-                child: CasamaPressable(
-                  onTap: onToggleDone,
-                  enableHaptic: true,
-                  child: SizedBox(
-                    width: CasamaSpacing.minTouchTarget,
-                    height: CasamaSpacing.minTouchTarget,
-                    child: Center(
-                      child: AnimatedContainer(
-                        duration: animDuration,
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: isDone ? pal.forestTeal : pal.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isDone ? pal.forestTeal : pal.inputBorder,
-                            width: 1.6,
-                          ),
-                        ),
-                        child: isDone
-                            ? Icon(
-                                Icons.check_rounded,
-                                size: 16,
-                                color: pal.onForestTeal,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-                ),
+          if (!isDone)
+            Semantics(
+              button: true,
+              expanded: isExpanded,
+              label: '${task.title}, $subtitle',
+              child: CasamaPressable(
+                onTap: onToggleExpand,
+                enableHaptic: false,
+                child: headerContent,
               ),
-
-              // Card body tap -> smooth expand/collapse inline tray
-              Expanded(
-                child: CasamaPressable(
-                  onTap: onToggleExpand,
-                  enableHaptic: false,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: catBg,
-                            borderRadius: CasamaSpacing.roundedSm,
-                          ),
-                          child: Icon(uiCategory.icon, size: 17, color: catFg),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                task.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: isDone
-                                      ? pal.textMuted
-                                      : pal.textPrimary,
-                                  decoration: isDone
-                                      ? TextDecoration.lineThrough
-                                      : null,
-                                  height: 1.25,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontSize: 12,
-                                  color: hasAssignee
-                                      ? pal.textSecondary
-                                      : pal.textMuted,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        StatusChip(
-                          label: isDone ? 'Done' : urgLabel,
-                          variant: isDone ? ChipVariant.paid : urgVariant,
-                        ),
-                        if (hasAssignee) ...[
-                          const SizedBox(width: 6),
-                          CasamaAvatar(radius: 13, name: assigneeName!),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          // Inline collapsible tray (`Spin` + `Mark as Done` or `Mark Undone`)
-          if (reduceMotion) ...[
-            if (isExpanded) _buildExpandedTray(pal),
-          ] else
-            AnimatedSize(
-              duration: animDuration,
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: AnimatedOpacity(
-                duration: animDuration,
-                opacity: isExpanded ? 1.0 : 0.0,
-                child: isExpanded
-                    ? _buildExpandedTray(pal)
-                    : const SizedBox.shrink(),
-              ),
+            )
+          else
+            Semantics(
+              label: '${task.title}, $subtitle',
+              child: headerContent,
             ),
+
+          if (!isDone) ...[
+            if (reduceMotion) ...[
+              if (isExpanded) _buildExpandedTray(pal),
+            ] else
+              AnimatedSize(
+                duration: animDuration,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: AnimatedOpacity(
+                  duration: animDuration,
+                  opacity: isExpanded ? 1.0 : 0.0,
+                  child: isExpanded
+                      ? _buildExpandedTray(pal)
+                      : const SizedBox.shrink(),
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -528,42 +514,32 @@ class _TaskCard extends StatelessWidget {
         children: [
           Divider(height: 1, color: pal.divider),
           const SizedBox(height: 10),
-          if (!isDone)
-            Row(
-              children: [
-                Expanded(
-                  child: _TaskTrayButton(
-                    label: 'Spin',
-                    icon: Icons.casino_outlined,
-                    bg: pal.softBlush,
-                    fg: pal.primaryCoral,
-                    borderColor: pal.primaryCoral.withValues(alpha: 0.25),
-                    onTap: onSpin,
-                  ),
+          Row(
+            children: [
+              Expanded(
+                child: _TaskTrayButton(
+                  label: 'Spin',
+                  icon: Icons.casino_outlined,
+                  bg: pal.softBlush,
+                  fg: pal.primaryCoral,
+                  borderColor: pal.primaryCoral.withValues(alpha: 0.25),
+                  onTap: onSpin,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: _TaskTrayButton(
-                    label: 'Mark as Done',
-                    trailingBadge: '+5 pts',
-                    icon: Icons.check_circle_outline_rounded,
-                    bg: pal.forestTeal,
-                    fg: pal.onForestTeal,
-                    onTap: onToggleDone,
-                  ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _TaskTrayButton(
+                  label: 'Mark as Done',
+                  trailingBadge: isOwnTask ? null : '+${task.computedPoints} pts',
+                  icon: Icons.check_circle_outline_rounded,
+                  bg: pal.forestTeal,
+                  fg: pal.onForestTeal,
+                  onTap: onMarkDone ?? () {},
                 ),
-              ],
-            )
-          else
-            _TaskTrayButton(
-              label: 'Mark Undone',
-              icon: Icons.replay_rounded,
-              bg: pal.track,
-              fg: pal.textPrimary,
-              borderColor: pal.border,
-              onTap: onToggleDone,
-            ),
+              ),
+            ],
+          ),
         ],
       ),
     );

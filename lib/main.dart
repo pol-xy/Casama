@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -62,13 +64,41 @@ void main() async {
   );
 }
 
-class CasamaApp extends ConsumerWidget {
+class CasamaApp extends ConsumerStatefulWidget {
   final GoRouter? router;
 
   const CasamaApp({super.key, this.router});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CasamaApp> createState() => _CasamaAppState();
+}
+
+class _CasamaAppState extends ConsumerState<CasamaApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      unawaited(ref.read(repositoryProvider).flushPendingSnapReactions());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     ref.listen(repositoryProvider, (_, repo) {
       final err = repo.consumePendingError();
@@ -104,7 +134,7 @@ class CasamaApp extends ConsumerWidget {
       theme: CasamaTheme.lightTheme,
       darkTheme: CasamaTheme.darkTheme,
       themeMode: themeMode,
-      routerConfig: router ?? appRouter,
+      routerConfig: widget.router ?? appRouter,
     );
   }
 }

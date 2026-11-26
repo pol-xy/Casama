@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'models.dart';
 
@@ -11,6 +12,7 @@ abstract class CasamaRepository extends ChangeNotifier {
   bool get hasActiveHousehold;
   UserProfile get currentUser;
   Household get currentHousehold;
+  List<Household> get userHouseholds;
   int get kasamaPoints;
   String get effectiveGreetingName;
   DateTime? get lastRouletteSpinAt;
@@ -66,13 +68,13 @@ abstract class CasamaRepository extends ChangeNotifier {
     String? handle,
     String? fullName,
     String? nickname,
-    int? age,
-    DateTime? birthDate,
+    DateTime? birthday,
     String? avatarUrl,
+    bool? hasConsentedTerms,
+    bool? hasCompletedOnboarding,
     bool clearAvatar = false,
     bool clearNickname = false,
-    bool clearAge = false,
-    bool clearBirthDate = false,
+    bool clearBirthday = false,
   });
   void updateNotificationPreferences({
     bool? householdUpdates,
@@ -86,6 +88,8 @@ abstract class CasamaRepository extends ChangeNotifier {
   // Households & Setup
   Future<Household> createHousehold({required String name});
   Future<Household> joinHouseholdByCode(String inviteCode);
+  Future<void> switchHousehold(String householdId);
+  Future<void> refreshUserHouseholds();
 
   // Presence
   void updatePresence({required bool isHome, String? note});
@@ -119,7 +123,6 @@ abstract class CasamaRepository extends ChangeNotifier {
     required String title,
     required TaskCategory category,
     required TaskUrgency urgency,
-    String? assigneeName,
     String? description,
     DateTime? dueDate,
   });
@@ -141,17 +144,28 @@ abstract class CasamaRepository extends ChangeNotifier {
     required ItemType type,
     required String title,
     String? description,
+    String? location,
     String? imageUrl,
     Uint8List? imageBytes,
   });
-  void borrowItem(String itemId);
-  void claimItem(String itemId);
-  void returnItem(String itemId);
+  Future<String?> submitLostItemFind({
+    required LostFoundItem lostItem,
+    String? foundLocation,
+    String? description,
+    String? imageUrl,
+    Uint8List? imageBytes,
+    XFile? imageFile,
+  });
+  Future<String?> acceptLostItemFind(String foundItemId);
+  Future<String?> rejectLostItemFind(String foundItemId);
+  Future<String?> resolveOwnLostItem(String lostItemId);
+  Future<String?> claimStandaloneFoundItem(String foundItemId);
 
   // Chat & Messaging
   void markGroupChatAsRead();
   void markSpaceChatAsRead(String spaceId);
   void markDirectChatAsRead(String contactKey);
+  void markNotificationAsRead(String notificationId);
   void markAllNotificationsAsRead();
   void addMemberToSpace(String spaceId, String memberName);
   ChatSpace createChatSpace({
@@ -173,6 +187,8 @@ abstract class CasamaRepository extends ChangeNotifier {
   void sendChatMessage(
     String content, {
     String? mediaUrl,
+    XFile? attachmentFile,
+    String? clientMessageId,
     String? inviteCode,
     String? inviteSpaceName,
   });
@@ -180,14 +196,21 @@ abstract class CasamaRepository extends ChangeNotifier {
     String contactKey,
     String content, {
     String? mediaUrl,
+    XFile? attachmentFile,
+    String? clientMessageId,
   });
   void sendSpaceMessage(
     String spaceId,
     String content, {
     String? mediaUrl,
+    XFile? attachmentFile,
+    String? clientMessageId,
     String? inviteCode,
     String? inviteSpaceName,
   });
+  void retryGroupMessage(String messageId);
+  void retrySpaceMessage(String spaceId, String messageId);
+  void retryDirectMessage(String contactKey, String messageId);
   Future<void> createMeetUp({
     required String activity,
     required String location,
@@ -242,9 +265,9 @@ abstract class CasamaRepository extends ChangeNotifier {
     required String imageUrl,
     Uint8List? imageBytes,
     String? caption,
-    QuickSnapRecipientType recipientType = QuickSnapRecipientType.everyone,
-    List<String> recipientNames = const [],
   });
+  void queueQuickSnapReaction(String snapId, String emoji);
+  Future<void> flushPendingSnapReactions();
   void reactToQuickSnap(String snapId, String emoji);
   void commentOnQuickSnap(String snapId, String text);
   void deleteQuickSnap(String snapId);

@@ -5,6 +5,7 @@ import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../core/theme/app_theme.dart';
 import 'cas_mascot_view.dart';
+import 'casama_notifications_sheet.dart';
 
 /// Stepped Forest-Teal-to-Warm-Beige organic wave header matching
 /// `core_screens.html` & `casama-app-mockup.html`, with celestial gold rings,
@@ -16,9 +17,12 @@ class CasamaWaveHeader extends StatelessWidget {
   final VoidCallback? onBackTap;
   final VoidCallback? onNotificationTap;
   final int unreadNotificationCount;
+  final bool showNotificationBell;
   final List<Widget> rightActions;
   final Widget? embeddedTabBar;
   final Widget? bottomHero;
+  final CasPose? titleMascotPose;
+  final bool extendedWave;
   final bool compact;
 
   const CasamaWaveHeader({
@@ -29,9 +33,12 @@ class CasamaWaveHeader extends StatelessWidget {
     this.onBackTap,
     this.onNotificationTap,
     this.unreadNotificationCount = 0,
+    this.showNotificationBell = false,
     this.rightActions = const [],
     this.embeddedTabBar,
     this.bottomHero,
+    this.titleMascotPose,
+    this.extendedWave = false,
     this.compact = false,
   });
 
@@ -40,6 +47,10 @@ class CasamaWaveHeader extends StatelessWidget {
     final pal = context.palette;
     final theme = Theme.of(context);
     final topPad = MediaQuery.paddingOf(context).top;
+    final reduced = CasamaMotion.reduceMotion(context);
+    final double bottomPad = (extendedWave || embeddedTabBar != null)
+        ? 44
+        : (compact ? 26 : 38);
 
     return Stack(
       clipBehavior: Clip.none,
@@ -61,7 +72,7 @@ class CasamaWaveHeader extends StatelessWidget {
             CasamaSpacing.md,
             topPad + 12,
             CasamaSpacing.md,
-            compact ? 26 : 38,
+            bottomPad,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,11 +99,16 @@ class CasamaWaveHeader extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (final action in rightActions) ...[
-                        action,
-                        const SizedBox(width: CasamaSpacing.xs),
+                      for (var i = 0; i < rightActions.length; i++) ...[
+                        if (i > 0) const SizedBox(width: CasamaSpacing.xs),
+                        rightActions[i],
                       ],
-                      if (onNotificationTap != null)
+                      if (rightActions.isNotEmpty &&
+                          (showNotificationBell || onNotificationTap != null))
+                        const SizedBox(width: CasamaSpacing.xs),
+                      if (showNotificationBell)
+                        const CasamaNotificationBellButton()
+                      else if (onNotificationTap != null)
                         CasamaCircleIconButton(
                           icon: Icons.notifications_none_rounded,
                           semanticLabel: unreadNotificationCount > 0
@@ -105,32 +121,64 @@ class CasamaWaveHeader extends StatelessWidget {
                   ),
                 ],
               ),
-              if (embeddedTabBar != null) ...[
-                const SizedBox(height: CasamaSpacing.sm),
-                embeddedTabBar!,
-              ],
-              const SizedBox(height: CasamaSpacing.sm),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.headlineLarge?.copyWith(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (subtitle != null && subtitle!.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  subtitle!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: pal.headerSubtitle,
-                    fontSize: 13,
+              const SizedBox(height: 10),
+              // Heading + Leveled Mascot Row
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.headlineLarge?.copyWith(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (subtitle != null && subtitle!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: pal.headerSubtitle,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
+                  if (titleMascotPose != null) ...[
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 60,
+                      height: 60,
+                      child: AnimatedSwitcher(
+                        duration: reduced
+                            ? Duration.zero
+                            : const Duration(milliseconds: 200),
+                        child: CasMascotView(
+                          key: ValueKey(titleMascotPose),
+                          pose: titleMascotPose!,
+                          width: 60,
+                          height: 60,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              if (embeddedTabBar != null) ...[
+                const SizedBox(height: 12),
+                embeddedTabBar!,
               ],
               if (bottomHero != null) ...[
                 const SizedBox(height: CasamaSpacing.sm),
@@ -225,18 +273,20 @@ class CasamaCircleIconButton extends StatelessWidget {
 /// Compact pill button used inside `CasamaWaveHeader.rightActions` (e.g.,
 /// `Spin Roulette`, `Setup Billing`) with minimum `44dp` height and press feedback.
 class CasamaHeaderActionPill extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
   final String label;
   final Color? iconColor;
   final VoidCallback onTap;
 
   const CasamaHeaderActionPill({
     super.key,
-    required this.icon,
+    this.icon,
+    this.iconWidget,
     required this.label,
     required this.onTap,
     this.iconColor,
-  });
+  }) : assert(icon != null || iconWidget != null);
 
   @override
   Widget build(BuildContext context) {
@@ -265,7 +315,16 @@ class CasamaHeaderActionPill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 16, color: iconColor ?? pal.forestTeal),
+              if (iconWidget != null)
+                IconTheme(
+                  data: IconThemeData(
+                    color: iconColor ?? pal.forestTeal,
+                    size: 16,
+                  ),
+                  child: iconWidget!,
+                )
+              else
+                Icon(icon!, size: 16, color: iconColor ?? pal.forestTeal),
               const SizedBox(width: 6),
               Text(
                 label,
@@ -520,21 +579,29 @@ class CasamaCard extends StatelessWidget {
 /// cleanly *behind* the opaque summary card's upper-right edge (no borders or
 /// shadow box around the mascot).
 class CasamaPeekingSummaryBar extends StatelessWidget {
-  final CasPose mascotPose;
+  final CasPose? mascotPose;
+  final bool showPeekingMascot;
   final String leftTitle;
   final String leftSubtitle;
+  final Widget? leftSubtitleWidget;
   final String rightTitle;
   final String rightSubtitle;
   final Color? rightTitleColor;
+  final Color? rightSubtitleColor;
+  final double? rightTitleFontSize;
 
   const CasamaPeekingSummaryBar({
     super.key,
-    required this.mascotPose,
+    this.mascotPose,
+    this.showPeekingMascot = false,
     required this.leftTitle,
-    required this.leftSubtitle,
+    this.leftSubtitle = '',
+    this.leftSubtitleWidget,
     required this.rightTitle,
     required this.rightSubtitle,
     this.rightTitleColor,
+    this.rightSubtitleColor,
+    this.rightTitleFontSize,
   });
 
   @override
@@ -547,18 +614,18 @@ class CasamaPeekingSummaryBar extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Mascot painted first so the opaque card below masks its lower body
-          Positioned(
-            right: 18,
-            top: -46,
-            child: IgnorePointer(
-              child: CasMascotView(
-                pose: mascotPose,
-                width: 76,
-                height: 76,
+          if (showPeekingMascot && mascotPose != null)
+            Positioned(
+              right: 18,
+              top: -46,
+              child: IgnorePointer(
+                child: CasMascotView(
+                  pose: mascotPose!,
+                  width: 76,
+                  height: 76,
+                ),
               ),
             ),
-          ),
           Container(
             width: double.infinity,
             decoration: BoxDecoration(
@@ -593,16 +660,19 @@ class CasamaPeekingSummaryBar extends StatelessWidget {
                           color: pal.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        leftSubtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontSize: 11.5,
-                          color: pal.textSecondary,
+                      const SizedBox(height: 4),
+                      if (leftSubtitleWidget != null)
+                        leftSubtitleWidget!
+                      else
+                        Text(
+                          leftSubtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontSize: 11.5,
+                            color: pal.textSecondary,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -622,19 +692,19 @@ class CasamaPeekingSummaryBar extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium?.tabular.copyWith(
-                          fontSize: 17,
+                          fontSize: rightTitleFontSize ?? 17,
                           fontWeight: FontWeight.w700,
                           color: rightTitleColor ?? pal.forestTeal,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         rightSubtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelMedium?.copyWith(
+                        style: theme.textTheme.labelMedium?.tabular.copyWith(
                           fontSize: 11.5,
-                          color: pal.textSecondary,
+                          color: rightSubtitleColor ?? pal.textSecondary,
                         ),
                       ),
                     ],

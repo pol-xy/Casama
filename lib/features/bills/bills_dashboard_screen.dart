@@ -32,6 +32,8 @@ class BillsDashboardScreen extends ConsumerWidget {
               title: 'Bills & Payments',
               subtitle:
                   '${repo.currentHousehold.name} • Shared utilities & due dates',
+              titleMascotPose: CasPose.chatting,
+              extendedWave: true,
               compact: true,
               onBackTap: () =>
                   context.canPop() ? context.pop() : context.go('/boards'),
@@ -117,22 +119,48 @@ class _BillsBoardViewState extends ConsumerState<BillsBoardView> {
       const CasamaFilterOption(value: 'Paid', label: 'Paid'),
     ];
 
+    final sortedOutstanding = List<HouseholdBill>.from(outstandingBills)
+      ..sort((a, b) => a.deadline.compareTo(b.deadline));
+    final HouseholdBill? nearestBill =
+        sortedOutstanding.isNotEmpty ? sortedOutstanding.first : null;
+    final bool isNearestOverdue =
+        nearestBill != null && nearestBill.effectiveStatus == BillStatus.overdue;
+    final String nearestRightTitle;
+    final String nearestRightSubtitle;
+    final Color nearestRightTitleColor;
+    final Color? nearestRightSubtitleColor;
+    if (nearestBill != null) {
+      final shortDate = DateFormat('MMM d').format(nearestBill.deadline);
+      final amountSuffix = nearestBill.amount != null
+          ? ' • ₱${NumberFormat('#,##0.##').format(nearestBill.amount!)}'
+          : '';
+      nearestRightTitle = nearestBill.effectiveBillName;
+      nearestRightSubtitle = isNearestOverdue
+          ? 'Overdue $shortDate$amountSuffix'
+          : 'Due $shortDate$amountSuffix';
+      nearestRightTitleColor = isNearestOverdue ? pal.dangerFg : pal.forestTeal;
+      nearestRightSubtitleColor = isNearestOverdue ? pal.dangerFg : null;
+    } else {
+      nearestRightTitle = 'No upcoming';
+      nearestRightSubtitle = 'All bills settled';
+      nearestRightTitleColor = pal.successFg;
+      nearestRightSubtitleColor = null;
+    }
+
     return SingleChildScrollView(
-      padding: EdgeInsets.only(top: 46, bottom: widget.bottomPadding),
+      padding: EdgeInsets.only(top: 4, bottom: widget.bottomPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           CasamaPeekingSummaryBar(
-            mascotPose: CasPose.chatting,
             leftTitle: '₱${NumberFormat('#,##0.00').format(totalDueAmount)} Due',
             leftSubtitle:
                 '${outstandingBills.length} unpaid bill${outstandingBills.length == 1 ? '' : 's'}',
-            rightTitle: '${overdueBills.length} Overdue',
-            rightSubtitle: overdueBills.isNotEmpty
-                ? overdueBills.first.effectiveBillName
-                : 'No overdue bills',
-            rightTitleColor:
-                overdueBills.isNotEmpty ? pal.dangerFg : pal.forestTeal,
+            rightTitle: nearestRightTitle,
+            rightSubtitle: nearestRightSubtitle,
+            rightTitleColor: nearestRightTitleColor,
+            rightSubtitleColor: nearestRightSubtitleColor,
+            rightTitleFontSize: 15.5,
           ),
           const SizedBox(height: CasamaSpacing.xs),
 

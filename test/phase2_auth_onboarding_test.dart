@@ -8,6 +8,7 @@ import 'package:casama/features/household/household_setup_screen.dart';
 import 'package:casama/features/onboarding/casama_intro_screen.dart';
 import 'package:casama/features/onboarding/device_permissions_screen.dart';
 import 'package:casama/features/onboarding/interactive_tutorial_screen.dart';
+import 'package:casama/features/profile/profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -196,6 +197,131 @@ void main() {
       await tester.tap(find.byKey(const Key('center_quicksnap_shutter_button')));
       await tester.pumpAndSettle();
       expect(find.text('3. CASnap Household Camera'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Onboarding enforces profile & Terms validation, persists birthday/consent/onboarding flags, and reflects on ProfileScreen',
+    (tester) async {
+      final repo = MockRepository()..logout();
+      repo.register(email: 'clara@casama.app', password: 'password123');
+
+      final router = GoRouter(
+        initialLocation: '/profile-setup',
+        routes: [
+          GoRoute(
+            path: '/profile-setup',
+            builder: (context, state) => const OptionalProfileScreen(),
+          ),
+          GoRoute(
+            path: '/household-setup',
+            builder: (context, state) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () => context.push('/permissions'),
+                  child: const Text('Go Permissions'),
+                ),
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/permissions',
+            builder: (context, state) =>
+                const DevicePermissionsScreen(isOnboarding: true),
+          ),
+          GoRoute(
+            path: '/intro',
+            builder: (context, state) => const CasamaIntroScreen(),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp.router(
+            theme: CasamaTheme.lightTheme,
+            routerConfig: router,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Empty submit should block progression and show inline errors
+      await tester.ensureVisible(find.text('Save & Continue'));
+      await tester.tap(find.text('Save & Continue'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Please enter your full name'), findsOneWidget);
+      expect(find.text('Please enter your nickname'), findsOneWidget);
+      expect(find.text('Please select your complete birthday'), findsOneWidget);
+      expect(
+        find.text('Please agree to the Terms & Privacy Policy'),
+        findsOneWidget,
+      );
+      expect(find.text('Go Permissions'), findsNothing);
+
+      // Fill Full Name, Nickname, Birthday via calendar picker, and accept Terms
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Enter your full name'),
+        'Clara Reyes',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Enter your nickname'),
+        'Clar',
+      );
+      await tester.ensureVisible(find.byTooltip('Pick date from calendar'));
+      await tester.tap(find.byTooltip('Pick date from calendar'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      final termsFinder = find.bySemanticsLabel(
+        'I agree to the Terms & Privacy Policy',
+      );
+      await tester.ensureVisible(termsFinder);
+      await tester.tapAt(
+        tester.getTopLeft(termsFinder) + const Offset(12, 20),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Save & Continue'));
+      await tester.tap(find.text('Save & Continue'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Go Permissions'), findsOneWidget);
+      expect(repo.currentUser.fullName, 'Clara Reyes');
+      expect(repo.currentUser.nickname, 'Clar');
+      expect(repo.currentUser.birthday, isNotNull);
+      expect(repo.currentUser.hasConsentedTerms, isTrue);
+
+      // Step 4: DevicePermissionsScreen (no Contacts Assistance)
+      await tester.tap(find.text('Go Permissions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Contacts Assistance'), findsNothing);
+
+      await tester.ensureVisible(find.text('Save & Continue'));
+      await tester.tap(find.text('Save & Continue'));
+      await tester.pumpAndSettle();
+
+      expect(repo.currentUser.hasCompletedOnboarding, isTrue);
+      expect(find.byType(CasamaIntroScreen), findsOneWidget);
+
+      // Verify ProfileScreen immediately reflects saved data
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp(
+            theme: CasamaTheme.lightTheme,
+            home: const ProfileScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Clara Reyes'), findsWidgets);
+      expect(find.text('Clar'), findsWidgets);
+      expect(find.text('Birthday'), findsOneWidget);
+      expect(find.text('Not specified'), findsNothing);
     },
   );
 }

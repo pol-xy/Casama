@@ -185,7 +185,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           _showResendVerification = false;
           _resendCooldownSeconds = 0;
         });
-        context.go(repo.hasActiveHousehold ? '/dashboard' : '/household-setup');
+        if (repo.hasActiveHousehold) {
+          context.go('/dashboard');
+        } else if (!repo.currentUser.hasCompletedOnboarding &&
+            (!repo.currentUser.hasConsentedTerms ||
+                repo.currentUser.birthday == null)) {
+          context.go('/profile-setup');
+        } else {
+          context.go('/household-setup');
+        }
       }
     } catch (e) {
       if (kDebugMode) {
@@ -219,7 +227,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       await repo.signInWithDemoAccount();
       if (mounted) {
         setState(() => _isLoginLoading = false);
-        context.go(repo.hasActiveHousehold ? '/dashboard' : '/household-setup');
+        if (repo.hasActiveHousehold) {
+          context.go('/dashboard');
+        } else if (!repo.currentUser.hasCompletedOnboarding &&
+            (!repo.currentUser.hasConsentedTerms ||
+                repo.currentUser.birthday == null)) {
+          context.go('/profile-setup');
+        } else {
+          context.go('/household-setup');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -266,8 +282,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         }
         return;
       }
-
-      repo.recordTermsConsent();
 
       if (mounted) {
         setState(() => _isRegisterLoading = false);

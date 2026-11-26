@@ -11,6 +11,7 @@ import '../../../core/motion/casama_motion.dart';
 import '../../../data/models.dart';
 import '../../../data/repository_provider.dart';
 import '../../../shared/widgets/casama_button.dart';
+import '../../../shared/widgets/casama_lost_found_icon.dart';
 import '../../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../../shared/widgets/casama_text_field.dart';
 
@@ -22,7 +23,7 @@ Future<void> showReportItemSheet(
 }) {
   return showCasamaSheet<void>(
     context,
-    icon: Icons.sell_outlined,
+    iconWidget: const CasamaLostFoundIcon(size: 24),
     title: 'Report an Item',
     subtitle: 'Post a lost or found item',
     builder: (sheetCtx) =>
@@ -104,8 +105,10 @@ class _ReportItemSheetBodyState extends ConsumerState<_ReportItemSheetBody> {
         .postItem(
           title: title,
           description: desc.isEmpty ? 'Posted via Casama' : desc,
+          location: desc.isEmpty ? null : desc,
           type: _selectedType,
           imageUrl: _pickedImageBase64,
+          imageBytes: _pickedImageBytes,
         );
 
     Navigator.of(context).pop();

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
@@ -33,6 +32,7 @@ class DirectChatScreen extends ConsumerStatefulWidget {
 class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  XFile? _pendingAttachment;
 
   @override
   void initState() {
@@ -53,10 +53,16 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
 
   void _sendMessage() {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    final attachment = _pendingAttachment;
+    if (text.isEmpty && attachment == null) return;
 
-    ref.read(repositoryProvider).sendDirectMessage(widget.contactKey, text);
     _messageController.clear();
+    if (_pendingAttachment != null) {
+      setState(() => _pendingAttachment = null);
+    }
+    ref
+        .read(repositoryProvider)
+        .sendDirectMessage(widget.contactKey, text, attachmentFile: attachment);
     _scrollToBottom();
   }
 
@@ -77,26 +83,16 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
     });
   }
 
-  Future<void> _pickAndSendImage(ImageSource source) async {
+  Future<void> _pickAttachment(ImageSource source) async {
     try {
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: source,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 85,
+        maxWidth: 1440,
+        imageQuality: 80,
       );
       if (picked != null && mounted) {
-        final bytes = await picked.readAsBytes();
-        final base64String = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-        ref
-            .read(repositoryProvider)
-            .sendDirectMessage(
-              widget.contactKey,
-              '📷 Photo attached',
-              mediaUrl: base64String,
-            );
-        _scrollToBottom();
+        setState(() => _pendingAttachment = picked);
       }
     } catch (e) {
       if (mounted) {
@@ -125,20 +121,24 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
             icon: Icons.camera_alt_outlined,
             iconColor: pal.primaryCoral,
             iconBg: pal.softBlush,
-            title: 'Take Photo',
+            title: _pendingAttachment != null
+                ? 'Replace Photo (Camera)'
+                : 'Take Photo',
             onTap: () {
               Navigator.pop(ctx);
-              _pickAndSendImage(ImageSource.camera);
+              _pickAttachment(ImageSource.camera);
             },
           ),
           CasamaSheetActionRow(
             icon: Icons.photo_library_outlined,
             iconColor: pal.infoFg,
             iconBg: pal.infoBg,
-            title: 'Choose from Gallery',
+            title: _pendingAttachment != null
+                ? 'Replace Photo (Gallery)'
+                : 'Choose from Gallery',
             onTap: () {
               Navigator.pop(ctx);
-              _pickAndSendImage(ImageSource.gallery);
+              _pickAttachment(ImageSource.gallery);
             },
           ),
           CasamaSheetActionRow(
@@ -476,7 +476,13 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
                           timeLabel: timeStr,
                           showSenderName: false,
                           fallbackAvatarUrl: avatar,
-                          showReadCheck: false,
+                          onRetry: msg.deliveryStatus ==
+                                  MessageDeliveryStatus.failed
+                              ? () => repo.retryDirectMessage(
+                                    widget.contactKey,
+                                    msg.id,
+                                  )
+                              : null,
                         );
                       },
                     ),
@@ -490,6 +496,10 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
                 attachTooltip: 'Attach or Take Photo',
                 onAttach: _showMediaPickerSheet,
                 onSend: _sendMessage,
+                pendingAttachment: _pendingAttachment,
+                onRemoveAttachment: () =>
+                    setState(() => _pendingAttachment = null),
+                onReplaceAttachment: _showMediaPickerSheet,
               ),
             ),
           ],

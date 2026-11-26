@@ -12,7 +12,6 @@ import '../../features/chat/chat_space_screen.dart';
 import '../../features/chat/create_meetup_screen.dart';
 import '../../features/chat/direct_chat_screen.dart';
 import '../../features/chat/group_chat_screen.dart';
-import '../../features/chore_roulette/chore_roulette_screen.dart';
 import '../../features/dashboard/main_navigation_shell.dart';
 import '../../features/household/household_setup_screen.dart';
 import '../../features/items/lost_found_screen.dart';
@@ -185,10 +184,6 @@ GoRouter createAppRouter({String initialLocation = '/'}) {
     GoRoute(
       path: '/create-meetup',
       builder: (context, state) => const CreateMeetupScreen(),
-    ),
-    GoRoute(
-      path: '/roulette',
-      builder: (context, state) => const ChoreRouletteScreen(),
     ),
     GoRoute(
       path: '/leaderboard',

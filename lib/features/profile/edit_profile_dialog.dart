@@ -9,6 +9,7 @@ import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/casama_avatar.dart';
+import '../../shared/widgets/casama_birthday_field.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_text_field.dart';
 import '../../shared/widgets/profile_camera_sheet.dart';
@@ -24,8 +25,10 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _nicknameController;
-  late TextEditingController _handleController;
-  late TextEditingController _ageController;
+  int? _birthMonth;
+  int? _birthDay;
+  int? _birthYear;
+  String? _birthdayError;
   String? _selectedAvatar;
   bool _isPickingImage = false;
 
@@ -44,10 +47,11 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
       text: user.fullName ?? user.displayName,
     );
     _nicknameController = TextEditingController(text: user.nickname ?? '');
-    _handleController = TextEditingController(text: user.handle);
-    _ageController = TextEditingController(
-      text: user.age != null ? user.age.toString() : '',
-    );
+    if (user.birthday != null) {
+      _birthMonth = user.birthday!.month;
+      _birthDay = user.birthday!.day;
+      _birthYear = user.birthday!.year;
+    }
     _selectedAvatar = user.avatarUrl;
   }
 
@@ -55,9 +59,61 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
   void dispose() {
     _nameController.dispose();
     _nicknameController.dispose();
-    _handleController.dispose();
-    _ageController.dispose();
     super.dispose();
+  }
+
+  DateTime? get _birthDate {
+    if (_birthMonth == null || _birthDay == null || _birthYear == null) {
+      return null;
+    }
+    final maxDays = daysInBirthMonth(_birthYear, _birthMonth);
+    if (_birthDay! > maxDays) return null;
+    final dt = DateTime(_birthYear!, _birthMonth!, _birthDay!);
+    if (dt.year != _birthYear ||
+        dt.month != _birthMonth ||
+        dt.day != _birthDay) {
+      return null;
+    }
+    return dt;
+  }
+
+  bool _isFutureDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return date.isAfter(today);
+  }
+
+  int? get _computedAge {
+    final bDate = _birthDate;
+    if (bDate == null || _isFutureDate(bDate)) return null;
+    final now = DateTime.now();
+    var age = now.year - bDate.year;
+    if (now.month < bDate.month ||
+        (now.month == bDate.month && now.day < bDate.day)) {
+      age--;
+    }
+    return age >= 0 ? age : null;
+  }
+
+  Future<void> _pickBirthdayDate() async {
+    final now = DateTime.now();
+    final initialDate = _birthDate ?? DateTime(now.year - 20, 1, 1);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      firstDate: DateTime(1900),
+      lastDate: now,
+      helpText: 'Select your birthday',
+      initialDatePickerMode: DatePickerMode.year,
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _birthMonth = picked.month;
+        _birthDay = picked.day;
+        _birthYear = picked.year;
+        _birthdayError = null;
+      });
+    }
   }
 
   Future<void> _openCameraCapture() async {
@@ -102,25 +158,29 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
   }
 
   void _save() {
-    if (!_formKey.currentState!.validate()) return;
+    final formValid = _formKey.currentState!.validate();
+    final birthDate = _birthDate;
+    String? nextBirthdayError;
+    if (birthDate == null) {
+      nextBirthdayError = 'Please select your complete birthday';
+    } else if (_isFutureDate(birthDate)) {
+      nextBirthdayError = 'Birthday cannot be in the future';
+    }
+    setState(() => _birthdayError = nextBirthdayError);
+    if (!formValid || nextBirthdayError != null) return;
 
-    final trimmedAge = _ageController.text.trim();
-    final age = trimmedAge.isNotEmpty ? int.tryParse(trimmedAge) : null;
-    final clearNickname = _nicknameController.text.trim().isEmpty;
-    final clearAge = trimmedAge.isEmpty;
+    final fullName = _nameController.text.trim();
+    final nickname = _nicknameController.text.trim();
     final clearAvatar =
         _selectedAvatar == null || _selectedAvatar!.trim().isEmpty;
 
     ref.read(repositoryProvider).updateProfile(
-      displayName: _nameController.text.trim(),
-      fullName: _nameController.text.trim(),
-      nickname: clearNickname ? null : _nicknameController.text.trim(),
-      handle: _handleController.text.trim(),
-      age: age,
+      displayName: fullName,
+      fullName: fullName,
+      nickname: nickname,
+      birthday: birthDate,
       avatarUrl: clearAvatar ? null : _selectedAvatar,
       clearAvatar: clearAvatar,
-      clearNickname: clearNickname,
-      clearAge: clearAge,
     );
 
     if (Navigator.canPop(context)) {
@@ -386,34 +446,40 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
                 label: 'Nickname',
                 hint: 'e.g., JP',
                 prefixIcon: Icons.sentiment_satisfied_alt_rounded,
-              ),
-              const SizedBox(height: CasamaSpacing.md),
-
-              CasamaTextField(
-                controller: _handleController,
-                label: 'Handle',
-                hint: '@handle',
-                prefixIcon: Icons.alternate_email_rounded,
                 validator: (v) => v == null || v.trim().isEmpty
-                    ? 'Please enter a valid handle'
+                    ? 'Please enter your nickname'
                     : null,
               ),
               const SizedBox(height: CasamaSpacing.md),
 
-              CasamaTextField(
-                controller: _ageController,
-                label: 'Age (Optional)',
-                hint: 'e.g., 21',
-                keyboardType: TextInputType.number,
-                prefixIcon: Icons.calendar_today_outlined,
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return null;
-                  final val = int.tryParse(v.trim());
-                  if (val == null || val < 1 || val > 120) {
-                    return 'Please enter a valid age between 1 and 120';
+              CasamaBirthdayField(
+                label: 'Birthday',
+                month: _birthMonth,
+                day: _birthDay,
+                year: _birthYear,
+                computedAge: _computedAge,
+                errorText: _birthdayError,
+                onMonthChanged: (val) => setState(() {
+                  _birthMonth = val;
+                  final maxDays = daysInBirthMonth(_birthYear, _birthMonth);
+                  if (_birthDay != null && _birthDay! > maxDays) {
+                    _birthDay = maxDays;
                   }
-                  return null;
-                },
+                  _birthdayError = null;
+                }),
+                onDayChanged: (val) => setState(() {
+                  _birthDay = val;
+                  _birthdayError = null;
+                }),
+                onYearChanged: (val) => setState(() {
+                  _birthYear = val;
+                  final maxDays = daysInBirthMonth(_birthYear, _birthMonth);
+                  if (_birthDay != null && _birthDay! > maxDays) {
+                    _birthDay = maxDays;
+                  }
+                  _birthdayError = null;
+                }),
+                onPickCalendar: _pickBirthdayDate,
               ),
               const SizedBox(height: CasamaSpacing.xl),
 

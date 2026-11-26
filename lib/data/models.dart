@@ -1,14 +1,15 @@
 /// Casama Core Data Models
 library;
 
+import '../core/utils/date_time_utils.dart';
+
 class UserProfile {
   final String id;
   final String displayName;
   final String handle;
   final String? fullName;
   final String? nickname;
-  final int? age;
-  final DateTime? birthDate;
+  final DateTime? birthday;
   final String? avatarUrl;
   final bool hasConsentedTerms;
   final bool hasCompletedOnboarding;
@@ -19,12 +20,30 @@ class UserProfile {
     required this.handle,
     this.fullName,
     this.nickname,
-    this.age,
-    this.birthDate,
+    this.birthday,
     this.avatarUrl,
     this.hasConsentedTerms = false,
     this.hasCompletedOnboarding = false,
   });
+
+  /// Parses `'YYYY-MM-DD'` or ISO strings into a date-only local [DateTime]
+  /// so UTC offsets never shift the calendar day by -1.
+  static DateTime? parseDateOnly(dynamic raw) => parseSupabaseDateOnly(raw);
+
+  /// Formats a [DateTime] as calendar `'YYYY-MM-DD'` for `public.profiles.birthday`.
+  static String? formatDateOnly(DateTime? date) => formatSupabaseDateOnly(date);
+
+  /// Live age in years derived from [birthday].
+  int? get computedAge {
+    final b = birthday;
+    if (b == null) return null;
+    final now = DateTime.now();
+    var age = now.year - b.year;
+    if (now.month < b.month || (now.month == b.month && now.day < b.day)) {
+      age--;
+    }
+    return age >= 0 ? age : null;
+  }
 
   /// Sensible fallback for user greeting throughout the app (uses nickname if available)
   String get effectiveGreetingName {
@@ -47,18 +66,13 @@ class UserProfile {
   }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
-    DateTime? birthDate;
-    if (json['birth_date'] != null) {
-      birthDate = DateTime.tryParse(json['birth_date'] as String);
-    }
     return UserProfile(
       id: json['id'] as String,
       displayName: json['display_name'] as String? ?? 'Housemate',
       handle: json['handle'] as String? ?? '@member',
       fullName: json['full_name'] as String?,
       nickname: json['nickname'] as String?,
-      age: json['age'] as int?,
-      birthDate: birthDate,
+      birthday: parseDateOnly(json['birthday'] ?? json['birth_date']),
       avatarUrl: json['avatar_url'] as String?,
       hasConsentedTerms: json['has_consented_terms'] as bool? ?? false,
       hasCompletedOnboarding:
@@ -72,8 +86,7 @@ class UserProfile {
     'handle': handle,
     'full_name': fullName,
     'nickname': nickname,
-    'age': age,
-    'birth_date': birthDate?.toIso8601String(),
+    'birthday': formatDateOnly(birthday),
     'avatar_url': avatarUrl,
     'has_consented_terms': hasConsentedTerms,
     'has_completed_onboarding': hasCompletedOnboarding,
@@ -85,13 +98,40 @@ class Household {
   final String name;
   final String inviteCode;
   final String? createdBy;
+  final int? memberCount;
+  final String? spaceType;
 
   const Household({
     required this.id,
     required this.name,
     required this.inviteCode,
     this.createdBy,
+    this.memberCount,
+    this.spaceType,
   });
+
+  String get displaySubtitle =>
+      (spaceType != null && spaceType!.trim().isNotEmpty)
+          ? spaceType!.trim()
+          : 'Community Space';
+
+  Household copyWith({
+    String? id,
+    String? name,
+    String? inviteCode,
+    String? createdBy,
+    int? memberCount,
+    String? spaceType,
+  }) {
+    return Household(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      inviteCode: inviteCode ?? this.inviteCode,
+      createdBy: createdBy ?? this.createdBy,
+      memberCount: memberCount ?? this.memberCount,
+      spaceType: spaceType ?? this.spaceType,
+    );
+  }
 
   factory Household.fromJson(Map<String, dynamic> json) {
     return Household(
@@ -99,6 +139,8 @@ class Household {
       name: json['name'] as String,
       inviteCode: json['invite_code'] as String,
       createdBy: json['created_by'] as String?,
+      memberCount: (json['member_count'] as num?)?.toInt(),
+      spaceType: json['space_type'] as String?,
     );
   }
 
@@ -146,6 +188,31 @@ class MemberPresence {
     this.note,
     required this.updatedAt,
   });
+}
+
+/// Shared Philippine delivery courier options for expected parcel tracking.
+class CasamaCouriers {
+  static const String jtExpress = 'J&T Express';
+  static const String flashExpress = 'Flash Express';
+  static const String ninjaVan = 'Ninja Van';
+  static const String lbc = 'LBC';
+  static const String twoGoExpress = '2GO Express';
+  static const String lalamove = 'Lalamove';
+  static const String spx = 'SPX';
+  static const String other = 'Other';
+
+  static const String defaultCourier = jtExpress;
+
+  static const List<String> options = [
+    jtExpress,
+    flashExpress,
+    ninjaVan,
+    lbc,
+    twoGoExpress,
+    lalamove,
+    spx,
+    other,
+  ];
 }
 
 enum ParcelPaymentType { paid, cod }
@@ -199,11 +266,23 @@ class ParcelItem {
     this.codSettled = false,
     this.claimedById,
     this.claimedByName,
+    this.claimedAt,
+    this.settledAt,
   });
 
   final bool codSettled;
   final String? claimedById;
   final String? claimedByName;
+  final DateTime? claimedAt;
+  final DateTime? settledAt;
+
+  bool get isClaimed =>
+      (claimedById != null && claimedById!.isNotEmpty) ||
+      status == ParcelStatus.received;
+
+  bool get isSettled => isClaimed && codSettled;
+
+  bool get isUnsettledClaim => isClaimed && !codSettled;
 
   factory ParcelItem.fromJson(Map<String, dynamic> json) {
     ParcelStatus parseStatus(String? st) {
@@ -225,9 +304,7 @@ class ParcelItem {
       buyerId: json['buyer_id'] as String? ?? '',
       buyerName: json['buyer_name'] as String? ?? 'Housemate',
       courier: json['courier'] as String? ?? 'Courier',
-      expectedArrival: json['expected_arrival'] != null
-          ? DateTime.parse(json['expected_arrival'] as String)
-          : DateTime.now(),
+      expectedArrival: parseSupabaseTimestamp(json['expected_arrival']),
       paymentType: (json['payment_type'] as String?) == 'cod'
           ? ParcelPaymentType.cod
           : ParcelPaymentType.paid,
@@ -243,6 +320,8 @@ class ParcelItem {
       codSettled: json['cod_settled'] as bool? ?? false,
       claimedById: json['claimed_by_id'] as String?,
       claimedByName: json['claimed_by_name'] as String?,
+      claimedAt: parseSupabaseTimestampOrNull(json['claimed_at']),
+      settledAt: parseSupabaseTimestampOrNull(json['settled_at']),
     );
   }
 
@@ -251,7 +330,7 @@ class ParcelItem {
     'household_id': householdId,
     'buyer_id': buyerId,
     'courier': courier,
-    'expected_arrival': expectedArrival.toIso8601String(),
+    'expected_arrival': toSupabaseUtcIso(expectedArrival),
     'payment_type': paymentType == ParcelPaymentType.cod ? 'cod' : 'paid',
     'cod_amount': paymentType == ParcelPaymentType.cod ? codAmount : null,
     'currency': currency,
@@ -262,7 +341,7 @@ class ParcelItem {
 
 enum ItemType { lost, found, shared }
 
-enum ItemStatus { open, found, unclaimed, claimed, returned }
+enum ItemStatus { open, unclaimed, pending, rejected, resolved }
 
 class LostFoundItem {
   final String id;
@@ -270,12 +349,21 @@ class LostFoundItem {
   final ItemType type;
   final String title;
   final String? description;
+  final String? location;
   final String? imageUrl;
   final ItemStatus status;
   final String reportedBy;
   final String reportedByName;
   final String? foundById;
+  final String? foundByName;
   final String? claimedById;
+  final String? claimedByName;
+  final String? lostItemId;
+  final String? resolvedFoundItemId;
+  final DateTime? foundAt;
+  final DateTime? claimedAt;
+  final DateTime? returnedAt;
+  final DateTime? rejectedAt;
   final DateTime createdAt;
 
   const LostFoundItem({
@@ -284,14 +372,73 @@ class LostFoundItem {
     required this.type,
     required this.title,
     this.description,
+    this.location,
     this.imageUrl,
     required this.status,
     required this.reportedBy,
     required this.reportedByName,
     this.foundById,
+    this.foundByName,
     this.claimedById,
+    this.claimedByName,
+    this.lostItemId,
+    this.resolvedFoundItemId,
+    this.foundAt,
+    this.claimedAt,
+    this.returnedAt,
+    this.rejectedAt,
     required this.createdAt,
   });
+
+  String get ownerId => type == ItemType.lost ? reportedBy : '';
+  String get finderId => type == ItemType.found ? reportedBy : '';
+  bool get isLinkedToLost => lostItemId != null;
+  bool get isStandalone => lostItemId == null;
+  bool get isResolved => status == ItemStatus.resolved;
+
+  LostFoundItem copyWith({
+    String? title,
+    String? description,
+    String? location,
+    String? imageUrl,
+    ItemStatus? status,
+    String? reportedBy,
+    String? reportedByName,
+    String? foundById,
+    String? foundByName,
+    String? claimedById,
+    String? claimedByName,
+    String? lostItemId,
+    String? resolvedFoundItemId,
+    DateTime? foundAt,
+    DateTime? claimedAt,
+    DateTime? returnedAt,
+    DateTime? rejectedAt,
+  }) {
+    return LostFoundItem(
+      id: id,
+      householdId: householdId,
+      type: type,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      location: location ?? this.location,
+      imageUrl: imageUrl ?? this.imageUrl,
+      status: status ?? this.status,
+      reportedBy: reportedBy ?? this.reportedBy,
+      reportedByName: reportedByName ?? this.reportedByName,
+      foundById: foundById ?? this.foundById,
+      foundByName: foundByName ?? this.foundByName,
+      claimedById: claimedById ?? this.claimedById,
+      claimedByName: claimedByName ?? this.claimedByName,
+      lostItemId: lostItemId ?? this.lostItemId,
+      resolvedFoundItemId: resolvedFoundItemId ?? this.resolvedFoundItemId,
+      foundAt: foundAt ?? this.foundAt,
+      claimedAt: claimedAt ?? this.claimedAt,
+      returnedAt: returnedAt ?? this.returnedAt,
+      rejectedAt: rejectedAt ?? this.rejectedAt,
+      createdAt: createdAt,
+    );
+  }
 
   factory LostFoundItem.fromJson(
     Map<String, dynamic> json, {
@@ -309,49 +456,82 @@ class LostFoundItem {
       }
     }
 
+    final parsedType = parseType(json['type'] as String?);
+
     ItemStatus parseStatus(String? s) {
       switch (s?.toLowerCase()) {
-        case 'found':
-          return ItemStatus.found;
         case 'unclaimed':
           return ItemStatus.unclaimed;
-        case 'claimed':
-          return ItemStatus.claimed;
-        case 'returned':
-          return ItemStatus.returned;
-        default:
+        case 'pending':
+          return ItemStatus.pending;
+        case 'rejected':
+          return ItemStatus.rejected;
+        case 'resolved':
+          return ItemStatus.resolved;
+        case 'open':
           return ItemStatus.open;
+        default:
+          return parsedType == ItemType.found
+              ? ItemStatus.unclaimed
+              : ItemStatus.open;
       }
     }
+
+    final reporterId = parsedType == ItemType.found
+        ? (json['finder_id'] as String? ?? '')
+        : (json['owner_id'] as String? ?? '');
+    final itemLocation = parsedType == ItemType.found
+        ? json['found_location'] as String?
+        : json['last_seen_location'] as String?;
 
     return LostFoundItem(
       id: json['id'] as String,
       householdId: json['household_id'] as String? ?? '',
-      type: parseType(json['type'] as String?),
+      type: parsedType,
       title: json['title'] as String? ?? 'Untitled Item',
       description: json['description'] as String?,
+      location: itemLocation,
       imageUrl: json['image_url'] as String?,
       status: parseStatus(json['status'] as String?),
-      reportedBy: json['reported_by'] as String? ?? '',
+      reportedBy: reporterId,
       reportedByName: json['reported_by_name'] as String? ?? 'Housemate',
       foundById: json['found_by_id'] as String?,
+      foundByName: json['found_by_name'] as String?,
       claimedById: json['claimed_by_id'] as String?,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
+      claimedByName: json['claimed_by_name'] as String?,
+      lostItemId: json['lost_item_id'] as String?,
+      resolvedFoundItemId: json['resolved_found_item_id'] as String?,
+      foundAt: parseSupabaseTimestampOrNull(json['found_at']),
+      claimedAt: parseSupabaseTimestampOrNull(json['claimed_at']),
+      returnedAt: parseSupabaseTimestampOrNull(json['returned_at']),
+      rejectedAt: parseSupabaseTimestampOrNull(json['rejected_at']),
+      createdAt: parseSupabaseTimestamp(json['created_at']),
     );
   }
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'household_id': householdId,
-    'type': type.name,
+    if (type == ItemType.found) ...{
+      'finder_id': reportedBy,
+      'lost_item_id': lostItemId,
+      'found_location': location,
+      'claimed_by_id': claimedById,
+      'claimed_at': toSupabaseUtcIsoOrNull(claimedAt),
+      'rejected_at': toSupabaseUtcIsoOrNull(rejectedAt),
+    } else ...{
+      'owner_id': reportedBy,
+      'last_seen_location': location,
+      'found_by_id': foundById,
+      'found_at': toSupabaseUtcIsoOrNull(foundAt),
+      'resolved_found_item_id': resolvedFoundItemId,
+    },
     'title': title,
     'description': description,
     'image_url': imageUrl,
     'status': status.name,
-    'reported_by': reportedBy,
-    'created_at': createdAt.toIso8601String(),
+    'returned_at': toSupabaseUtcIsoOrNull(returnedAt),
+    'created_at': toSupabaseUtcIso(createdAt),
   };
 }
 
@@ -379,6 +559,13 @@ extension TaskCategoryDbX on TaskCategory {
     TaskCategory.landlord => 'Repair / Maintenance',
     TaskCategory.restock => 'Restock',
     TaskCategory.personalRequest => 'Personal Request',
+  };
+
+  int get basePoints => switch (this) {
+    TaskCategory.cleaning || TaskCategory.diy => 5,
+    TaskCategory.restock => 5,
+    TaskCategory.repairMaintenance || TaskCategory.landlord => 8,
+    TaskCategory.personalRequest => 8,
   };
 
   static TaskCategory fromDbValue(String? raw) {
@@ -414,6 +601,12 @@ extension TaskUrgencyX on TaskUrgency {
         return 'Low';
     }
   }
+
+  int get bonusPoints => switch (this) {
+    TaskUrgency.low => 2,
+    TaskUrgency.medium => 4,
+    TaskUrgency.urgent => 6,
+  };
 }
 
 extension TaskStatusX on TaskStatus {
@@ -437,11 +630,10 @@ class MaintenanceTask {
   final TaskCategory category;
   final TaskUrgency urgency;
   final TaskStatus status;
-  final String? assigneeId;
-  final String? assigneeName;
-  final String? assigneeAvatar;
+  final String createdBy;
   final String createdByName;
   final String? completedById;
+  final String? completedByName;
   final DateTime? completedAt;
   final DateTime createdAt;
   final DateTime? dueDate;
@@ -454,15 +646,19 @@ class MaintenanceTask {
     required this.category,
     required this.urgency,
     required this.status,
-    this.assigneeId,
-    this.assigneeName,
-    this.assigneeAvatar,
+    this.createdBy = '',
     required this.createdByName,
     this.completedById,
+    this.completedByName,
     this.completedAt,
     required this.createdAt,
     this.dueDate,
   });
+
+  static int computePoints(TaskCategory category, TaskUrgency urgency) =>
+      category.basePoints + urgency.bonusPoints;
+
+  int get computedPoints => computePoints(category, urgency);
 
   MaintenanceTask copyWith({
     String? title,
@@ -470,13 +666,11 @@ class MaintenanceTask {
     TaskCategory? category,
     TaskUrgency? urgency,
     TaskStatus? status,
-    String? assigneeId,
-    String? assigneeName,
-    String? assigneeAvatar,
+    String? createdBy,
     String? completedById,
+    String? completedByName,
     DateTime? completedAt,
     DateTime? dueDate,
-    bool clearAssignee = false,
     bool clearCompleted = false,
   }) {
     return MaintenanceTask(
@@ -487,15 +681,14 @@ class MaintenanceTask {
       category: category ?? this.category,
       urgency: urgency ?? this.urgency,
       status: status ?? this.status,
-      assigneeId: clearAssignee ? null : (assigneeId ?? this.assigneeId),
-      assigneeName: clearAssignee ? null : (assigneeName ?? this.assigneeName),
-      assigneeAvatar: clearAssignee
-          ? null
-          : (assigneeAvatar ?? this.assigneeAvatar),
+      createdBy: createdBy ?? this.createdBy,
       createdByName: createdByName,
       completedById: clearCompleted
           ? null
           : (completedById ?? this.completedById),
+      completedByName: clearCompleted
+          ? null
+          : (completedByName ?? this.completedByName),
       completedAt: clearCompleted ? null : (completedAt ?? this.completedAt),
       createdAt: createdAt,
       dueDate: dueDate ?? this.dueDate,
@@ -534,20 +727,13 @@ class MaintenanceTask {
       category: TaskCategoryDbX.fromDbValue(json['category'] as String?),
       urgency: parseUrg(json['urgency'] as String?),
       status: parseStatus(json['status'] as String?),
-      assigneeId: json['assignee_id'] as String?,
-      assigneeName: json['assignee_name'] as String?,
-      assigneeAvatar: json['assignee_avatar'] as String?,
+      createdBy: json['created_by'] as String? ?? '',
       createdByName: json['created_by_name'] as String? ?? 'Housemate',
       completedById: json['completed_by'] as String?,
-      completedAt: json['completed_at'] != null
-          ? DateTime.tryParse(json['completed_at'] as String)
-          : null,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
-      dueDate: json['due_date'] != null
-          ? DateTime.tryParse(json['due_date'] as String)
-          : null,
+      completedByName: json['completed_by_name'] as String?,
+      completedAt: parseSupabaseTimestampOrNull(json['completed_at']),
+      createdAt: parseSupabaseTimestamp(json['created_at']),
+      dueDate: parseSupabaseTimestampOrNull(json['due_date']),
     );
   }
 
@@ -559,11 +745,15 @@ class MaintenanceTask {
     'category': category.dbValue,
     'urgency': urgency.name,
     'status': status == TaskStatus.inProgress ? 'in_progress' : status.name,
-    'assignee_id': assigneeId,
-    'created_at': createdAt.toIso8601String(),
-    'due_date': dueDate?.toIso8601String(),
+    'created_by': createdBy,
+    'completed_by': completedById,
+    'completed_at': toSupabaseUtcIsoOrNull(completedAt),
+    'created_at': toSupabaseUtcIso(createdAt),
+    'due_date': toSupabaseUtcIsoOrNull(dueDate),
   };
 }
+
+enum MessageDeliveryStatus { sending, delivered, failed }
 
 class ChatMessage {
   final String id;
@@ -571,12 +761,15 @@ class ChatMessage {
   final String senderName;
   final String? senderAvatar;
   final String content;
-  final String? mediaUrl;
+  final String? attachmentUrl;
+  final String? localAttachmentPath;
+  final String? clientMessageId;
   final String? inviteCode;
   final String? inviteSpaceName;
   final DateTime createdAt;
   final bool isCurrentUser;
   final bool isRead;
+  final MessageDeliveryStatus deliveryStatus;
   final MeetUpInvitation? meetUpInvitation;
 
   const ChatMessage({
@@ -585,14 +778,55 @@ class ChatMessage {
     required this.senderName,
     this.senderAvatar,
     required this.content,
-    this.mediaUrl,
+    String? attachmentUrl,
+    String? mediaUrl,
+    this.localAttachmentPath,
+    this.clientMessageId,
     this.inviteCode,
     this.inviteSpaceName,
     required this.createdAt,
     required this.isCurrentUser,
     this.isRead = true,
+    this.deliveryStatus = MessageDeliveryStatus.delivered,
     this.meetUpInvitation,
-  });
+  }) : attachmentUrl = attachmentUrl ?? mediaUrl;
+
+  String? get mediaUrl => attachmentUrl;
+
+  bool get hasAttachment =>
+      (attachmentUrl != null && attachmentUrl!.isNotEmpty) ||
+      (localAttachmentPath != null && localAttachmentPath!.isNotEmpty);
+
+  ChatMessage copyWith({
+    String? id,
+    String? attachmentUrl,
+    String? mediaUrl,
+    String? localAttachmentPath,
+    bool clearLocalAttachment = false,
+    String? clientMessageId,
+    bool? isRead,
+    MessageDeliveryStatus? deliveryStatus,
+  }) {
+    return ChatMessage(
+      id: id ?? this.id,
+      senderId: senderId,
+      senderName: senderName,
+      senderAvatar: senderAvatar,
+      content: content,
+      attachmentUrl: attachmentUrl ?? mediaUrl ?? this.attachmentUrl,
+      localAttachmentPath: clearLocalAttachment
+          ? null
+          : (localAttachmentPath ?? this.localAttachmentPath),
+      clientMessageId: clientMessageId ?? this.clientMessageId,
+      inviteCode: inviteCode,
+      inviteSpaceName: inviteSpaceName,
+      createdAt: createdAt,
+      isCurrentUser: isCurrentUser,
+      isRead: isRead ?? this.isRead,
+      deliveryStatus: deliveryStatus ?? this.deliveryStatus,
+      meetUpInvitation: meetUpInvitation,
+    );
+  }
 
   factory ChatMessage.fromJson(Map<String, dynamic> json, {String? currentUserId}) {
     return ChatMessage(
@@ -601,12 +835,12 @@ class ChatMessage {
       senderName: json['sender_name'] as String? ?? 'Housemate',
       senderAvatar: json['sender_avatar'] as String?,
       content: json['content'] as String? ?? '',
-      mediaUrl: json['media_url'] as String?,
+      attachmentUrl:
+          json['attachment_url'] as String? ?? json['media_url'] as String?,
+      clientMessageId: json['client_message_id'] as String?,
       inviteCode: json['invite_code'] as String?,
       inviteSpaceName: json['invite_space_name'] as String?,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
+      createdAt: parseSupabaseTimestamp(json['created_at']),
       isCurrentUser: currentUserId != null && json['sender_id'] == currentUserId,
       isRead: json['is_read'] as bool? ?? true,
     );
@@ -616,10 +850,9 @@ class ChatMessage {
     'id': id,
     'sender_id': senderId,
     'content': content,
-    'media_url': mediaUrl,
-    'invite_code': inviteCode,
-    'invite_space_name': inviteSpaceName,
-    'created_at': createdAt.toIso8601String(),
+    'attachment_url': attachmentUrl,
+    if (clientMessageId != null) 'client_message_id': clientMessageId,
+    'created_at': toSupabaseUtcIso(createdAt),
   };
 }
 
@@ -676,26 +909,129 @@ class ChatSpace {
   }
 }
 
+class MeetUpResponder {
+  final String userId;
+  final String displayName;
+  final String? avatarUrl;
+  final String response; // 'going', 'maybe', 'cant_make_it'
+
+  const MeetUpResponder({
+    required this.userId,
+    required this.displayName,
+    this.avatarUrl,
+    required this.response,
+  });
+}
+
 class MeetUpInvitation {
   final String id;
   final String activity;
   final String location;
   final DateTime scheduledTime;
+  final String status;
+  final bool reminderSent;
+  final bool arrivalHandled;
   final int goingCount;
   final int maybeCount;
   final int cantMakeCount;
   final String? currentUserResponse; // 'going', 'maybe', 'cant_make_it'
+  final List<MeetUpResponder> responders;
 
   const MeetUpInvitation({
     required this.id,
     required this.activity,
     required this.location,
     required this.scheduledTime,
+    this.status = 'active',
+    this.reminderSent = false,
+    this.arrivalHandled = false,
     this.goingCount = 0,
     this.maybeCount = 0,
     this.cantMakeCount = 0,
     this.currentUserResponse,
+    this.responders = const [],
   });
+
+  bool get isActive => status != 'done';
+  bool get isDone => status == 'done';
+
+  List<MeetUpResponder> get goingResponders =>
+      responders.where((r) => r.response == 'going').toList();
+
+  List<MeetUpResponder> get maybeResponders =>
+      responders.where((r) => r.response == 'maybe').toList();
+
+  List<MeetUpResponder> get cantMakeResponders =>
+      responders.where((r) => r.response == 'cant_make_it').toList();
+
+  bool get hasValidData =>
+      id.isNotEmpty && id != 'placeholder_m' && activity.trim().isNotEmpty;
+
+  factory MeetUpInvitation.fromJson(
+    Map<String, dynamic> json, {
+    int goingCount = 0,
+    int maybeCount = 0,
+    int cantMakeCount = 0,
+    String? currentUserResponse,
+    List<MeetUpResponder> responders = const [],
+  }) {
+    return MeetUpInvitation(
+      id: json['id'] as String? ?? '',
+      activity: json['activity'] as String? ?? '',
+      location: json['location'] as String? ?? '',
+      scheduledTime: parseSupabaseTimestamp(json['scheduled_time']),
+      status: json['status'] as String? ?? 'active',
+      reminderSent: json['reminder_sent'] as bool? ?? false,
+      arrivalHandled: json['arrival_handled'] as bool? ?? false,
+      goingCount: goingCount,
+      maybeCount: maybeCount,
+      cantMakeCount: cantMakeCount,
+      currentUserResponse: currentUserResponse,
+      responders: responders,
+    );
+  }
+
+  Map<String, dynamic> toJson({String? conversationId, String? creatorId}) => {
+    'id': id,
+    'conversation_id': ?conversationId,
+    'creator_id': ?creatorId,
+    'activity': activity,
+    'location': location,
+    'scheduled_time': toSupabaseUtcIso(scheduledTime),
+    'status': status,
+    'reminder_sent': reminderSent,
+    'arrival_handled': arrivalHandled,
+  };
+
+  MeetUpInvitation copyWith({
+    String? id,
+    String? activity,
+    String? location,
+    DateTime? scheduledTime,
+    String? status,
+    bool? reminderSent,
+    bool? arrivalHandled,
+    int? goingCount,
+    int? maybeCount,
+    int? cantMakeCount,
+    String? currentUserResponse,
+    List<MeetUpResponder>? responders,
+  }) {
+    return MeetUpInvitation(
+      id: id ?? this.id,
+      activity: activity ?? this.activity,
+      location: location ?? this.location,
+      scheduledTime: scheduledTime ?? this.scheduledTime,
+      status: status ?? this.status,
+      reminderSent: reminderSent ?? this.reminderSent,
+      arrivalHandled: arrivalHandled ?? this.arrivalHandled,
+      goingCount: goingCount ?? this.goingCount,
+      maybeCount: maybeCount ?? this.maybeCount,
+      cantMakeCount: cantMakeCount ?? this.cantMakeCount,
+      currentUserResponse: currentUserResponse ?? this.currentUserResponse,
+      responders: responders ?? this.responders,
+    );
+  }
 }
 
 class PointAuditEntry {
@@ -911,7 +1247,12 @@ class HouseholdBill {
   BillStatus get effectiveStatus {
     if (status == BillStatus.paid) return BillStatus.paid;
     final now = DateTime.now();
-    final deadlineDate = DateTime(deadline.year, deadline.month, deadline.day);
+    final localDeadline = deadline.toLocal();
+    final deadlineDate = DateTime(
+      localDeadline.year,
+      localDeadline.month,
+      localDeadline.day,
+    );
     final today = DateTime(now.year, now.month, now.day);
     if (deadlineDate.isBefore(today)) return BillStatus.overdue;
     return BillStatus.unpaid;
@@ -1002,9 +1343,7 @@ class HouseholdBill {
           json['custom_category'] as String?,
       billName: json['title'] as String? ?? json['name'] as String?,
       amount: (json['amount'] as num?)?.toDouble(),
-      deadline: json['deadline'] != null
-          ? DateTime.parse(json['deadline'] as String)
-          : DateTime.now(),
+      deadline: parseSupabaseTimestamp(json['deadline']),
       notes: json['notes'] as String?,
       status: parseStatus(json['status'] as String?),
       reminderEnabled:
@@ -1019,12 +1358,8 @@ class HouseholdBill {
       responsibleMember:
           json['responsible_member_name'] as String? ??
           json['responsible_member'] as String?,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
-      paidAt: json['paid_at'] != null
-          ? DateTime.parse(json['paid_at'] as String)
-          : null,
+      createdAt: parseSupabaseTimestamp(json['created_at']),
+      paidAt: parseSupabaseTimestampOrNull(json['paid_at']),
       paidByName: json['paid_by_name'] as String?,
     );
   }
@@ -1041,7 +1376,7 @@ class HouseholdBill {
       },
       'custom_category_name': customCategoryLabel,
       'amount': amount ?? 0.0,
-      'deadline': deadline.toIso8601String(),
+      'deadline': toSupabaseUtcIso(deadline),
       'status': status.name,
       'responsible_member': responsibleMember,
       'notes': notes,
@@ -1058,7 +1393,7 @@ class HouseholdBill {
           : 'specific_members',
       'created_by': creatorId.isNotEmpty ? creatorId : null,
       'created_by_name': creatorName,
-      'paid_at': paidAt?.toIso8601String(),
+      'paid_at': toSupabaseUtcIsoOrNull(paidAt),
       'paid_by_name': paidByName,
     };
     return base;
@@ -1111,37 +1446,85 @@ class HouseholdBill {
 // QUICKSNAP (LOCKET-STYLE) MODELS
 // ==========================================
 
-enum QuickSnapRecipientType { everyone, selectedHousemates }
+/// Allowed CASnap multi-tap reaction emojis in canonical display order.
+const List<String> kCasSnapReactionEmojis = [
+  '❤️',
+  '😂',
+  '😍',
+  '🔥',
+  '👍',
+  '👎',
+];
 
 class QuickSnapReaction {
   final String emoji;
   final String userId;
   final String userName;
+  final int count;
   final DateTime createdAt;
+  final DateTime? updatedAt;
 
   const QuickSnapReaction({
     required this.emoji,
     required this.userId,
     required this.userName,
+    this.count = 1,
     required this.createdAt,
+    this.updatedAt,
   });
 
   factory QuickSnapReaction.fromJson(Map<String, dynamic> json) {
+    final rawCount = (json['count'] as num?)?.toInt();
     return QuickSnapReaction(
       emoji: json['emoji'] as String? ?? '❤️',
       userId: json['user_id'] as String? ?? '',
       userName: json['user_name'] as String? ?? 'Housemate',
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
+      count: (rawCount != null && rawCount > 0) ? rawCount : 1,
+      createdAt: parseSupabaseTimestamp(json['created_at']),
+      updatedAt: parseSupabaseTimestampOrNull(json['updated_at']),
     );
   }
 
   Map<String, dynamic> toJson() => {
     'emoji': emoji,
     'user_id': userId,
-    'created_at': createdAt.toIso8601String(),
+    'user_name': userName,
+    'count': count,
+    'created_at': toSupabaseUtcIso(createdAt),
+    if (updatedAt != null) 'updated_at': toSupabaseUtcIso(updatedAt!),
   };
+
+  QuickSnapReaction copyWith({
+    String? emoji,
+    String? userId,
+    String? userName,
+    int? count,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return QuickSnapReaction(
+      emoji: emoji ?? this.emoji,
+      userId: userId ?? this.userId,
+      userName: userName ?? this.userName,
+      count: count ?? this.count,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
+class QuickSnapReactorBreakdown {
+  final String userId;
+  final String fallbackUserName;
+  final int totalCount;
+  final List<MapEntry<String, int>> emojiCounts;
+
+  const QuickSnapReactorBreakdown({
+    required this.userId,
+    required this.fallbackUserName,
+    required this.totalCount,
+    required this.emojiCounts,
+  });
 }
 
 class QuickSnapComment {
@@ -1168,9 +1551,7 @@ class QuickSnapComment {
       userName: json['user_name'] as String? ?? 'Housemate',
       userAvatar: json['user_avatar'] as String?,
       text: (json['message'] ?? json['text'] ?? '') as String,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
+      createdAt: parseSupabaseTimestamp(json['created_at']),
     );
   }
 
@@ -1180,7 +1561,7 @@ class QuickSnapComment {
     'user_name': userName,
     'user_avatar': userAvatar,
     'message': text,
-    'created_at': createdAt.toIso8601String(),
+    'created_at': toSupabaseUtcIso(createdAt),
   };
 }
 
@@ -1189,11 +1570,8 @@ class QuickSnap {
   final String householdId;
   final String senderId;
   final String senderName;
-  final String? senderAvatar;
   final String imageUrl;
   final String? caption;
-  final QuickSnapRecipientType recipientType;
-  final List<String> recipientNames;
   final DateTime createdAt;
   final List<QuickSnapReaction> reactions;
   final List<QuickSnapComment> comments;
@@ -1203,18 +1581,104 @@ class QuickSnap {
     required this.householdId,
     required this.senderId,
     required this.senderName,
-    this.senderAvatar,
     required this.imageUrl,
     this.caption,
-    this.recipientType = QuickSnapRecipientType.everyone,
-    this.recipientNames = const [],
     required this.createdAt,
     this.reactions = const [],
     this.comments = const [],
   });
 
+  String get creatorId => senderId;
+  String get creatorName => senderName;
+
+  int get totalReactionCount {
+    var total = 0;
+    for (final r in reactions) {
+      if (r.count > 0) total += r.count;
+    }
+    return total;
+  }
+
+  List<MapEntry<String, int>> get emojiTotals {
+    final totals = <String, int>{};
+    for (final r in reactions) {
+      if (r.count <= 0) continue;
+      totals[r.emoji] = (totals[r.emoji] ?? 0) + r.count;
+    }
+    final entries = totals.entries.toList()
+      ..sort((a, b) {
+        final cmp = b.value.compareTo(a.value);
+        if (cmp != 0) return cmp;
+        return _compareSnapEmojiOrder(a.key, b.key);
+      });
+    return entries;
+  }
+
+  List<String> topReactionEmojis({int maxCount = 3}) {
+    if (maxCount <= 0) return const [];
+    return emojiTotals.take(maxCount).map((e) => e.key).toList();
+  }
+
+  bool hasUserReacted(String userId, String emoji) {
+    if (userId.isEmpty) return false;
+    return reactions.any(
+      (r) => r.userId == userId && r.emoji == emoji && r.count > 0,
+    );
+  }
+
+  List<QuickSnapReactorBreakdown> get reactorBreakdowns {
+    final byUser = <String, Map<String, int>>{};
+    final userNames = <String, String>{};
+    for (final r in reactions) {
+      if (r.count <= 0) continue;
+      final userKey = r.userId.isNotEmpty ? r.userId : r.userName;
+      userNames.putIfAbsent(userKey, () => r.userName);
+      final map = byUser.putIfAbsent(userKey, () => <String, int>{});
+      map[r.emoji] = (map[r.emoji] ?? 0) + r.count;
+    }
+
+    final result = <QuickSnapReactorBreakdown>[];
+    for (final entry in byUser.entries) {
+      final emojiEntries = entry.value.entries.toList()
+        ..sort((a, b) {
+          final cmp = b.value.compareTo(a.value);
+          if (cmp != 0) return cmp;
+          return _compareSnapEmojiOrder(a.key, b.key);
+        });
+      var total = 0;
+      for (final e in emojiEntries) {
+        total += e.value;
+      }
+      result.add(
+        QuickSnapReactorBreakdown(
+          userId: entry.key,
+          fallbackUserName: userNames[entry.key] ?? 'Housemate',
+          totalCount: total,
+          emojiCounts: emojiEntries,
+        ),
+      );
+    }
+
+    result.sort((a, b) {
+      final cmp = b.totalCount.compareTo(a.totalCount);
+      if (cmp != 0) return cmp;
+      return a.fallbackUserName.toLowerCase().compareTo(
+        b.fallbackUserName.toLowerCase(),
+      );
+    });
+    return result;
+  }
+
+  static int _compareSnapEmojiOrder(String a, String b) {
+    final idxA = kCasSnapReactionEmojis.indexOf(a);
+    final idxB = kCasSnapReactionEmojis.indexOf(b);
+    if (idxA != -1 && idxB != -1) return idxA.compareTo(idxB);
+    if (idxA != -1) return -1;
+    if (idxB != -1) return 1;
+    return a.compareTo(b);
+  }
+
   factory QuickSnap.fromJson(Map<String, dynamic> json) {
-    final recType = json['recipient_type'] as String?;
     return QuickSnap(
       id: json['id'] as String,
       householdId: json['household_id'] as String? ?? '',
@@ -1224,22 +1688,9 @@ class QuickSnap {
           json['creator_name'] as String? ??
           json['sender_name'] as String? ??
           'Housemate',
-      senderAvatar:
-          json['creator_avatar'] as String? ??
-          json['sender_avatar'] as String?,
       imageUrl: json['image_url'] as String,
       caption: json['caption'] as String?,
-      recipientType: (recType == 'selected_friends' || recType == 'selected')
-          ? QuickSnapRecipientType.selectedHousemates
-          : QuickSnapRecipientType.everyone,
-      recipientNames:
-          (json['recipient_names'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
+      createdAt: parseSupabaseTimestamp(json['created_at']),
       reactions:
           ((json['quick_snap_reactions'] ?? json['reactions'])
                   as List<dynamic>?)
@@ -1259,13 +1710,9 @@ class QuickSnap {
     'household_id': householdId,
     'creator_id': senderId,
     'creator_name': senderName,
-    'creator_avatar': senderAvatar,
     'image_url': imageUrl,
     'caption': caption,
-    'recipient_type': recipientType == QuickSnapRecipientType.selectedHousemates
-        ? 'selected_friends'
-        : 'everyone',
-    'created_at': createdAt.toIso8601String(),
+    'created_at': toSupabaseUtcIso(createdAt),
   };
 
   QuickSnap copyWith({
@@ -1278,11 +1725,8 @@ class QuickSnap {
       householdId: householdId,
       senderId: senderId,
       senderName: senderName,
-      senderAvatar: senderAvatar,
       imageUrl: imageUrl,
       caption: caption ?? this.caption,
-      recipientType: recipientType,
-      recipientNames: recipientNames,
       createdAt: createdAt,
       reactions: reactions ?? this.reactions,
       comments: comments ?? this.comments,
@@ -1323,9 +1767,7 @@ class ChoreRouletteRecord {
       spunByName: json['spun_by_name'] as String? ?? 'Housemate',
       mode: json['mode'] as String? ?? 'random_dormmate',
       completed: json['completed'] as bool? ?? false,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
+      createdAt: parseSupabaseTimestamp(json['created_at']),
     );
   }
 
@@ -1336,7 +1778,7 @@ class ChoreRouletteRecord {
     'assigned_to': assignedToId,
     'mode': mode,
     'completed': completed,
-    'created_at': createdAt.toIso8601String(),
+    'created_at': toSupabaseUtcIso(createdAt),
   };
 }
 
@@ -1400,6 +1842,7 @@ class HouseholdNotificationItem {
   final String subtitle;
   final DateTime createdAt;
   final bool isRead;
+  final DateTime? readAt;
   final Map<String, dynamic> payload;
 
   const HouseholdNotificationItem({
@@ -1409,6 +1852,50 @@ class HouseholdNotificationItem {
     required this.subtitle,
     required this.createdAt,
     required this.isRead,
+    this.readAt,
     this.payload = const {},
   });
+
+  bool get isUnread => !isRead && readAt == null;
+
+  String get displayTitle {
+    if (type == 'meetup_reminder') {
+      if (title.startsWith('Meet-up Reminder:')) return title;
+      final rawTitle = (payload['title'] as String?)?.trim();
+      final fallback =
+          rawTitle != null && rawTitle.isNotEmpty
+              ? rawTitle
+              : (title.trim().isNotEmpty ? title.trim() : 'Household Meet-up');
+      return 'Meet-up Reminder: $fallback';
+    }
+    return title;
+  }
+
+  String get displaySubtitle {
+    if (type == 'meetup_reminder') {
+      final msg = (payload['message'] as String?)?.trim();
+      if (msg != null && msg.isNotEmpty) return msg;
+      final sub = subtitle.trim();
+      if (sub.isNotEmpty) return sub;
+      final location = (payload['location'] as String?)?.trim();
+      return 'Starting soon at ${location != null && location.isNotEmpty ? location : 'shared spot'}';
+    }
+    return subtitle;
+  }
+
+  HouseholdNotificationItem copyWith({
+    bool? isRead,
+    DateTime? readAt,
+  }) {
+    return HouseholdNotificationItem(
+      id: id,
+      type: type,
+      title: title,
+      subtitle: subtitle,
+      createdAt: createdAt,
+      isRead: isRead ?? this.isRead,
+      readAt: readAt ?? this.readAt,
+      payload: payload,
+    );
+  }
 }

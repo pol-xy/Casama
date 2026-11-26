@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,9 +12,11 @@ import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
+import '../../shared/widgets/casama_birthday_field.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_text_field.dart';
 import '../../shared/widgets/profile_camera_sheet.dart';
+import '../legal/terms_privacy_screen.dart';
 import 'widgets/auth_wave_header.dart';
 
 class OptionalProfileScreen extends ConsumerStatefulWidget {
@@ -29,33 +32,70 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
   final _fullNameController = TextEditingController();
   final _nicknameController = TextEditingController();
   final _nicknameFocus = FocusNode();
+  late final TapGestureRecognizer _termsTap;
 
   int? _birthMonth;
   int? _birthDay;
   int? _birthYear;
+  String? _birthdayError;
 
   String? _selectedAvatar;
   bool _isPickingImage = false;
+  bool _agreedToTerms = false;
+  String? _termsError;
 
-  static const List<String> _monthNames = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _termsTap = TapGestureRecognizer()..onTap = _openTermsReader;
+    final user = ref.read(repositoryProvider).currentUser;
+    if (user.fullName != null && user.fullName!.trim().isNotEmpty) {
+      _fullNameController.text = user.fullName!.trim();
+    }
+    if (user.nickname != null && user.nickname!.trim().isNotEmpty) {
+      _nicknameController.text = user.nickname!.trim();
+    }
+    if (user.birthday != null) {
+      _birthMonth = user.birthday!.month;
+      _birthDay = user.birthday!.day;
+      _birthYear = user.birthday!.year;
+    }
+    _selectedAvatar = user.avatarUrl;
+    _agreedToTerms = user.hasConsentedTerms;
+  }
+
+  void _openTermsReader() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const TermsPrivacyScreen(readOnly: true),
+      ),
+    );
+  }
 
   DateTime? get _birthDate {
     if (_birthMonth == null || _birthDay == null || _birthYear == null) {
       return null;
     }
-    try {
-      return DateTime(_birthYear!, _birthMonth!, _birthDay!);
-    } catch (_) {
+    final maxDays = daysInBirthMonth(_birthYear, _birthMonth);
+    if (_birthDay! > maxDays) return null;
+    final dt = DateTime(_birthYear!, _birthMonth!, _birthDay!);
+    if (dt.year != _birthYear ||
+        dt.month != _birthMonth ||
+        dt.day != _birthDay) {
       return null;
     }
+    return dt;
+  }
+
+  bool _isFutureDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return date.isAfter(today);
   }
 
   int? get _computedAge {
     final bDate = _birthDate;
-    if (bDate == null) return null;
+    if (bDate == null || _isFutureDate(bDate)) return null;
     final now = DateTime.now();
     int age = now.year - bDate.year;
     if (now.month < bDate.month ||
@@ -75,6 +115,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
 
   @override
   void dispose() {
+    _termsTap.dispose();
     _fullNameController.dispose();
     _nicknameController.dispose();
     _nicknameFocus.dispose();
@@ -86,7 +127,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
     final initialDate = _birthDate ?? DateTime(now.year - 20, 1, 1);
     final picked = await showDatePicker(
       context: context,
-      initialDate: initialDate,
+      initialDate: initialDate.isAfter(now) ? now : initialDate,
       firstDate: DateTime(1900),
       lastDate: now,
       helpText: 'Select your birthday',
@@ -97,6 +138,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
         _birthMonth = picked.month;
         _birthDay = picked.day;
         _birthYear = picked.year;
+        _birthdayError = null;
       });
     }
   }
@@ -145,33 +187,39 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
   }
 
   void _saveAndContinue() {
-    if (!(_formKey.currentState?.validate() ?? true)) {
+    final formValid = _formKey.currentState?.validate() ?? false;
+    final birthDate = _birthDate;
+    String? nextBirthdayError;
+    if (birthDate == null) {
+      nextBirthdayError = 'Please select your complete birthday';
+    } else if (_isFutureDate(birthDate)) {
+      nextBirthdayError = 'Birthday cannot be in the future';
+    }
+    final nextTermsError =
+        !_agreedToTerms ? 'Please agree to the Terms & Privacy Policy' : null;
+
+    setState(() {
+      _birthdayError = nextBirthdayError;
+      _termsError = nextTermsError;
+    });
+
+    if (!formValid || nextBirthdayError != null || nextTermsError != null) {
       return;
     }
 
     final fullName = _fullNameController.text.trim();
     final nickname = _nicknameController.text.trim();
-    final birthDate = _birthDate;
-    final age = _computedAge;
 
-    ref
-        .read(repositoryProvider)
-        .updateProfile(
-          fullName: fullName.isNotEmpty ? fullName : null,
-          displayName: fullName.isNotEmpty
-              ? fullName
-              : (nickname.isNotEmpty ? nickname : null),
-          nickname: nickname.isNotEmpty ? nickname : null,
-          birthDate: birthDate,
-          age: age,
-          avatarUrl: _selectedAvatar,
-        );
+    ref.read(repositoryProvider).updateProfile(
+      fullName: fullName,
+      displayName: fullName,
+      nickname: nickname,
+      birthday: birthDate,
+      avatarUrl: _selectedAvatar,
+      hasConsentedTerms: true,
+    );
 
-    context.push('/household-setup');
-  }
-
-  void _skipForNow() {
-    context.push('/household-setup');
+    GoRouter.maybeOf(context)?.push('/household-setup');
   }
 
   @override
@@ -182,8 +230,6 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
     return CasamaAuthShell(
       stepLabel: 'Step 2 of 4',
       onBack: () => context.canPop() ? context.pop() : context.go('/auth'),
-      skipLabel: 'Skip',
-      onSkip: _skipForNow,
       mascotPose: CasPose.standing,
       mascotAlignment: Alignment.bottomRight,
       child: Form(
@@ -199,7 +245,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'These details are completely optional. Add a photo or name now, or update anytime from Profile.',
+              'Complete your profile so your housemates recognize you.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: pal.textSecondary,
                 height: 1.45,
@@ -352,6 +398,9 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.next,
               autofillHints: const [AutofillHints.name],
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'Please enter your full name'
+                  : null,
               onChanged: (_) => setState(() {}),
               onFieldSubmitted: (_) =>
                   FocusScope.of(context).requestFocus(_nicknameFocus),
@@ -366,225 +415,140 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
               focusNode: _nicknameFocus,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.done,
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'Please enter your nickname'
+                  : null,
               onFieldSubmitted: (_) => _saveAndContinue(),
             ),
             const SizedBox(height: CasamaSpacing.md),
 
-            // Birthday (Optional) with Birth Month, Day, and Year selectors
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Birthday (Optional)',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: pal.textPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
+            CasamaBirthdayField(
+              label: 'Birthday',
+              month: _birthMonth,
+              day: _birthDay,
+              year: _birthYear,
+              computedAge: _computedAge,
+              errorText: _birthdayError,
+              onMonthChanged: (val) => setState(() {
+                _birthMonth = val;
+                final maxDays = daysInBirthMonth(_birthYear, _birthMonth);
+                if (_birthDay != null && _birthDay! > maxDays) {
+                  _birthDay = maxDays;
+                }
+                _birthdayError = null;
+              }),
+              onDayChanged: (val) => setState(() {
+                _birthDay = val;
+                _birthdayError = null;
+              }),
+              onYearChanged: (val) => setState(() {
+                _birthYear = val;
+                final maxDays = daysInBirthMonth(_birthYear, _birthMonth);
+                if (_birthDay != null && _birthDay! > maxDays) {
+                  _birthDay = maxDays;
+                }
+                _birthdayError = null;
+              }),
+              onPickCalendar: _pickBirthdayDate,
+            ),
+            const SizedBox(height: CasamaSpacing.md),
+
+            Semantics(
+              checked: _agreedToTerms,
+              label: 'I agree to the Terms & Privacy Policy',
+              child: InkWell(
+                borderRadius: CasamaSpacing.roundedMd,
+                onTap: () => setState(() {
+                  _agreedToTerms = !_agreedToTerms;
+                  if (_agreedToTerms) _termsError = null;
+                }),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: CasamaSpacing.minTouchTarget,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 2,
                     ),
-                    if (_computedAge != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2.5,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        AnimatedContainer(
+                          duration: CasamaMotion.resolve(
+                            context,
+                            CasamaMotion.press,
+                          ),
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: _agreedToTerms ? pal.forestTeal : pal.track,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                              color: _agreedToTerms
+                                  ? pal.forestTeal
+                                  : (_termsError != null
+                                        ? pal.dangerFg
+                                        : pal.inputBorder),
+                              width: 1.4,
+                            ),
+                          ),
+                          child: _agreedToTerms
+                              ? const Icon(
+                                  Icons.check_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                )
+                              : null,
                         ),
-                        decoration: BoxDecoration(
-                          color: pal.softSage,
-                          borderRadius: CasamaSpacing.roundedPill,
-                        ),
-                        child: Text(
-                          'Age: $_computedAge',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: pal.forestTeal,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text.rich(
+                            TextSpan(
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: pal.textSecondary,
+                                fontSize: 13,
+                                height: 1.35,
+                              ),
+                              children: [
+                                const TextSpan(text: 'I agree to the '),
+                                TextSpan(
+                                  text: 'Terms & Privacy Policy',
+                                  recognizer: _termsTap,
+                                  style: TextStyle(
+                                    color: pal.primaryCoral,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Select your birth month, day, and year',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: pal.textSecondary,
-                    fontSize: 12,
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    // Month Dropdown
-                    Expanded(
-                      flex: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: pal.track,
-                          borderRadius: CasamaSpacing.roundedSm,
-                          border: Border.all(color: pal.border),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<int>(
-                            value: _birthMonth,
-                            hint: Text(
-                              'Month',
-                              style: TextStyle(
-                                color: pal.textMuted,
-                                fontSize: 13,
-                              ),
-                            ),
-                            isExpanded: true,
-                            dropdownColor: pal.surface,
-                            icon: Icon(
-                              Icons.arrow_drop_down,
-                              color: pal.textSecondary,
-                            ),
-                            items: List.generate(12, (i) {
-                              final monthNum = i + 1;
-                              return DropdownMenuItem<int>(
-                                value: monthNum,
-                                child: Text(
-                                  _monthNames[i],
-                                  style: TextStyle(
-                                    color: pal.textPrimary,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              );
-                            }),
-                            onChanged: (val) =>
-                                setState(() => _birthMonth = val),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Day Dropdown
-                    Expanded(
-                      flex: 3,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: pal.track,
-                          borderRadius: CasamaSpacing.roundedSm,
-                          border: Border.all(color: pal.border),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<int>(
-                            value: _birthDay,
-                            hint: Text(
-                              'Day',
-                              style: TextStyle(
-                                color: pal.textMuted,
-                                fontSize: 13,
-                              ),
-                            ),
-                            isExpanded: true,
-                            dropdownColor: pal.surface,
-                            icon: Icon(
-                              Icons.arrow_drop_down,
-                              color: pal.textSecondary,
-                            ),
-                            items: List.generate(31, (i) {
-                              final dayNum = i + 1;
-                              return DropdownMenuItem<int>(
-                                value: dayNum,
-                                child: Text(
-                                  '$dayNum',
-                                  style: TextStyle(
-                                    color: pal.textPrimary,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              );
-                            }),
-                            onChanged: (val) => setState(() => _birthDay = val),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Year Dropdown
-                    Expanded(
-                      flex: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: pal.track,
-                          borderRadius: CasamaSpacing.roundedSm,
-                          border: Border.all(color: pal.border),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<int>(
-                            value: _birthYear,
-                            hint: Text(
-                              'Year',
-                              style: TextStyle(
-                                color: pal.textMuted,
-                                fontSize: 13,
-                              ),
-                            ),
-                            isExpanded: true,
-                            dropdownColor: pal.surface,
-                            icon: Icon(
-                              Icons.arrow_drop_down,
-                              color: pal.textSecondary,
-                            ),
-                            items: List.generate(
-                              DateTime.now().year - 1920 + 1,
-                              (i) {
-                                final yr = DateTime.now().year - i;
-                                return DropdownMenuItem<int>(
-                                  value: yr,
-                                  child: Text(
-                                    '$yr',
-                                    style: TextStyle(
-                                      color: pal.textPrimary,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                            onChanged: (val) =>
-                                setState(() => _birthYear = val),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    // Optional quick calendar picker button
-                    IconButton(
-                      icon: Icon(
-                        Icons.calendar_month_outlined,
-                        color: pal.forestTeal,
-                        size: 22,
-                      ),
-                      tooltip: 'Pick date from calendar',
-                      onPressed: _pickBirthdayDate,
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
-            const SizedBox(height: CasamaSpacing.xl),
+            if (_termsError != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                _termsError!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: pal.dangerFg,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            const SizedBox(height: CasamaSpacing.lg),
 
             CasamaButton(
               label: 'Save & Continue',
               isPill: true,
               height: 50,
               onPressed: _saveAndContinue,
-            ),
-            const SizedBox(height: CasamaSpacing.xs),
-
-            CasamaButton(
-              label: 'Skip Profile for Now',
-              style: CasamaButtonStyle.ghost,
-              onPressed: _skipForNow,
-              height: 48,
             ),
           ],
         ),

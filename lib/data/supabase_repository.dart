@@ -4,9 +4,12 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../core/utils/date_time_utils.dart';
 import 'casama_repository.dart';
 import 'models.dart';
 import 'supabase_config.dart';
@@ -34,6 +37,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     name: 'Casama Household',
     inviteCode: '',
   );
+  List<Household> _userHouseholds = [];
 
   // Cached household collections
   int _kasamaPoints = 0;
@@ -50,6 +54,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   Map<String, String> _directConversationIdsByKey = {};
   Map<String, List<ChatMessage>> _directMessages = {};
   Map<String, int> _directUnreadCounts = {};
+  final Map<String, XFile> _pendingAttachmentFilesByMessageId = {};
   MeetUpInvitation _activeMeetUp = MeetUpInvitation(
     id: '',
     activity: '',
@@ -62,7 +67,17 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   NotificationPreferences _notificationPreferences =
       const NotificationPreferences();
   final List<HouseholdInvitation> _invitations = [];
+  static const Duration quickSnapReactionDebounce = Duration(
+    milliseconds: 1200,
+  );
+
+  List<QuickSnap> _serverQuickSnaps = [];
   List<QuickSnap> _quickSnaps = [];
+  final Map<String, Map<String, int>> _pendingReactionDeltas = {};
+  final Map<String, Map<String, int>> _inFlightReactionDeltas = {};
+  final Map<String, Timer> _reactionFlushTimers = {};
+  final Set<String> _flushingSnapIds = {};
+  final Map<String, Future<void>> _inFlightFlushFutures = {};
   List<UserProfile> _cachedUserSearch = [];
   String _lastSearchQuery = '';
   RepositoryActionError? _pendingError;
@@ -88,6 +103,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   void dispose() {
     _disposed = true;
     _realtimeDebounce?.cancel();
+    for (final timer in _reactionFlushTimers.values) {
+      timer.cancel();
+    }
+    _reactionFlushTimers.clear();
     _authSub?.cancel();
     _teardownRealtime();
     super.dispose();
@@ -146,6 +165,9 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   Household get currentHousehold => _currentHousehold;
 
   @override
+  List<Household> get userHouseholds => List.unmodifiable(_userHouseholds);
+
+  @override
   int get kasamaPoints => _kasamaPoints;
 
   @override
@@ -180,7 +202,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
   @override
   int get unreadNotificationCount =>
-      _notifications.where((n) => !n.isRead).length;
+      _notifications.where((n) => n.isUnread).length;
 
   @override
   int get totalUnreadChatCount {
@@ -380,6 +402,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
   @override
   Future<void> signOut() async {
+    await flushPendingSnapReactions();
     _teardownRealtime();
     try {
       await _client?.auth.signOut();
@@ -425,19 +448,29 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     unawaited(signOut());
   }
 
-  void _resetSignedOutState() {
+  String _activeHouseholdPrefKey(String userId) =>
+      'casama_active_household_$userId';
+
+  Future<String?> _readSavedActiveHouseholdId(String userId) async {
+    if (userId.isEmpty) return null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_activeHouseholdPrefKey(userId));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveActiveHouseholdId(String userId, String householdId) async {
+    if (userId.isEmpty || householdId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_activeHouseholdPrefKey(userId), householdId);
+    } catch (_) {}
+  }
+
+  void _clearHouseholdScopedCache() {
     _teardownRealtime();
-    _isAuthenticated = false;
-    _currentUser = const UserProfile(
-      id: '',
-      displayName: 'Housemate',
-      handle: '@housemate',
-    );
-    _currentHousehold = const Household(
-      id: '',
-      name: 'Casama Household',
-      inviteCode: '',
-    );
     _kasamaPoints = 0;
     _lastRouletteSpinAt = null;
     _members = [];
@@ -461,8 +494,109 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     _pointHistory = [];
     _leaderboardStandings = [];
     _notifications = [];
+    for (final timer in _reactionFlushTimers.values) {
+      timer.cancel();
+    }
+    _reactionFlushTimers.clear();
+    _pendingReactionDeltas.clear();
+    _inFlightReactionDeltas.clear();
+    _flushingSnapIds.clear();
+    _inFlightFlushFutures.clear();
+    _serverQuickSnaps = [];
     _quickSnaps = [];
     _cachedUserSearch = [];
+  }
+
+  void _upsertUserHousehold(Household household, {bool moveToFront = false}) {
+    final next = List<Household>.from(_userHouseholds);
+    final idx = next.indexWhere((h) => h.id == household.id);
+    if (idx != -1) {
+      final existing = next[idx];
+      final merged = household.copyWith(
+        memberCount: household.memberCount ?? existing.memberCount,
+        spaceType: household.spaceType ?? existing.spaceType,
+      );
+      if (moveToFront) {
+        next.removeAt(idx);
+        next.insert(0, merged);
+      } else {
+        next[idx] = merged;
+      }
+    } else if (moveToFront) {
+      next.insert(0, household);
+    } else {
+      next.add(household);
+    }
+    _userHouseholds = next;
+  }
+
+  Future<void> _fetchUserHouseholds(String userId) async {
+    final client = _client;
+    if (client == null || userId.isEmpty) {
+      _userHouseholds = [];
+      return;
+    }
+
+    final rows = await client
+        .from('household_members')
+        .select('household_id, joined_at, households(id, name, invite_code, created_by)')
+        .eq('user_id', userId)
+        .order('joined_at', ascending: false);
+
+    final parsed = <Household>[];
+    final seenIds = <String>{};
+    for (final raw in rows as List<dynamic>) {
+      final map = raw as Map<String, dynamic>;
+      final hhJson = map['households'] as Map<String, dynamic>?;
+      if (hhJson == null) continue;
+      final hh = Household.fromJson(hhJson);
+      if (hh.id.isNotEmpty && seenIds.add(hh.id)) {
+        parsed.add(hh);
+      }
+    }
+
+    final countsByHousehold = <String, int>{};
+    if (parsed.isNotEmpty) {
+      try {
+        final ids = parsed.map((h) => h.id).toList();
+        final rosterRows = await client
+            .from('household_members')
+            .select('household_id')
+            .inFilter('household_id', ids);
+        for (final raw in rosterRows as List<dynamic>) {
+          final hid = (raw as Map<String, dynamic>)['household_id'] as String?;
+          if (hid != null && hid.isNotEmpty) {
+            countsByHousehold[hid] = (countsByHousehold[hid] ?? 0) + 1;
+          }
+        }
+      } catch (e) {
+        debugPrint('Supabase member count lookup warning: $e');
+      }
+    }
+
+    _userHouseholds = parsed
+        .map(
+          (h) => h.copyWith(
+            memberCount: countsByHousehold[h.id] ?? h.memberCount ?? 1,
+          ),
+        )
+        .toList();
+  }
+
+  void _resetSignedOutState() {
+    _clearHouseholdScopedCache();
+    _isAuthenticated = false;
+    _currentUser = const UserProfile(
+      id: '',
+      displayName: 'Housemate',
+      handle: '@housemate',
+    );
+    _currentHousehold = const Household(
+      id: '',
+      name: 'Casama Household',
+      inviteCode: '',
+    );
+    _userHouseholds = [];
     _safeNotify();
   }
 
@@ -521,28 +655,35 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   Future<void> _hydrateAuthenticatedUser(User authUser) async {
-    final client = _requireClient();
     _isAuthenticated = true;
 
     try {
       _currentUser = await _ensureProfileRow(authUser);
+      await _fetchUserHouseholds(authUser.id);
 
-      final memberRecord = await client
-          .from('household_members')
-          .select('household_id, households(id, name, invite_code, created_by)')
-          .eq('user_id', authUser.id)
-          .order('joined_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      if (memberRecord != null && memberRecord['households'] != null) {
-        _currentHousehold = Household.fromJson(
-          memberRecord['households'] as Map<String, dynamic>,
-        );
+      if (_userHouseholds.isNotEmpty) {
+        final savedId = await _readSavedActiveHouseholdId(authUser.id);
+        Household selected = _userHouseholds.first;
+        if (savedId != null && savedId.isNotEmpty) {
+          for (final hh in _userHouseholds) {
+            if (hh.id == savedId) {
+              selected = hh;
+              break;
+            }
+          }
+        } else if (_currentHousehold.id.isNotEmpty) {
+          for (final hh in _userHouseholds) {
+            if (hh.id == _currentHousehold.id) {
+              selected = hh;
+              break;
+            }
+          }
+        }
+        _currentHousehold = selected;
         await _fetchHouseholdData();
         _setupRealtime();
       } else {
-        _teardownRealtime();
+        _clearHouseholdScopedCache();
         _currentHousehold = const Household(
           id: '',
           name: 'Casama Household',
@@ -566,13 +707,13 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     String? handle,
     String? fullName,
     String? nickname,
-    int? age,
-    DateTime? birthDate,
+    DateTime? birthday,
     String? avatarUrl,
+    bool? hasConsentedTerms,
+    bool? hasCompletedOnboarding,
     bool clearAvatar = false,
     bool clearNickname = false,
-    bool clearAge = false,
-    bool clearBirthDate = false,
+    bool clearBirthday = false,
   }) {
     unawaited(
       _updateProfileAsync(
@@ -580,15 +721,28 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         handle: handle,
         fullName: fullName,
         nickname: nickname,
-        age: age,
-        birthDate: birthDate,
+        birthday: birthday,
         avatarUrl: avatarUrl,
+        hasConsentedTerms: hasConsentedTerms,
+        hasCompletedOnboarding: hasCompletedOnboarding,
         clearAvatar: clearAvatar,
         clearNickname: clearNickname,
-        clearAge: clearAge,
-        clearBirthDate: clearBirthDate,
+        clearBirthday: clearBirthday,
       ),
     );
+  }
+
+  void _syncCurrentUserInMembers(UserProfile updated) {
+    final idx = _members.indexWhere((m) => m.profile.id == updated.id);
+    if (idx == -1) return;
+    final next = List<MemberPresence>.from(_members);
+    next[idx] = MemberPresence(
+      profile: updated,
+      isHome: next[idx].isHome,
+      note: next[idx].note,
+      updatedAt: next[idx].updatedAt,
+    );
+    _members = next;
   }
 
   Future<void> _updateProfileAsync({
@@ -596,31 +750,37 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     String? handle,
     String? fullName,
     String? nickname,
-    int? age,
-    DateTime? birthDate,
+    DateTime? birthday,
     String? avatarUrl,
+    bool? hasConsentedTerms,
+    bool? hasCompletedOnboarding,
     bool clearAvatar = false,
     bool clearNickname = false,
-    bool clearAge = false,
-    bool clearBirthDate = false,
+    bool clearBirthday = false,
   }) async {
     final prevUser = _currentUser;
-    final computedAge = age ?? _computeAgeFromBirthDate(birthDate);
-    final effectiveDisplayName = displayName ?? _currentUser.displayName;
     final effectiveFullName = fullName ?? _currentUser.fullName;
+    final effectiveDisplayName = displayName ??
+        (fullName != null && fullName.trim().isNotEmpty
+            ? fullName.trim()
+            : _currentUser.displayName);
     final effectiveNickname = clearNickname
         ? null
         : (nickname ?? _currentUser.nickname);
     final effectiveHandle = handle ?? _currentUser.handle;
-    final effectiveAge = clearAge
+    final normalizedBirthday = birthday != null
+        ? DateTime(birthday.year, birthday.month, birthday.day)
+        : null;
+    final effectiveBirthday = clearBirthday
         ? null
-        : (computedAge ?? _currentUser.age);
-    final effectiveBirthDate = clearBirthDate
-        ? null
-        : (birthDate ?? _currentUser.birthDate);
+        : (normalizedBirthday ?? _currentUser.birthday);
     var effectiveAvatarUrl = clearAvatar
         ? null
         : (avatarUrl ?? _currentUser.avatarUrl);
+    final effectiveHasConsentedTerms =
+        hasConsentedTerms ?? _currentUser.hasConsentedTerms;
+    final effectiveHasCompletedOnboarding =
+        hasCompletedOnboarding ?? _currentUser.hasCompletedOnboarding;
 
     _currentUser = UserProfile(
       id: _currentUser.id,
@@ -628,12 +788,12 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       handle: effectiveHandle,
       fullName: effectiveFullName,
       nickname: effectiveNickname,
-      age: effectiveAge,
-      birthDate: effectiveBirthDate,
+      birthday: effectiveBirthday,
       avatarUrl: effectiveAvatarUrl,
-      hasConsentedTerms: _currentUser.hasConsentedTerms,
-      hasCompletedOnboarding: _currentUser.hasCompletedOnboarding,
+      hasConsentedTerms: effectiveHasConsentedTerms,
+      hasCompletedOnboarding: effectiveHasCompletedOnboarding,
     );
+    _syncCurrentUserInMembers(_currentUser);
     _safeNotify();
 
     final client = _client;
@@ -658,8 +818,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         'handle': effectiveHandle,
         'full_name': effectiveFullName,
         'nickname': effectiveNickname,
-        'age': effectiveAge,
+        'birthday': UserProfile.formatDateOnly(effectiveBirthday),
         'avatar_url': effectiveAvatarUrl,
+        'has_consented_terms': effectiveHasConsentedTerms,
+        'has_completed_onboarding': effectiveHasCompletedOnboarding,
       };
       await client
           .from('profiles')
@@ -672,28 +834,18 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         handle: effectiveHandle,
         fullName: effectiveFullName,
         nickname: effectiveNickname,
-        age: effectiveAge,
-        birthDate: effectiveBirthDate,
+        birthday: effectiveBirthday,
         avatarUrl: effectiveAvatarUrl,
-        hasConsentedTerms: _currentUser.hasConsentedTerms,
-        hasCompletedOnboarding: _currentUser.hasCompletedOnboarding,
+        hasConsentedTerms: effectiveHasConsentedTerms,
+        hasCompletedOnboarding: effectiveHasCompletedOnboarding,
       );
+      _syncCurrentUserInMembers(_currentUser);
       _safeNotify();
     } catch (e) {
       _currentUser = prevUser;
+      _syncCurrentUserInMembers(prevUser);
       _recordError('Failed to save profile changes.', error: e);
     }
-  }
-
-  int? _computeAgeFromBirthDate(DateTime? birthDate) {
-    if (birthDate == null) return null;
-    final now = DateTime.now();
-    var age = now.year - birthDate.year;
-    if (now.month < birthDate.month ||
-        (now.month == birthDate.month && now.day < birthDate.day)) {
-      age--;
-    }
-    return age >= 10 && age <= 120 ? age : null;
   }
 
   @override
@@ -705,8 +857,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       handle: _currentUser.handle,
       fullName: _currentUser.fullName,
       nickname: _currentUser.nickname,
-      age: _currentUser.age,
-      birthDate: _currentUser.birthDate,
+      birthday: _currentUser.birthday,
       avatarUrl: _currentUser.avatarUrl,
       hasConsentedTerms: true,
       hasCompletedOnboarding: _currentUser.hasCompletedOnboarding,
@@ -737,8 +888,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       handle: _currentUser.handle,
       fullName: _currentUser.fullName,
       nickname: _currentUser.nickname,
-      age: _currentUser.age,
-      birthDate: _currentUser.birthDate,
+      birthday: _currentUser.birthday,
       avatarUrl: _currentUser.avatarUrl,
       hasConsentedTerms: _currentUser.hasConsentedTerms,
       hasCompletedOnboarding: true,
@@ -787,6 +937,37 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @override
+  Future<void> refreshUserHouseholds() async {
+    if (_client == null || _currentUser.id.isEmpty) return;
+    await _fetchUserHouseholds(_currentUser.id);
+    _safeNotify();
+  }
+
+  @override
+  Future<void> switchHousehold(String householdId) async {
+    var idx = _userHouseholds.indexWhere((h) => h.id == householdId);
+    if (idx == -1) {
+      await refreshUserHouseholds();
+      idx = _userHouseholds.indexWhere((h) => h.id == householdId);
+    }
+    if (idx == -1) {
+      throw StateError('Household not found.');
+    }
+    final target = _userHouseholds[idx];
+    if (target.id == _currentHousehold.id) return;
+
+    await flushPendingSnapReactions();
+    _clearHouseholdScopedCache();
+    _currentHousehold = target;
+    await _saveActiveHouseholdId(_currentUser.id, target.id);
+    _safeNotify();
+
+    await _fetchHouseholdData();
+    _setupRealtime();
+    _safeNotify();
+  }
+
+  @override
   Future<Household> createHousehold({required String name}) async {
     final client = _requireClient();
     final userId = client.auth.currentUser?.id ?? _currentUser.id;
@@ -819,7 +1000,11 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       'role': 'owner',
     });
 
-    _currentHousehold = Household.fromJson(created);
+    _clearHouseholdScopedCache();
+    final createdHousehold = Household.fromJson(created).copyWith(memberCount: 1);
+    _currentHousehold = createdHousehold;
+    _upsertUserHousehold(createdHousehold, moveToFront: true);
+    await _saveActiveHouseholdId(userId, createdHousehold.id);
     await _ensureGroupConversationExists(householdId, userId);
     await _fetchHouseholdData();
     _setupRealtime();
@@ -864,7 +1049,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       if (!isDuplicate) rethrow;
     }
 
+    _clearHouseholdScopedCache();
     _currentHousehold = household;
+    _upsertUserHousehold(household, moveToFront: true);
+    await _saveActiveHouseholdId(userId, household.id);
     await _ensureGroupConversationExists(household.id, userId);
     await _fetchHouseholdData();
     _setupRealtime();
@@ -945,7 +1133,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       final snapsFuture = client
           .from('quick_snaps')
           .select(
-            '*, quick_snap_recipients(user_id), quick_snap_reactions(*), quick_snap_comments(*)',
+            'id, household_id, creator_id, creator_name, image_url, caption, created_at, quick_snap_reactions(*), quick_snap_comments(*)',
           )
           .eq('household_id', householdId)
           .order('created_at', ascending: false);
@@ -1030,11 +1218,11 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           profile: profile,
           isHome: ev?['is_home'] as bool? ?? true,
           note: ev?['note'] as String?,
-          updatedAt: ev?['created_at'] != null
-              ? DateTime.parse(ev!['created_at'] as String)
-              : DateTime.now(),
+          updatedAt: parseSupabaseTimestamp(ev?['created_at']),
         );
       }).toList();
+      _currentHousehold = _currentHousehold.copyWith(memberCount: _members.length);
+      _upsertUserHousehold(_currentHousehold);
 
       // Parcels + Availability + Claims
       final availByParcel = <String, List<String>>{};
@@ -1075,20 +1263,21 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         map['claimed_by_name'] = receiverId != null
             ? profileMap[receiverId]?.displayName
             : null;
+        map['claimed_at'] = claim?['received_at'];
+        map['settled_at'] = claim?['settled_at'];
         return ParcelItem.fromJson(map);
       }).toList();
 
       // Maintenance Tasks
       _tasks = tasksRes.map((row) {
         final map = Map<String, dynamic>.from(row as Map<String, dynamic>);
-        final assigneeId = map['assignee_id'] as String?;
         final createdById = map['created_by'] as String? ?? '';
-        if (assigneeId != null && profileMap.containsKey(assigneeId)) {
-          map['assignee_name'] = profileMap[assigneeId]!.displayName;
-          map['assignee_avatar'] = profileMap[assigneeId]!.avatarUrl;
-        }
+        final completedById = map['completed_by'] as String?;
         map['created_by_name'] =
             profileMap[createdById]?.displayName ?? 'Housemate';
+        if (completedById != null && profileMap.containsKey(completedById)) {
+          map['completed_by_name'] = profileMap[completedById]!.displayName;
+        }
         return MaintenanceTask.fromJson(map);
       }).toList();
 
@@ -1096,9 +1285,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       if (rouletteRes.isNotEmpty) {
         final rawCreated =
             (rouletteRes.first as Map<String, dynamic>)['created_at'] as String?;
-        _lastRouletteSpinAt = rawCreated != null
-            ? DateTime.tryParse(rawCreated)
-            : null;
+        _lastRouletteSpinAt = parseSupabaseTimestampOrNull(rawCreated);
       } else {
         _lastRouletteSpinAt = null;
       }
@@ -1107,16 +1294,24 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       final combinedItems = <LostFoundItem>[
         ...lostRes.map((row) {
           final map = Map<String, dynamic>.from(row as Map<String, dynamic>);
-          final reporterId = map['reported_by'] as String? ?? '';
+          final ownerId = map['owner_id'] as String? ?? '';
+          final foundById = map['found_by_id'] as String?;
           map['reported_by_name'] =
-              profileMap[reporterId]?.displayName ?? 'Housemate';
+              profileMap[ownerId]?.displayName ?? 'Housemate';
+          if (foundById != null && profileMap.containsKey(foundById)) {
+            map['found_by_name'] = profileMap[foundById]!.displayName;
+          }
           return LostFoundItem.fromJson(map, forcedType: ItemType.lost);
         }),
         ...foundRes.map((row) {
           final map = Map<String, dynamic>.from(row as Map<String, dynamic>);
-          final reporterId = map['reported_by'] as String? ?? '';
+          final finderId = map['finder_id'] as String? ?? '';
+          final claimedById = map['claimed_by_id'] as String?;
           map['reported_by_name'] =
-              profileMap[reporterId]?.displayName ?? 'Housemate';
+              profileMap[finderId]?.displayName ?? 'Housemate';
+          if (claimedById != null && profileMap.containsKey(claimedById)) {
+            map['claimed_by_name'] = profileMap[claimedById]!.displayName;
+          }
           return LostFoundItem.fromJson(map, forcedType: ItemType.found);
         }),
       ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -1127,26 +1322,14 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           .map((b) => HouseholdBill.fromJson(b as Map<String, dynamic>))
           .toList();
 
-      // QuickSnaps (enforce recipient visibility)
-      _quickSnaps = snapsRes
-          .map((raw) {
-            final map = Map<String, dynamic>.from(raw as Map<String, dynamic>);
-            final recipients =
-                (map['quick_snap_recipients'] as List<dynamic>? ?? const [])
-                    .map((r) => (r as Map<String, dynamic>)['user_id'] as String)
-                    .toList();
-            map['recipient_names'] = recipients
-                .map((uid) => profileMap[uid]?.displayName ?? 'Housemate')
-                .toList();
-            final snap = QuickSnap.fromJson(map);
-            final isVisible =
-                snap.recipientType == QuickSnapRecipientType.everyone ||
-                snap.senderId == userId ||
-                recipients.contains(userId);
-            return isVisible ? snap : null;
-          })
-          .whereType<QuickSnap>()
+      // QuickSnaps (household-wide)
+      _serverQuickSnaps = snapsRes
+          .map(
+            (raw) =>
+                QuickSnap.fromJson(Map<String, dynamic>.from(raw as Map<String, dynamic>)),
+          )
           .toList();
+      _rebuildEffectiveQuickSnaps();
 
       // Points Ledger & Leaderboard
       final pointsByUser = <String, int>{};
@@ -1163,9 +1346,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
               id: map['id'] as String? ?? _uuid.v4(),
               title: _formatPointActionTitle(actionType),
               points: pts,
-              timestamp: map['created_at'] != null
-                  ? DateTime.parse(map['created_at'] as String)
-                  : DateTime.now(),
+              timestamp: parseSupabaseTimestamp(map['created_at']),
               category: _mapPointCategory(actionType),
             ),
           );
@@ -1191,15 +1372,15 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         final type = map['type'] as String? ?? 'update';
         final payload =
             (map['payload'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+        final readAt = parseSupabaseTimestampOrNull(map['read_at']);
         return HouseholdNotificationItem(
           id: map['id'] as String,
           type: type,
           title: _notificationTitle(type, payload),
           subtitle: _notificationSubtitle(type, payload),
-          createdAt: map['created_at'] != null
-              ? DateTime.parse(map['created_at'] as String)
-              : DateTime.now(),
-          isRead: map['read_at'] != null,
+          createdAt: parseSupabaseTimestamp(map['created_at']),
+          isRead: readAt != null,
+          readAt: readAt,
           payload: payload,
         );
       }).toList();
@@ -1313,7 +1494,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
             .select('*, meet_up_responses(*)')
             .eq('conversation_id', groupId)
             .order('created_at', ascending: false)
-            .limit(1);
+            .limit(5);
 
     final convData = await Future.wait<dynamic>([
       msgsFuture,
@@ -1333,15 +1514,26 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       final cid = map['conversation_id'] as String? ?? '';
       final ts = map['last_read_at'] as String?;
       if (cid.isNotEmpty && ts != null) {
-        final parsed = DateTime.tryParse(ts);
+        final parsed = parseSupabaseTimestampOrNull(ts);
         if (parsed != null) lastReadByConv[cid] = parsed;
       }
     }
 
     final msgsByConv = <String, List<ChatMessage>>{};
+    final seenIdsByConv = <String, Set<String>>{};
+    final seenClientIdsByConv = <String, Set<String>>{};
     for (final raw in msgsRes) {
       final map = Map<String, dynamic>.from(raw as Map<String, dynamic>);
       final cid = map['conversation_id'] as String? ?? '';
+      final msgId = map['id'] as String? ?? '';
+      final clientMsgId = map['client_message_id'] as String? ?? '';
+      final seenIds = seenIdsByConv.putIfAbsent(cid, () => <String>{});
+      final seenClientIds = seenClientIdsByConv.putIfAbsent(
+        cid,
+        () => <String>{},
+      );
+      if (msgId.isNotEmpty && !seenIds.add(msgId)) continue;
+      if (clientMsgId.isNotEmpty && !seenClientIds.add(clientMsgId)) continue;
       final senderId = map['sender_id'] as String? ?? '';
       map['sender_name'] = profileMap[senderId]?.displayName ?? 'Housemate';
       map['sender_avatar'] = profileMap[senderId]?.avatarUrl;
@@ -1378,9 +1570,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         creatorName: profileMap[creatorId]?.displayName ?? 'Housemate',
         memberNames: allMemberNames,
         iconEmoji: map['icon'] as String? ?? '💬',
-        createdAt: map['created_at'] != null
-            ? DateTime.parse(map['created_at'] as String)
-            : DateTime.now(),
+        createdAt: parseSupabaseTimestamp(map['created_at']),
         messages: msgsByConv[sid] ?? const [],
         unreadCount: countUnread(sid),
       );
@@ -1413,34 +1603,59 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     _directMessages = nextDirectMsgs;
     _directUnreadCounts = nextDirectUnread;
 
-    // Active Meet-up
+    // Active Meet-up (prefer most recent active invitation; fallback to latest done)
     if (meetupsRes.isNotEmpty) {
-      final m = meetupsRes.first as Map<String, dynamic>;
-      final responses =
-          (m['meet_up_responses'] as List<dynamic>? ?? const []);
-      var going = 0;
-      var maybe = 0;
-      var cant = 0;
-      String? myResp;
-      for (final raw in responses) {
-        final r = raw as Map<String, dynamic>;
-        final resp = r['response'] as String? ?? '';
-        if (resp == 'going') going++;
-        if (resp == 'maybe') maybe++;
-        if (resp == 'cant_make_it') cant++;
-        if (r['user_id'] == userId) myResp = resp;
+      MeetUpInvitation parseMeetup(Map<String, dynamic> m) {
+        final responses =
+            (m['meet_up_responses'] as List<dynamic>? ?? const []);
+        var going = 0;
+        var maybe = 0;
+        var cant = 0;
+        String? myResp;
+        final List<MeetUpResponder> responderList = [];
+        for (final raw in responses) {
+          final r = raw as Map<String, dynamic>;
+          final rUserId = r['user_id'] as String? ?? '';
+          final resp = r['response'] as String? ?? '';
+          if (resp == 'going') going++;
+          if (resp == 'maybe') maybe++;
+          if (resp == 'cant_make_it') cant++;
+          if (rUserId == userId) myResp = resp;
+          if (rUserId.isNotEmpty && resp.isNotEmpty) {
+            final profile = profileMap[rUserId];
+            responderList.add(
+              MeetUpResponder(
+                userId: rUserId,
+                displayName: profile?.displayName ?? 'Housemate',
+                avatarUrl: profile?.avatarUrl,
+                response: resp,
+              ),
+            );
+          }
+        }
+        return MeetUpInvitation.fromJson(
+          m,
+          goingCount: going,
+          maybeCount: maybe,
+          cantMakeCount: cant,
+          currentUserResponse: myResp,
+          responders: responderList,
+        );
       }
+
+      final parsedMeetups = meetupsRes
+          .map((raw) => parseMeetup(Map<String, dynamic>.from(raw as Map)))
+          .toList();
+      _activeMeetUp = parsedMeetups.firstWhere(
+        (m) => m.isActive,
+        orElse: () => parsedMeetups.first,
+      );
+    } else {
       _activeMeetUp = MeetUpInvitation(
-        id: m['id'] as String,
-        activity: m['activity'] as String? ?? '',
-        location: m['location'] as String? ?? '',
-        scheduledTime: m['scheduled_time'] != null
-            ? DateTime.parse(m['scheduled_time'] as String)
-            : DateTime.now(),
-        goingCount: going,
-        maybeCount: maybe,
-        cantMakeCount: cant,
-        currentUserResponse: myResp,
+        id: '',
+        activity: '',
+        location: '',
+        scheduledTime: DateTime.now().add(const Duration(days: 30)),
       );
     }
   }
@@ -1494,6 +1709,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       'messages',
       'meet_up_invitations',
       'meet_up_responses',
+      'quick_snap_reactions',
+      'quick_snap_comments',
     ];
     for (final table in conversationScopedTables) {
       channel.onPostgresChanges(
@@ -1665,7 +1882,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
     final updates = <String, dynamic>{
       'courier': courier ?? current.courier,
-      'expected_arrival': (arrival ?? current.expectedArrival).toIso8601String(),
+      'expected_arrival': toSupabaseUtcIso(arrival ?? current.expectedArrival),
       'payment_type': nextPay == ParcelPaymentType.cod ? 'cod' : 'paid',
       'cod_amount': nextCod,
       'notes': notes ?? current.notes,
@@ -1706,7 +1923,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           'parcel_id': parcelId,
           'user_id': _currentUser.id,
           'is_available': nextAvailable,
-          'updated_at': DateTime.now().toIso8601String(),
+          'updated_at': nowSupabaseUtcIso(),
         },
         onConflict: 'parcel_id,user_id',
       );
@@ -1731,53 +1948,53 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final idx = _parcels.indexWhere((p) => p.id == parcelId);
     if (idx == -1) return;
     final parcel = _parcels[idx];
+    if (parcel.isClaimed) return;
+
+    final isSelfClaim = parcel.buyerId == _currentUser.id;
+    final nowIso = nowSupabaseUtcIso();
 
     try {
-      var insertedClaim = true;
-      try {
-        await client.from('parcel_claims').insert({
+      await client.from('parcel_claims').upsert(
+        {
           'household_id': _currentHousehold.id,
           'parcel_id': parcelId,
           'receiver_id': _currentUser.id,
-          'amount_owed': parcel.paymentType == ParcelPaymentType.cod
-              ? parcel.codAmount
-              : null,
-          'settled': parcel.paymentType == ParcelPaymentType.paid,
-        });
-      } on PostgrestException catch (e) {
-        final isDuplicate =
-            e.code == '23505' ||
-            e.message.contains('uq_parcel_claims_parcel');
-        if (!isDuplicate) rethrow;
-        insertedClaim = false;
-      }
+          'received_at': nowIso,
+          'amount_owed': isSelfClaim
+              ? 0
+              : (parcel.paymentType == ParcelPaymentType.cod
+                  ? (parcel.codAmount ?? 0)
+                  : 0),
+          'settled': isSelfClaim,
+          'settled_at': isSelfClaim ? nowIso : null,
+        },
+        onConflict: 'parcel_id',
+      );
 
       await client
           .from('parcels')
           .update({'status': 'received'})
           .eq('id', parcelId);
 
-      if (insertedClaim) {
+      if (!isSelfClaim && parcel.buyerId.isNotEmpty) {
         await _awardPoints(
           userId: _currentUser.id,
           actionType: 'parcel_received',
           points: 5,
           referenceId: parcelId,
         );
-        if (parcel.buyerId.isNotEmpty && parcel.buyerId != _currentUser.id) {
-          await client.from('notifications').insert({
-            'household_id': _currentHousehold.id,
-            'user_id': parcel.buyerId,
-            'type': 'parcel_received',
-            'payload': {
-              'parcel_id': parcelId,
-              'courier': parcel.courier,
-              'receiver_id': _currentUser.id,
-              'receiver_name': _currentUser.displayName,
-              'cod_amount': parcel.codAmount,
-            },
-          });
-        }
+        await client.from('notifications').insert({
+          'household_id': _currentHousehold.id,
+          'user_id': parcel.buyerId,
+          'type': 'parcel_received',
+          'payload': {
+            'parcel_id': parcelId,
+            'courier': parcel.courier,
+            'receiver_id': _currentUser.id,
+            'receiver_name': _currentUser.displayName,
+            'cod_amount': parcel.codAmount,
+          },
+        });
       }
 
       await _fetchHouseholdData();
@@ -1798,7 +2015,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         .from('parcel_claims')
         .update({
           'settled': true,
-          'settled_at': DateTime.now().toIso8601String(),
+          'settled_at': nowSupabaseUtcIso(),
         })
         .eq('parcel_id', parcelId);
     await _fetchHouseholdData();
@@ -1814,7 +2031,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required String title,
     required TaskCategory category,
     required TaskUrgency urgency,
-    String? assigneeName,
     String? description,
     DateTime? dueDate,
   }) {
@@ -1823,7 +2039,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         title: title,
         category: category,
         urgency: urgency,
-        assigneeName: assigneeName,
         description: description,
         dueDate: dueDate,
       ),
@@ -1834,7 +2049,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required String title,
     required TaskCategory category,
     required TaskUrgency urgency,
-    String? assigneeName,
     String? description,
     DateTime? dueDate,
   }) async {
@@ -1845,9 +2059,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     }
 
     final taskId = _uuid.v4();
-    final resolvedAssignee = assigneeName != null && assigneeName.trim().isNotEmpty
-        ? _resolveMemberByKey(assigneeName)?.profile
-        : null;
 
     final newTask = MaintenanceTask(
       id: taskId,
@@ -1857,9 +2068,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       category: category,
       urgency: urgency,
       status: TaskStatus.open,
-      assigneeId: resolvedAssignee?.id,
-      assigneeName: resolvedAssignee?.displayName,
-      assigneeAvatar: resolvedAssignee?.avatarUrl,
+      createdBy: _currentUser.id,
       createdByName: _currentUser.displayName,
       createdAt: DateTime.now(),
       dueDate: dueDate,
@@ -1878,8 +2087,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         'category': category.dbValue,
         'urgency': urgency.name,
         'status': 'open',
-        'due_date': dueDate?.toIso8601String(),
-        'assignee_id': resolvedAssignee?.id,
+        'due_date': toSupabaseUtcIsoOrNull(dueDate),
         'created_by': _currentUser.id,
       });
     } catch (e) {
@@ -1904,12 +2112,18 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final idx = _tasks.indexWhere((t) => t.id == taskId);
     if (idx == -1) return;
     final task = _tasks[idx];
+    if (status == TaskStatus.done && task.status == TaskStatus.done) return;
     final prev = List<MaintenanceTask>.from(_tasks);
+    final isSelfCreated =
+        task.createdBy.isNotEmpty && task.createdBy == _currentUser.id;
 
     final now = DateTime.now();
     _tasks[idx] = task.copyWith(
       status: status,
       completedById: status == TaskStatus.done ? _currentUser.id : null,
+      completedByName: status == TaskStatus.done
+          ? _currentUser.displayName
+          : null,
       completedAt: status == TaskStatus.done ? now : null,
       clearCompleted: status != TaskStatus.done,
     );
@@ -1925,15 +2139,14 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         'status': dbStatus,
         'completed_by': status == TaskStatus.done ? _currentUser.id : null,
         'completed_at':
-            status == TaskStatus.done ? now.toIso8601String() : null,
+            status == TaskStatus.done ? toSupabaseUtcIso(now) : null,
       }).eq('id', taskId);
 
-      if (status == TaskStatus.done) {
-        final pts = task.category == TaskCategory.restock ? 2 : 5;
+      if (status == TaskStatus.done && !isSelfCreated) {
         await _awardPoints(
           userId: _currentUser.id,
           actionType: 'task_completed',
-          points: pts,
+          points: task.computedPoints,
           referenceId: taskId,
         );
       }
@@ -1958,8 +2171,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       throw StateError('Join a household before spinning Task Roulette.');
     }
 
-    final now = DateTime.now().toUtc();
-    final windowStart = now.subtract(const Duration(hours: 24)).toIso8601String();
+    final now = DateTime.now();
+    final windowStart = toSupabaseUtcIso(
+      now.subtract(const Duration(hours: 24)),
+    );
     final recent = await client
         .from('chore_roulette_records')
         .select('created_at')
@@ -1971,13 +2186,14 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
     if (recent.isNotEmpty) {
       final raw = recent.first['created_at'] as String?;
-      _lastRouletteSpinAt = raw != null ? DateTime.tryParse(raw) : now;
+      _lastRouletteSpinAt = parseSupabaseTimestampOrNull(raw) ?? now;
       _safeNotify();
       throw StateError('Daily spin cooldown active (1 spin per 24 hours).');
     }
 
     final spinId = _uuid.v4();
     final expiresAt = now.add(const Duration(hours: 2));
+    final expiresAtIso = toSupabaseUtcIso(expiresAt);
     await client.from('chore_roulette_records').insert({
       'id': spinId,
       'household_id': hid,
@@ -1987,7 +2203,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       'status': 'pending',
       'decision': null,
       'responded_at': null,
-      'expires_at': expiresAt.toIso8601String(),
+      'expires_at': expiresAtIso,
     });
 
     await client.from('notifications').insert({
@@ -2000,7 +2216,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         'task_title': taskTitle,
         'spun_by_user_id': spunById,
         'spun_by_name': _currentUser.displayName,
-        'expires_at': expiresAt.toIso8601String(),
+        'expires_at': expiresAtIso,
       },
     });
 
@@ -2029,9 +2245,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       throw StateError('This roulette spin has already been resolved.');
     }
 
-    final rawExpiry = record['expires_at'] as String?;
-    if (rawExpiry != null &&
-        DateTime.now().toUtc().isAfter(DateTime.parse(rawExpiry).toUtc())) {
+    final expiry = parseSupabaseTimestampOrNull(record['expires_at']);
+    if (expiry != null && DateTime.now().isAfter(expiry)) {
       await client
           .from('chore_roulette_records')
           .update({'status': 'expired'})
@@ -2041,7 +2256,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
     final selectedUserId = record['selected_user_id'] as String?;
     final resolvedTaskId = taskId ?? record['task_id'] as String?;
-    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final nowIso = nowSupabaseUtcIso();
 
     if (accepted) {
       await client
@@ -2054,11 +2269,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           .eq('id', spinId)
           .eq('status', 'pending');
 
-      if (resolvedTaskId != null && selectedUserId != null) {
-        await client
-            .from('maintenance_tasks')
-            .update({'assignee_id': selectedUserId})
-            .eq('id', resolvedTaskId);
+      if (resolvedTaskId != null) {
         await client
             .from('chore_roulette_records')
             .update({'status': 'expired'})
@@ -2109,6 +2320,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required ItemType type,
     required String title,
     String? description,
+    String? location,
     String? imageUrl,
     Uint8List? imageBytes,
   }) {
@@ -2117,6 +2329,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         type: type,
         title: title,
         description: description,
+        location: location,
         imageUrl: imageUrl,
         imageBytes: imageBytes,
       ),
@@ -2127,6 +2340,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required ItemType type,
     required String title,
     String? description,
+    String? location,
     String? imageUrl,
     Uint8List? imageBytes,
   }) async {
@@ -2145,23 +2359,36 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           (resolvedImageUrl != null && _needsStorageUpload(resolvedImageUrl))) {
         resolvedImageUrl = await _uploadMediaToBucket(
           bucket: SupabaseConfig.casnapsBucket,
-          pathPrefix: 'lost_found/${_currentHousehold.id}',
+          pathPrefix: 'items/${_currentHousehold.id}',
+          exactStoragePath: 'items/${_currentHousehold.id}/$itemId.jpg',
           rawSource: resolvedImageUrl,
           bytes: imageBytes,
         );
       }
 
-      final table = effectiveType == ItemType.lost ? 'lost_items' : 'found_items';
-      final status = effectiveType == ItemType.lost ? 'open' : 'unclaimed';
-      await client.from(table).insert({
-        'id': itemId,
-        'household_id': _currentHousehold.id,
-        'title': title,
-        'description': description,
-        'image_url': resolvedImageUrl,
-        'status': status,
-        'reported_by': _currentUser.id,
-      });
+      if (effectiveType == ItemType.lost) {
+        await client.from('lost_items').insert({
+          'id': itemId,
+          'household_id': _currentHousehold.id,
+          'owner_id': _currentUser.id,
+          'title': title,
+          'description': description,
+          'last_seen_location': location,
+          'image_url': resolvedImageUrl,
+          'status': 'open',
+        });
+      } else {
+        await client.from('found_items').insert({
+          'id': itemId,
+          'household_id': _currentHousehold.id,
+          'finder_id': _currentUser.id,
+          'title': title,
+          'description': description,
+          'found_location': location,
+          'image_url': resolvedImageUrl,
+          'status': 'unclaimed',
+        });
+      }
 
       await _fetchHouseholdData();
       _safeNotify();
@@ -2171,119 +2398,173 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @override
-  void borrowItem(String itemId) {
-    // Shared/borrowed items were retired; no-op kept only for interface parity.
-  }
-
-  @override
-  void claimItem(String itemId) {
-    unawaited(_claimItemAsync(itemId));
-  }
-
-  Future<void> _claimItemAsync(String itemId) async {
+  Future<String?> submitLostItemFind({
+    required LostFoundItem lostItem,
+    String? foundLocation,
+    String? description,
+    String? imageUrl,
+    Uint8List? imageBytes,
+    XFile? imageFile,
+  }) async {
     final client = _client;
-    if (client == null || _currentUser.id.isEmpty) {
-      _recordError('Sign in to claim or report found items.');
-      return;
+    if (client == null ||
+        _currentHousehold.id.isEmpty ||
+        _currentUser.id.isEmpty) {
+      const msg = 'Join a household before reporting a found match.';
+      _recordError(msg);
+      return msg;
+    }
+    if (_currentUser.id == lostItem.reportedBy) {
+      const msg = 'Use "Found It Myself" to resolve your own lost item.';
+      _recordError(msg);
+      return msg;
+    }
+    if (lostItem.type != ItemType.lost || lostItem.status != ItemStatus.open) {
+      const msg = 'This lost item is no longer open.';
+      _recordError(msg);
+      return msg;
     }
 
-    final idx = _items.indexWhere((i) => i.id == itemId);
-    if (idx == -1) return;
-    final item = _items[idx];
+    final newId = _uuid.v4();
+    var resolvedImageUrl = imageUrl;
+    var resolvedBytes = imageBytes;
 
     try {
-      if (item.type == ItemType.lost) {
-        final updated = await client
-            .from('lost_items')
-            .update({
-              'status': 'found',
-              'found_by_id': _currentUser.id,
-            })
-            .eq('id', itemId)
-            .eq('status', 'open')
-            .select()
-            .maybeSingle();
-        if (updated == null) {
-          _recordError('This lost item has already been marked found.');
-          return;
-        }
-      } else {
-        if (item.status != ItemStatus.unclaimed) {
-          _recordError('This found item has already been claimed.');
-          return;
-        }
-        final updated = await client
-            .from('found_items')
-            .update({
-              'status': 'claimed',
-              'claimed_by_id': _currentUser.id,
-            })
-            .eq('id', itemId)
-            .eq('status', 'unclaimed')
-            .select()
-            .maybeSingle();
-        if (updated == null) {
-          _recordError('This found item was already claimed by someone else.');
-          return;
-        }
+      if (resolvedBytes == null && imageFile != null) {
+        resolvedBytes = await imageFile.readAsBytes();
       }
-
-      await _fetchHouseholdData();
-      _safeNotify();
-    } catch (e) {
-      _recordError('Could not update item status.', error: e);
-    }
-  }
-
-  @override
-  void returnItem(String itemId) {
-    unawaited(_returnItemAsync(itemId));
-  }
-
-  Future<void> _returnItemAsync(String itemId) async {
-    final client = _client;
-    if (client == null || _currentUser.id.isEmpty) {
-      _recordError('Sign in to mark an item returned.');
-      return;
-    }
-
-    final idx = _items.indexWhere((i) => i.id == itemId);
-    if (idx == -1) return;
-    final item = _items[idx];
-
-    try {
-      if (item.type == ItemType.lost) {
-        await client
-            .from('lost_items')
-            .update({'status': 'returned'})
-            .eq('id', itemId);
-        final awardee = item.foundById ?? _currentUser.id;
-        await _awardPoints(
-          userId: awardee,
-          actionType: 'lost_item_returned',
-          points: 3,
-          referenceId: itemId,
-        );
-      } else {
-        await client
-            .from('found_items')
-            .update({'status': 'returned'})
-            .eq('id', itemId);
-        final awardee = item.reportedBy.isNotEmpty
-            ? item.reportedBy
-            : _currentUser.id;
-        await _awardPoints(
-          userId: awardee,
-          actionType: 'found_item_returned',
-          points: 3,
-          referenceId: itemId,
+      if (resolvedBytes != null ||
+          (resolvedImageUrl != null && _needsStorageUpload(resolvedImageUrl))) {
+        resolvedImageUrl = await _uploadMediaToBucket(
+          bucket: SupabaseConfig.casnapsBucket,
+          pathPrefix: 'items/${_currentHousehold.id}',
+          exactStoragePath: 'items/${_currentHousehold.id}/$newId.jpg',
+          rawSource: resolvedImageUrl,
+          bytes: resolvedBytes,
         );
       }
 
+      await client.from('found_items').insert({
+        'id': newId,
+        'household_id': _currentHousehold.id,
+        'finder_id': _currentUser.id,
+        'lost_item_id': lostItem.id,
+        'title': lostItem.title,
+        'description': description,
+        'found_location': foundLocation,
+        'image_url': resolvedImageUrl,
+        'status': 'pending',
+      });
+
       await _fetchHouseholdData();
       _safeNotify();
+      return null;
+    } on PostgrestException catch (e) {
+      if (e.code == '23505' ||
+          e.message.contains('uq_found_items_one_pending_per_finder')) {
+        const msg = 'You already have a pending find awaiting review.';
+        _recordError(msg, error: e);
+        return msg;
+      }
+      const msg = 'Could not submit found match.';
+      _recordError(msg, error: e);
+      return msg;
     } catch (e) {
-      _recordError('Could not mark item returned.', error: e);
+      const msg = 'Could not submit found match.';
+      _recordError(msg, error: e);
+      return msg;
+    }
+  }
+
+  @override
+  Future<String?> acceptLostItemFind(String foundItemId) async {
+    final client = _client;
+    if (client == null || _currentUser.id.isEmpty) {
+      const msg = 'Sign in to confirm a found match.';
+      _recordError(msg);
+      return msg;
+    }
+    try {
+      await client.rpc(
+        'accept_lost_item_find',
+        params: {'p_found_item_id': foundItemId},
+      );
+      await _fetchHouseholdData();
+      _safeNotify();
+      return null;
+    } catch (e) {
+      const msg = 'Could not confirm this find.';
+      _recordError(msg, error: e);
+      return msg;
+    }
+  }
+
+  @override
+  Future<String?> rejectLostItemFind(String foundItemId) async {
+    final client = _client;
+    if (client == null || _currentUser.id.isEmpty) {
+      const msg = 'Sign in to reject a found match.';
+      _recordError(msg);
+      return msg;
+    }
+    try {
+      await client.rpc(
+        'reject_lost_item_find',
+        params: {'p_found_item_id': foundItemId},
+      );
+      await _fetchHouseholdData();
+      _safeNotify();
+      return null;
+    } catch (e) {
+      const msg = 'Could not reject this find.';
+      _recordError(msg, error: e);
+      return msg;
+    }
+  }
+
+  @override
+  Future<String?> resolveOwnLostItem(String lostItemId) async {
+    final client = _client;
+    if (client == null || _currentUser.id.isEmpty) {
+      const msg = 'Sign in to resolve your lost item.';
+      _recordError(msg);
+      return msg;
+    }
+    try {
+      await client.rpc(
+        'resolve_own_lost_item',
+        params: {'p_lost_item_id': lostItemId},
+      );
+      await _fetchHouseholdData();
+      _safeNotify();
+      return null;
+    } catch (e) {
+      const msg = 'Could not resolve this lost item.';
+      _recordError(msg, error: e);
+      return msg;
+    }
+  }
+
+  @override
+  Future<String?> claimStandaloneFoundItem(String foundItemId) async {
+    final client = _client;
+    if (client == null || _currentUser.id.isEmpty) {
+      const msg = 'Sign in to claim a found item.';
+      _recordError(msg);
+      return msg;
+    }
+    try {
+      await client.rpc(
+        'claim_standalone_found_item',
+        params: {'p_found_item_id': foundItemId},
+      );
+      await _fetchHouseholdData();
+      _safeNotify();
+      return null;
+    } catch (e) {
+      const msg = 'Could not claim this found item.';
+      _recordError(msg, error: e);
+      return msg;
     }
   }
 
@@ -2481,7 +2762,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     try {
       await client.from('bills').update({
         'status': 'paid',
-        'paid_at': now.toIso8601String(),
+        'paid_at': toSupabaseUtcIso(now),
         'paid_by': _currentUser.id,
         'paid_by_name': _currentUser.displayName,
       }).eq('id', billId);
@@ -2556,16 +2837,12 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required String imageUrl,
     Uint8List? imageBytes,
     String? caption,
-    QuickSnapRecipientType recipientType = QuickSnapRecipientType.everyone,
-    List<String> recipientNames = const [],
   }) {
     unawaited(
       _sendQuickSnapAsync(
         imageUrl: imageUrl,
         imageBytes: imageBytes,
         caption: caption,
-        recipientType: recipientType,
-        recipientNames: recipientNames,
       ),
     );
   }
@@ -2574,8 +2851,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required String imageUrl,
     Uint8List? imageBytes,
     String? caption,
-    required QuickSnapRecipientType recipientType,
-    required List<String> recipientNames,
   }) async {
     final client = _client;
     if (client == null || _currentHousehold.id.isEmpty || _currentUser.id.isEmpty) {
@@ -2595,41 +2870,15 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         );
       }
 
-      final newSnap = QuickSnap(
-        id: snapId,
-        householdId: _currentHousehold.id,
-        senderId: _currentUser.id,
-        senderName: _currentUser.effectiveGreetingName,
-        senderAvatar: _currentUser.avatarUrl,
-        imageUrl: uploadedUrl,
-        caption: caption,
-        recipientType: recipientType,
-        recipientNames: recipientNames,
-        createdAt: DateTime.now(),
-      );
-
-      await client.from('quick_snaps').insert(newSnap.toJson());
-
-      if (recipientType == QuickSnapRecipientType.selectedHousemates &&
-          recipientNames.isNotEmpty) {
-        final recipientRows = <Map<String, dynamic>>[];
-        for (final name in recipientNames) {
-          final member = _resolveMemberByKey(name);
-          if (member != null) {
-            recipientRows.add({
-              'snap_id': snapId,
-              'user_id': member.profile.id,
-            });
-          }
-        }
-        if (recipientRows.isNotEmpty) {
-          await client.from('quick_snap_recipients').upsert(
-            recipientRows,
-            onConflict: 'snap_id,user_id',
-            ignoreDuplicates: true,
-          );
-        }
-      }
+      final trimmedCaption = caption?.trim() ?? '';
+      await client.from('quick_snaps').insert({
+        'id': snapId,
+        'household_id': _currentHousehold.id,
+        'creator_id': _currentUser.id,
+        'creator_name': _currentUser.effectiveGreetingName,
+        'image_url': uploadedUrl,
+        'caption': trimmedCaption.isEmpty ? null : trimmedCaption,
+      });
 
       await _fetchHouseholdData();
       _safeNotify();
@@ -2640,51 +2889,219 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           imageUrl: imageUrl,
           imageBytes: imageBytes,
           caption: caption,
-          recipientType: recipientType,
-          recipientNames: recipientNames,
         ),
         error: e,
       );
     }
   }
 
-  @override
-  void reactToQuickSnap(String snapId, String emoji) {
-    unawaited(_reactToQuickSnapAsync(snapId, emoji));
+  void _rebuildEffectiveQuickSnaps() {
+    final uid = _currentUser.id;
+    final uname = _currentUser.effectiveGreetingName;
+    final now = DateTime.now();
+
+    _quickSnaps = _serverQuickSnaps.map((snap) {
+      final inFlight = _inFlightReactionDeltas[snap.id];
+      final pending = _pendingReactionDeltas[snap.id];
+      if ((inFlight == null || inFlight.isEmpty) &&
+          (pending == null || pending.isEmpty)) {
+        return snap;
+      }
+
+      final combined = <String, int>{};
+      if (inFlight != null) {
+        for (final entry in inFlight.entries) {
+          if (entry.value > 0) {
+            combined[entry.key] = (combined[entry.key] ?? 0) + entry.value;
+          }
+        }
+      }
+      if (pending != null) {
+        for (final entry in pending.entries) {
+          if (entry.value > 0) {
+            combined[entry.key] = (combined[entry.key] ?? 0) + entry.value;
+          }
+        }
+      }
+      if (combined.isEmpty) return snap;
+
+      final merged = List<QuickSnapReaction>.from(snap.reactions);
+      for (final entry in combined.entries) {
+        final existingIdx = merged.indexWhere(
+          (r) => r.userId == uid && r.emoji == entry.key,
+        );
+        if (existingIdx != -1) {
+          final existing = merged[existingIdx];
+          merged[existingIdx] = existing.copyWith(
+            count: existing.count + entry.value,
+            updatedAt: now,
+          );
+        } else {
+          merged.add(
+            QuickSnapReaction(
+              emoji: entry.key,
+              userId: uid,
+              userName: uname,
+              count: entry.value,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+        }
+      }
+      return snap.copyWith(reactions: merged);
+    }).toList();
   }
 
-  Future<void> _reactToQuickSnapAsync(String snapId, String emoji) async {
-    final client = _client;
-    if (client == null || _currentUser.id.isEmpty) return;
+  @override
+  void reactToQuickSnap(String snapId, String emoji) {
+    queueQuickSnapReaction(snapId, emoji);
+  }
 
-    final idx = _quickSnaps.indexWhere((s) => s.id == snapId);
-    if (idx != -1) {
-      final updated = List<QuickSnapReaction>.from(_quickSnaps[idx].reactions)
-        ..removeWhere((r) => r.userId == _currentUser.id)
-        ..add(
-          QuickSnapReaction(
-            emoji: emoji,
-            userId: _currentUser.id,
-            userName: _currentUser.effectiveGreetingName,
-            createdAt: DateTime.now(),
-          ),
-        );
-      _quickSnaps[idx] = _quickSnaps[idx].copyWith(reactions: updated);
-      _safeNotify();
+  @override
+  void queueQuickSnapReaction(String snapId, String emoji) {
+    if (_disposed ||
+        snapId.isEmpty ||
+        _currentUser.id.isEmpty ||
+        !kCasSnapReactionEmojis.contains(emoji)) {
+      return;
     }
 
-    try {
-      await client.from('quick_snap_reactions').upsert(
-        {
-          'snap_id': snapId,
-          'user_id': _currentUser.id,
-          'user_name': _currentUser.effectiveGreetingName,
-          'emoji': emoji,
-        },
-        onConflict: 'snap_id,user_id,emoji',
-      );
-    } catch (e) {
-      _recordError('Could not add reaction.', error: e);
+    final snapDeltas = _pendingReactionDeltas.putIfAbsent(
+      snapId,
+      () => <String, int>{},
+    );
+    snapDeltas[emoji] = (snapDeltas[emoji] ?? 0) + 1;
+
+    _rebuildEffectiveQuickSnaps();
+    _safeNotify();
+
+    _reactionFlushTimers.remove(snapId)?.cancel();
+    _reactionFlushTimers[snapId] = Timer(quickSnapReactionDebounce, () {
+      _reactionFlushTimers.remove(snapId);
+      unawaited(_flushSnapReactions(snapId));
+    });
+  }
+
+  @override
+  Future<void> flushPendingSnapReactions() async {
+    final timers = _reactionFlushTimers.values.toList();
+    _reactionFlushTimers.clear();
+    for (final timer in timers) {
+      timer.cancel();
+    }
+
+    if (_inFlightFlushFutures.isNotEmpty) {
+      await Future.wait(_inFlightFlushFutures.values.toList());
+    }
+
+    final attemptedInPass = <String>{};
+    while (!_disposed) {
+      final pendingIds = _pendingReactionDeltas.entries
+          .where((e) => e.value.isNotEmpty && !attemptedInPass.contains(e.key))
+          .map((e) => e.key)
+          .toList();
+      if (pendingIds.isEmpty) break;
+      attemptedInPass.addAll(pendingIds);
+      await Future.wait(pendingIds.map(_flushSnapReactions));
+      if (_inFlightFlushFutures.isNotEmpty) {
+        await Future.wait(_inFlightFlushFutures.values.toList());
+      }
+    }
+  }
+
+  Future<void> _flushSnapReactions(String snapId) async {
+    _reactionFlushTimers.remove(snapId)?.cancel();
+    if (_flushingSnapIds.contains(snapId)) {
+      return;
+    }
+
+    final rawPending = _pendingReactionDeltas.remove(snapId);
+    if (rawPending == null || rawPending.isEmpty) return;
+
+    final batch = <String, int>{
+      for (final entry in rawPending.entries)
+        if (entry.value > 0) entry.key: entry.value,
+    };
+    if (batch.isEmpty) return;
+
+    final client = _client;
+    if (client == null || _currentUser.id.isEmpty) {
+      _mergeReactionDeltasBack(snapId, batch);
+      return;
+    }
+
+    _flushingSnapIds.add(snapId);
+    _inFlightReactionDeltas[snapId] = Map<String, int>.from(batch);
+
+    final future = () async {
+      var succeeded = false;
+      try {
+        await client.rpc(
+          'increment_quick_snap_reactions',
+          params: {
+            'p_snap_id': snapId,
+            'p_deltas': batch,
+          },
+        );
+
+        final rows = await client
+            .from('quick_snap_reactions')
+            .select()
+            .eq('snap_id', snapId);
+        final serverReactions = (rows as List<dynamic>)
+            .map(
+              (e) => QuickSnapReaction.fromJson(
+                Map<String, dynamic>.from(e as Map<String, dynamic>),
+              ),
+            )
+            .toList();
+
+        final idx = _serverQuickSnaps.indexWhere((s) => s.id == snapId);
+        if (idx != -1) {
+          _serverQuickSnaps[idx] = _serverQuickSnaps[idx].copyWith(
+            reactions: serverReactions,
+          );
+        }
+
+        _inFlightReactionDeltas.remove(snapId);
+        _rebuildEffectiveQuickSnaps();
+        _safeNotify();
+        succeeded = true;
+      } catch (e) {
+        final failedBatch = _inFlightReactionDeltas.remove(snapId);
+        if (failedBatch != null && failedBatch.isNotEmpty) {
+          _mergeReactionDeltasBack(snapId, failedBatch);
+        }
+        _rebuildEffectiveQuickSnaps();
+        _safeNotify();
+        debugPrint(
+          'SupabaseRepository: snap reaction flush failed ($snapId): $e',
+        );
+      } finally {
+        _flushingSnapIds.remove(snapId);
+        _inFlightFlushFutures.remove(snapId);
+        if (succeeded &&
+            !_disposed &&
+            (_pendingReactionDeltas[snapId]?.isNotEmpty ?? false)) {
+          unawaited(_flushSnapReactions(snapId));
+        }
+      }
+    }();
+
+    _inFlightFlushFutures[snapId] = future;
+    await future;
+  }
+
+  void _mergeReactionDeltasBack(String snapId, Map<String, int> deltas) {
+    final target = _pendingReactionDeltas.putIfAbsent(
+      snapId,
+      () => <String, int>{},
+    );
+    for (final entry in deltas.entries) {
+      if (entry.value > 0) {
+        target[entry.key] = (target[entry.key] ?? 0) + entry.value;
+      }
     }
   }
 
@@ -2697,9 +3114,11 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final client = _client;
     if (client == null || _currentUser.id.isEmpty) return;
     final commentId = _uuid.v4();
-    final idx = _quickSnaps.indexWhere((s) => s.id == snapId);
+    final idx = _serverQuickSnaps.indexWhere((s) => s.id == snapId);
     if (idx != -1) {
-      final updated = List<QuickSnapComment>.from(_quickSnaps[idx].comments)
+      final updated = List<QuickSnapComment>.from(
+        _serverQuickSnaps[idx].comments,
+      )
         ..add(
           QuickSnapComment(
             id: commentId,
@@ -2710,7 +3129,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
             createdAt: DateTime.now(),
           ),
         );
-      _quickSnaps[idx] = _quickSnaps[idx].copyWith(comments: updated);
+      _serverQuickSnaps[idx] = _serverQuickSnaps[idx].copyWith(
+        comments: updated,
+      );
+      _rebuildEffectiveQuickSnaps();
       _safeNotify();
     }
 
@@ -2736,14 +3158,19 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   Future<void> _deleteQuickSnapAsync(String snapId) async {
     final client = _client;
     if (client == null) return;
-    final prev = List<QuickSnap>.from(_quickSnaps);
-    _quickSnaps.removeWhere((s) => s.id == snapId);
+    final prev = List<QuickSnap>.from(_serverQuickSnaps);
+    _reactionFlushTimers.remove(snapId)?.cancel();
+    _pendingReactionDeltas.remove(snapId);
+    _inFlightReactionDeltas.remove(snapId);
+    _serverQuickSnaps.removeWhere((s) => s.id == snapId);
+    _rebuildEffectiveQuickSnaps();
     _safeNotify();
 
     try {
       await client.from('quick_snaps').delete().eq('id', snapId);
     } catch (e) {
-      _quickSnaps = prev;
+      _serverQuickSnaps = prev;
+      _rebuildEffectiveQuickSnaps();
       _recordError('Could not delete CASnap.', error: e);
     }
   }
@@ -2792,7 +3219,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         {
           'conversation_id': conversationId,
           'user_id': _currentUser.id,
-          'last_read_at': DateTime.now().toUtc().toIso8601String(),
+          'last_read_at': nowSupabaseUtcIso(),
         },
         onConflict: 'conversation_id,user_id',
       );
@@ -2802,19 +3229,38 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @override
+  void markNotificationAsRead(String notificationId) {
+    final now = DateTime.now();
+    var changed = false;
+    _notifications = _notifications.map((n) {
+      if (n.id == notificationId && n.isUnread) {
+        changed = true;
+        return n.copyWith(isRead: true, readAt: n.readAt ?? now);
+      }
+      return n;
+    }).toList();
+    if (changed) {
+      _safeNotify();
+    }
+
+    final client = _client;
+    if (client != null && _currentUser.id.isNotEmpty) {
+      unawaited(
+        client
+            .from('notifications')
+            .update({'read_at': toSupabaseUtcIso(now)})
+            .eq('id', notificationId)
+            .eq('user_id', _currentUser.id)
+            .isFilter('read_at', null),
+      );
+    }
+  }
+
+  @override
   void markAllNotificationsAsRead() {
+    final now = DateTime.now();
     _notifications = _notifications
-        .map(
-          (n) => HouseholdNotificationItem(
-            id: n.id,
-            type: n.type,
-            title: n.title,
-            subtitle: n.subtitle,
-            createdAt: n.createdAt,
-            isRead: true,
-            payload: n.payload,
-          ),
-        )
+        .map((n) => n.copyWith(isRead: true, readAt: n.readAt ?? now))
         .toList();
     _safeNotify();
 
@@ -2823,7 +3269,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       unawaited(
         client
             .from('notifications')
-            .update({'read_at': DateTime.now().toUtc().toIso8601String()})
+            .update({'read_at': toSupabaseUtcIso(now)})
             .eq('household_id', _currentHousehold.id)
             .eq('user_id', _currentUser.id)
             .isFilter('read_at', null),
@@ -2922,6 +3368,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   void sendChatMessage(
     String content, {
     String? mediaUrl,
+    XFile? attachmentFile,
+    String? clientMessageId,
     String? inviteCode,
     String? inviteSpaceName,
   }) {
@@ -2931,6 +3379,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         isGroup: true,
         content: content,
         mediaUrl: mediaUrl,
+        attachmentFile: attachmentFile,
+        clientMessageId: clientMessageId,
         inviteCode: inviteCode,
         inviteSpaceName: inviteSpaceName,
       ),
@@ -2942,6 +3392,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     String spaceId,
     String content, {
     String? mediaUrl,
+    XFile? attachmentFile,
+    String? clientMessageId,
     String? inviteCode,
     String? inviteSpaceName,
   }) {
@@ -2951,9 +3403,160 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         isGroup: false,
         content: content,
         mediaUrl: mediaUrl,
+        attachmentFile: attachmentFile,
+        clientMessageId: clientMessageId,
         inviteCode: inviteCode,
         inviteSpaceName: inviteSpaceName,
       ),
+    );
+  }
+
+  Future<String> _uploadChatAttachment({
+    required String conversationId,
+    required String clientMessageId,
+    required XFile attachmentFile,
+  }) async {
+    final client = _requireClient();
+    final bytes = await attachmentFile.readAsBytes();
+    if (bytes.isEmpty) {
+      throw StateError('Selected image has no bytes to upload.');
+    }
+    final storagePath = '$conversationId/$clientMessageId.jpg';
+    await client.storage.from(SupabaseConfig.chatAttachmentsBucket).uploadBinary(
+      storagePath,
+      bytes,
+      fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+    );
+    return client.storage
+        .from(SupabaseConfig.chatAttachmentsBucket)
+        .getPublicUrl(storagePath);
+  }
+
+  void _updateConversationMessageStatus({
+    required bool isGroup,
+    required String conversationId,
+    required String messageId,
+    required MessageDeliveryStatus status,
+    String? attachmentUrl,
+    bool clearLocalAttachment = false,
+  }) {
+    if (isGroup) {
+      final idx = _groupMessages.indexWhere((m) => m.id == messageId);
+      if (idx != -1) {
+        final updated = List<ChatMessage>.from(_groupMessages);
+        updated[idx] = updated[idx].copyWith(
+          deliveryStatus: status,
+          attachmentUrl: attachmentUrl,
+          clearLocalAttachment: clearLocalAttachment,
+        );
+        _groupMessages = updated;
+        _safeNotify();
+      }
+      return;
+    }
+
+    final sIdx = _chatSpaces.indexWhere((s) => s.id == conversationId);
+    if (sIdx != -1) {
+      final space = _chatSpaces[sIdx];
+      final mIdx = space.messages.indexWhere((m) => m.id == messageId);
+      if (mIdx != -1) {
+        final updated = List<ChatMessage>.from(space.messages);
+        updated[mIdx] = updated[mIdx].copyWith(
+          deliveryStatus: status,
+          attachmentUrl: attachmentUrl,
+          clearLocalAttachment: clearLocalAttachment,
+        );
+        _chatSpaces[sIdx] = space.copyWith(messages: updated);
+        _safeNotify();
+      }
+    }
+  }
+
+  void _updateDirectMessageStatus({
+    required String peerId,
+    required String messageId,
+    required MessageDeliveryStatus status,
+    String? attachmentUrl,
+    bool clearLocalAttachment = false,
+  }) {
+    final existing = _directMessages[peerId];
+    if (existing == null) return;
+    final idx = existing.indexWhere((m) => m.id == messageId);
+    if (idx != -1) {
+      final updated = List<ChatMessage>.from(existing);
+      updated[idx] = updated[idx].copyWith(
+        deliveryStatus: status,
+        attachmentUrl: attachmentUrl,
+        clearLocalAttachment: clearLocalAttachment,
+      );
+      _directMessages[peerId] = updated;
+      _safeNotify();
+    }
+  }
+
+  @override
+  void retryGroupMessage(String messageId) {
+    final idx = _groupMessages.indexWhere((m) => m.id == messageId);
+    if (idx == -1) return;
+    final msg = _groupMessages[idx];
+    if (msg.deliveryStatus != MessageDeliveryStatus.failed) return;
+    final pendingFile = _pendingAttachmentFilesByMessageId.remove(messageId);
+    _groupMessages = _groupMessages.where((m) => m.id != messageId).toList();
+    _safeNotify();
+    sendChatMessage(
+      msg.content,
+      mediaUrl: msg.attachmentUrl,
+      attachmentFile: pendingFile,
+      clientMessageId: msg.clientMessageId,
+      inviteCode: msg.inviteCode,
+      inviteSpaceName: msg.inviteSpaceName,
+    );
+  }
+
+  @override
+  void retrySpaceMessage(String spaceId, String messageId) {
+    final sIdx = _chatSpaces.indexWhere((s) => s.id == spaceId);
+    if (sIdx == -1) return;
+    final space = _chatSpaces[sIdx];
+    final mIdx = space.messages.indexWhere((m) => m.id == messageId);
+    if (mIdx == -1) return;
+    final msg = space.messages[mIdx];
+    if (msg.deliveryStatus != MessageDeliveryStatus.failed) return;
+    final pendingFile = _pendingAttachmentFilesByMessageId.remove(messageId);
+    _chatSpaces[sIdx] = space.copyWith(
+      messages: space.messages.where((m) => m.id != messageId).toList(),
+    );
+    _safeNotify();
+    sendSpaceMessage(
+      spaceId,
+      msg.content,
+      mediaUrl: msg.attachmentUrl,
+      attachmentFile: pendingFile,
+      clientMessageId: msg.clientMessageId,
+      inviteCode: msg.inviteCode,
+      inviteSpaceName: msg.inviteSpaceName,
+    );
+  }
+
+  @override
+  void retryDirectMessage(String contactKey, String messageId) {
+    final peer = _resolveMemberByKey(contactKey);
+    final peerId = peer?.profile.id ?? contactKey;
+    final list = _directMessages[peerId];
+    if (list == null) return;
+    final idx = list.indexWhere((m) => m.id == messageId);
+    if (idx == -1) return;
+    final msg = list[idx];
+    if (msg.deliveryStatus != MessageDeliveryStatus.failed) return;
+    final pendingFile = _pendingAttachmentFilesByMessageId.remove(messageId);
+    _directMessages[peerId] = list.where((m) => m.id != messageId).toList();
+    _safeNotify();
+    sendDirectMessage(
+      contactKey,
+      msg.content,
+      mediaUrl: msg.attachmentUrl,
+      attachmentFile: pendingFile,
+      clientMessageId: msg.clientMessageId,
     );
   }
 
@@ -2962,6 +3565,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required bool isGroup,
     required String content,
     String? mediaUrl,
+    XFile? attachmentFile,
+    String? clientMessageId,
     String? inviteCode,
     String? inviteSpaceName,
   }) async {
@@ -2978,59 +3583,86 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     }
     if (targetConvId == null || targetConvId.isEmpty) return;
 
+    final trimmedContent = content.trim();
     final messageId = _uuid.v4();
-    final clientMessageId = _uuid.v4();
+    final effectiveClientMessageId = clientMessageId ?? _uuid.v4();
+    if (attachmentFile != null) {
+      _pendingAttachmentFilesByMessageId[messageId] = attachmentFile;
+    }
+
+    final msg = ChatMessage(
+      id: messageId,
+      senderId: _currentUser.id,
+      senderName: _currentUser.displayName,
+      senderAvatar: _currentUser.avatarUrl,
+      content: trimmedContent,
+      attachmentUrl: mediaUrl,
+      localAttachmentPath: attachmentFile?.path,
+      clientMessageId: effectiveClientMessageId,
+      inviteCode: inviteCode,
+      inviteSpaceName: inviteSpaceName,
+      createdAt: DateTime.now(),
+      isCurrentUser: true,
+      deliveryStatus: MessageDeliveryStatus.sending,
+    );
+
+    if (isGroup) {
+      _groupMessages = [..._groupMessages, msg];
+    } else {
+      final sIdx = _chatSpaces.indexWhere((s) => s.id == targetConvId);
+      if (sIdx != -1) {
+        _chatSpaces[sIdx] = _chatSpaces[sIdx].copyWith(
+          messages: [..._chatSpaces[sIdx].messages, msg],
+        );
+      }
+    }
+    _safeNotify();
+
     try {
-      var uploadedMedia = mediaUrl;
-      if (uploadedMedia != null && _needsStorageUpload(uploadedMedia)) {
-        uploadedMedia = await _uploadMediaToBucket(
-          bucket: SupabaseConfig.casnapsBucket,
-          pathPrefix: 'chat/${_currentHousehold.id}',
-          rawSource: uploadedMedia,
+      String? uploadedAttachmentUrl = mediaUrl;
+      if (attachmentFile != null) {
+        uploadedAttachmentUrl = await _uploadChatAttachment(
+          conversationId: targetConvId,
+          clientMessageId: effectiveClientMessageId,
+          attachmentFile: attachmentFile,
+        );
+      } else if (uploadedAttachmentUrl != null &&
+          _needsStorageUpload(uploadedAttachmentUrl)) {
+        uploadedAttachmentUrl = await _uploadMediaToBucket(
+          bucket: SupabaseConfig.chatAttachmentsBucket,
+          pathPrefix: targetConvId,
+          rawSource: uploadedAttachmentUrl,
         );
       }
 
-      final msg = ChatMessage(
-        id: messageId,
-        senderId: _currentUser.id,
-        senderName: _currentUser.displayName,
-        senderAvatar: _currentUser.avatarUrl,
-        content: content,
-        mediaUrl: uploadedMedia,
-        inviteCode: inviteCode,
-        inviteSpaceName: inviteSpaceName,
-        createdAt: DateTime.now(),
-        isCurrentUser: true,
-      );
-
-      if (isGroup) {
-        _groupMessages = [..._groupMessages, msg];
-      } else {
-        final sIdx = _chatSpaces.indexWhere((s) => s.id == targetConvId);
-        if (sIdx != -1) {
-          _chatSpaces[sIdx] = _chatSpaces[sIdx].copyWith(
-            messages: [..._chatSpaces[sIdx].messages, msg],
-          );
-        }
-      }
-      _safeNotify();
-
       await client.from('messages').upsert(
         {
-          'id': messageId,
           'conversation_id': targetConvId,
           'sender_id': _currentUser.id,
-          'content': content,
-          'media_url': uploadedMedia,
-          'invite_code': inviteCode,
-          'invite_space_name': inviteSpaceName,
-          'client_message_id': clientMessageId,
+          'content': trimmedContent,
+          'attachment_url': uploadedAttachmentUrl,
+          'client_message_id': effectiveClientMessageId,
         },
         onConflict: 'conversation_id,client_message_id',
         ignoreDuplicates: true,
       );
       await _upsertConversationRead(targetConvId);
+      _pendingAttachmentFilesByMessageId.remove(messageId);
+      _updateConversationMessageStatus(
+        isGroup: isGroup,
+        conversationId: targetConvId,
+        messageId: messageId,
+        status: MessageDeliveryStatus.delivered,
+        attachmentUrl: uploadedAttachmentUrl,
+        clearLocalAttachment: true,
+      );
     } catch (e) {
+      _updateConversationMessageStatus(
+        isGroup: isGroup,
+        conversationId: targetConvId,
+        messageId: messageId,
+        status: MessageDeliveryStatus.failed,
+      );
       _recordError('Could not send message.', error: e);
     }
   }
@@ -3040,9 +3672,17 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     String contactKey,
     String content, {
     String? mediaUrl,
+    XFile? attachmentFile,
+    String? clientMessageId,
   }) {
     unawaited(
-      _sendDirectMessageAsync(contactKey, content, mediaUrl: mediaUrl),
+      _sendDirectMessageAsync(
+        contactKey,
+        content,
+        mediaUrl: mediaUrl,
+        attachmentFile: attachmentFile,
+        clientMessageId: clientMessageId,
+      ),
     );
   }
 
@@ -3050,6 +3690,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     String contactKey,
     String content, {
     String? mediaUrl,
+    XFile? attachmentFile,
+    String? clientMessageId,
     String? inviteCode,
     String? inviteSpaceName,
   }) async {
@@ -3066,6 +3708,33 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     }
     final peerId = peer.profile.id;
 
+    final trimmedContent = content.trim();
+    final messageId = _uuid.v4();
+    final effectiveClientMessageId = clientMessageId ?? _uuid.v4();
+    if (attachmentFile != null) {
+      _pendingAttachmentFilesByMessageId[messageId] = attachmentFile;
+    }
+
+    final msg = ChatMessage(
+      id: messageId,
+      senderId: _currentUser.id,
+      senderName: _currentUser.displayName,
+      senderAvatar: _currentUser.avatarUrl,
+      content: trimmedContent,
+      attachmentUrl: mediaUrl,
+      localAttachmentPath: attachmentFile?.path,
+      clientMessageId: effectiveClientMessageId,
+      inviteCode: inviteCode,
+      inviteSpaceName: inviteSpaceName,
+      createdAt: DateTime.now(),
+      isCurrentUser: true,
+      deliveryStatus: MessageDeliveryStatus.sending,
+    );
+
+    final existing = List<ChatMessage>.from(_directMessages[peerId] ?? []);
+    _directMessages[peerId] = [...existing, msg];
+    _safeNotify();
+
     try {
       var convId = _directConversationIdsByKey[peerId];
       if (convId == null) {
@@ -3073,50 +3742,48 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         _directConversationIdsByKey[peerId] = convId;
       }
 
-      var uploadedMedia = mediaUrl;
-      if (uploadedMedia != null && _needsStorageUpload(uploadedMedia)) {
-        uploadedMedia = await _uploadMediaToBucket(
-          bucket: SupabaseConfig.casnapsBucket,
-          pathPrefix: 'chat/${_currentHousehold.id}',
-          rawSource: uploadedMedia,
+      String? uploadedAttachmentUrl = mediaUrl;
+      if (attachmentFile != null) {
+        uploadedAttachmentUrl = await _uploadChatAttachment(
+          conversationId: convId,
+          clientMessageId: effectiveClientMessageId,
+          attachmentFile: attachmentFile,
+        );
+      } else if (uploadedAttachmentUrl != null &&
+          _needsStorageUpload(uploadedAttachmentUrl)) {
+        uploadedAttachmentUrl = await _uploadMediaToBucket(
+          bucket: SupabaseConfig.chatAttachmentsBucket,
+          pathPrefix: convId,
+          rawSource: uploadedAttachmentUrl,
         );
       }
 
-      final messageId = _uuid.v4();
-      final clientMessageId = _uuid.v4();
-      final msg = ChatMessage(
-        id: messageId,
-        senderId: _currentUser.id,
-        senderName: _currentUser.displayName,
-        senderAvatar: _currentUser.avatarUrl,
-        content: content,
-        mediaUrl: uploadedMedia,
-        inviteCode: inviteCode,
-        inviteSpaceName: inviteSpaceName,
-        createdAt: DateTime.now(),
-        isCurrentUser: true,
-      );
-
-      final existing = List<ChatMessage>.from(_directMessages[peerId] ?? []);
-      _directMessages[peerId] = [...existing, msg];
-      _safeNotify();
-
       await client.from('messages').upsert(
         {
-          'id': messageId,
           'conversation_id': convId,
           'sender_id': _currentUser.id,
-          'content': content,
-          'media_url': uploadedMedia,
-          'invite_code': inviteCode,
-          'invite_space_name': inviteSpaceName,
-          'client_message_id': clientMessageId,
+          'content': trimmedContent,
+          'attachment_url': uploadedAttachmentUrl,
+          'client_message_id': effectiveClientMessageId,
         },
         onConflict: 'conversation_id,client_message_id',
         ignoreDuplicates: true,
       );
       await _upsertConversationRead(convId);
+      _pendingAttachmentFilesByMessageId.remove(messageId);
+      _updateDirectMessageStatus(
+        peerId: peerId,
+        messageId: messageId,
+        status: MessageDeliveryStatus.delivered,
+        attachmentUrl: uploadedAttachmentUrl,
+        clearLocalAttachment: true,
+      );
     } catch (e) {
+      _updateDirectMessageStatus(
+        peerId: peerId,
+        messageId: messageId,
+        status: MessageDeliveryStatus.failed,
+      );
       _recordError('Could not send direct message.', error: e);
     }
   }
@@ -3194,7 +3861,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       'creator_id': _currentUser.id,
       'activity': activity,
       'location': location,
-      'scheduled_time': scheduledTime.toUtc().toIso8601String(),
+      'scheduled_time': toSupabaseUtcIso(scheduledTime),
+      'status': 'active',
     });
     await client.from('meet_up_responses').upsert(
       {
@@ -3205,9 +3873,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       onConflict: 'invitation_id,user_id',
     );
 
-    if (announcementText != null && announcementText.trim().isNotEmpty) {
-      sendChatMessage(announcementText.trim());
-    }
     await _fetchHouseholdData();
     _safeNotify();
   }
@@ -3219,7 +3884,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
   Future<void> _respondMeetUpAsync(String response) async {
     final client = _client;
-    if (client == null || _currentUser.id.isEmpty || _activeMeetUp.id.isEmpty) {
+    if (client == null ||
+        _currentUser.id.isEmpty ||
+        _activeMeetUp.id.isEmpty ||
+        !_activeMeetUp.isActive) {
       return;
     }
 
@@ -3234,15 +3902,22 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     if (response == 'maybe') m++;
     if (response == 'cant_make_it') c++;
 
-    _activeMeetUp = MeetUpInvitation(
-      id: prev.id,
-      activity: prev.activity,
-      location: prev.location,
-      scheduledTime: prev.scheduledTime,
+    final updatedResponders = [
+      ...prev.responders.where((r) => r.userId != _currentUser.id),
+      MeetUpResponder(
+        userId: _currentUser.id,
+        displayName: _currentUser.displayName,
+        avatarUrl: _currentUser.avatarUrl,
+        response: response,
+      ),
+    ];
+
+    _activeMeetUp = prev.copyWith(
       goingCount: g,
       maybeCount: m,
       cantMakeCount: c,
       currentUserResponse: response,
+      responders: updatedResponders,
     );
     _safeNotify();
 
@@ -3252,7 +3927,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           'invitation_id': prev.id,
           'user_id': _currentUser.id,
           'response': response,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
+          'updated_at': nowSupabaseUtcIso(),
         },
         onConflict: 'invitation_id,user_id',
       );
@@ -3317,6 +3992,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   Future<String> _uploadMediaToBucket({
     required String bucket,
     required String pathPrefix,
+    String? exactStoragePath,
     String? rawSource,
     Uint8List? bytes,
   }) async {
@@ -3347,7 +4023,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       throw StateError('No binary image bytes available for Storage upload.');
     }
 
-    final storagePath =
+    final storagePath = exactStoragePath ??
         '$pathPrefix/${DateTime.now().millisecondsSinceEpoch}_${_uuid.v4().substring(0, 8)}.jpg';
     await client.storage.from(bucket).uploadBinary(
       storagePath,
@@ -3392,6 +4068,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         return 'Completed a household task';
       case 'bill_paid':
         return 'Paid a shared bill';
+      case 'lost_item_found':
+        return "Found & returned a housemate's lost item";
+      case 'found_item_claimed':
+        return 'Found item claimed by a housemate';
       case 'lost_item_returned':
       case 'found_item_returned':
       case 'item_returned':
@@ -3420,6 +4100,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         return '${payload['receiver_name'] ?? 'A housemate'} received your ${payload['courier'] ?? 'parcel'}';
       case 'roulette_chosen':
         return 'Task Roulette picked you for "${payload['task_title'] ?? 'a task'}"';
+      case 'meetup_reminder':
+        return 'Meet-up Reminder: ${payload['title'] ?? 'Household Meet-up'}';
       default:
         return 'Household update';
     }
@@ -3432,6 +4114,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         return cod != null ? 'COD ₱$cod • Tap to view Parcels' : 'Tap to view Parcels';
       case 'roulette_chosen':
         return 'Spun by ${payload['spun_by_name'] ?? 'a housemate'} • Respond in Tasks';
+      case 'meetup_reminder':
+        final msg = (payload['message'] as String?)?.trim();
+        if (msg != null && msg.isNotEmpty) return msg;
+        return 'Starting soon at ${payload['location'] ?? 'shared spot'}';
       default:
         return 'Tap to view';
     }

@@ -618,8 +618,11 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     );
   }
 
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
+  bool _isSameDay(DateTime a, DateTime b) {
+    final la = a.toLocal();
+    final lb = b.toLocal();
+    return la.year == lb.year && la.month == lb.month && la.day == lb.day;
+  }
 
   bool _hasEventsOnDate(CasamaRepository repo, DateTime date) =>
       _getEventsForDate(repo, date).isNotEmpty;
@@ -665,7 +668,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     }
 
     final m = repo.activeMeetUp;
-    if (_isSameDay(m.scheduledTime, date)) {
+    if (m.hasValidData && m.isActive && _isSameDay(m.scheduledTime, date)) {
       list.add(
         _CalendarEventItem(
           title: m.activity,
@@ -684,7 +687,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
           _CalendarEventItem(
             title: t.title,
             subtitle:
-                'Assigned: ${t.assigneeName ?? 'Unassigned'} • Urgency: ${t.urgency.label}',
+                '${t.category.label} • By ${t.createdByName} • ${t.urgency.label}',
             timeLabel: t.status == TaskStatus.done ? 'Completed' : 'Due Today',
             type: _CalendarEventType.task,
           ),

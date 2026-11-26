@@ -277,7 +277,7 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                                     ),
                                   ),
                                   subtitle: Text(
-                                    'When maintenance chores are assigned or due',
+                                    'When household tasks are added or due',
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       fontSize: 12,
                                       color: pal.textSecondary,
@@ -403,9 +403,9 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                                 icon: Icons.policy_outlined,
                                 iconColor: pal.infoFg,
                                 iconBg: pal.infoBg,
-                                title: 'Privacy Policy',
+                                title: 'Terms of Service & Privacy Policy',
                                 subtitle:
-                                    'Zero GPS background tracking guarantee',
+                                    'Zero GPS tracking • Terms & privacy policy',
                                 onTap: () => GoRouter.maybeOf(
                                   context,
                                 )?.push('/terms?readOnly=true'),
@@ -471,43 +471,6 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   fontSize: 13,
                                   color: pal.textSecondary,
-                                ),
-                              ),
-                              Divider(height: 22, color: pal.divider),
-                              SizedBox(
-                                width: double.infinity,
-                                child: Wrap(
-                                  alignment: WrapAlignment.spaceBetween,
-                                  spacing: 8,
-                                  runSpacing: 4,
-                                  children: [
-                                    TextButton(
-                                      onPressed: () => GoRouter.maybeOf(
-                                        context,
-                                      )?.push('/terms?readOnly=true'),
-                                      child: Text(
-                                        'Terms of Service',
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          color: pal.primaryCoral,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => GoRouter.maybeOf(
-                                        context,
-                                      )?.push('/terms?readOnly=true'),
-                                      child: Text(
-                                        'Privacy Policy',
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          color: pal.primaryCoral,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ),
                             ],

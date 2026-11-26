@@ -13,32 +13,51 @@ import '../../../data/repository_provider.dart';
 import '../../../shared/widgets/casama_avatar.dart';
 import '../../../shared/widgets/casama_button.dart';
 import '../../../shared/widgets/casama_sheet_scaffold.dart';
-import '../../tasks/task_ui_state_provider.dart';
+import '../../../shared/widgets/casama_text_field.dart';
 
 const String rouletteLastSpinPrefKey = 'casama_roulette_last_spin_ms';
 
-/// Opens the embedded slide-up Task Roulette sheet from `Household Tasks`
-/// (`casama-app-mockup.html`) with multi-turn decelerating physics (`4000ms`),
-/// `-π/2` top-pointer slice alignment, Accept/Reject stakes, and 24h cooldown.
+enum TaskRouletteMode { task, chatQuestion }
+
+/// Opens the embedded slide-up Roulette sheet for either `Household Tasks`
+/// ([TaskRouletteMode.task]) or `Group Chat` ([TaskRouletteMode.chatQuestion]).
 Future<void> showTaskRouletteSheet(
   BuildContext context, {
   MaintenanceTask? task,
+  TaskRouletteMode mode = TaskRouletteMode.task,
+  Future<void> Function(String question, MemberPresence winner)?
+      onChatSpinSubmitted,
 }) {
+  final isChat = mode == TaskRouletteMode.chatQuestion;
   return showCasamaSheet<void>(
     context,
     icon: Icons.casino_outlined,
-    title: 'Task Roulette',
-    subtitle: 'Spin to assign a housemate fairly',
-    builder: (sheetCtx) =>
-        _TaskRouletteSheetBody(hostContext: context, task: task),
+    title: isChat ? 'Spin Chore Roulette' : 'Task Roulette',
+    subtitle: isChat
+        ? 'Ask a question & let the wheel pick a housemate'
+        : 'Spin to pick a housemate fairly',
+    builder: (sheetCtx) => _TaskRouletteSheetBody(
+      hostContext: context,
+      task: task,
+      mode: mode,
+      onChatSpinSubmitted: onChatSpinSubmitted,
+    ),
   );
 }
 
 class _TaskRouletteSheetBody extends ConsumerStatefulWidget {
   final BuildContext hostContext;
   final MaintenanceTask? task;
+  final TaskRouletteMode mode;
+  final Future<void> Function(String question, MemberPresence winner)?
+      onChatSpinSubmitted;
 
-  const _TaskRouletteSheetBody({required this.hostContext, this.task});
+  const _TaskRouletteSheetBody({
+    required this.hostContext,
+    this.task,
+    this.mode = TaskRouletteMode.task,
+    this.onChatSpinSubmitted,
+  });
 
   @override
   ConsumerState<_TaskRouletteSheetBody> createState() =>
@@ -49,6 +68,7 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   Animation<double>? _angleAnim;
+  final TextEditingController _questionController = TextEditingController();
 
   double _currentAngle = 0;
   bool _isSpinning = false;
@@ -57,6 +77,10 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
   int? _winnerIndex;
   bool _cooldownLoaded = false;
   String? _activeSpinId;
+  String? _questionError;
+  bool _isSubmittingChat = false;
+
+  bool get _isChatMode => widget.mode == TaskRouletteMode.chatQuestion;
 
   @override
   void initState() {
@@ -65,7 +89,9 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
       vsync: this,
       duration: CasamaMotion.rouletteSpin,
     );
-    _loadCooldown();
+    if (!_isChatMode) {
+      _loadCooldown();
+    }
   }
 
   Future<void> _loadCooldown() async {
@@ -113,7 +139,24 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
     return diff.isNegative ? Duration.zero : diff;
   }
 
-  bool get _isOnCooldown => _cooldownLoaded && _cooldownRemaining > Duration.zero;
+  bool get _isOnCooldown =>
+      !_isChatMode && _cooldownLoaded && _cooldownRemaining > Duration.zero;
+
+  String _sliceLabel(UserProfile p) {
+    final nick = p.nickname?.trim();
+    if (nick != null && nick.isNotEmpty) return nick;
+    final full = p.fullName?.trim();
+    if (full != null && full.isNotEmpty) return full.split(' ').first;
+    return p.displayName.trim().split(' ').first;
+  }
+
+  String _winnerDisplayName(UserProfile p) {
+    final nick = p.nickname?.trim();
+    if (nick != null && nick.isNotEmpty) return nick;
+    final full = p.fullName?.trim();
+    if (full != null && full.isNotEmpty) return full;
+    return p.displayName.trim();
+  }
 
   String _cooldownLabel() {
     final rem = _cooldownRemaining;
@@ -125,12 +168,25 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
 
   @override
   void dispose() {
+    _questionController.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   void _spin(List<MemberPresence> candidates) {
     if (_isSpinning || _isOnCooldown || candidates.isEmpty) return;
+
+    if (_isChatMode) {
+      if (_questionController.text.trim().isEmpty) {
+        setState(() {
+          _questionError = 'Enter a question before spinning.';
+        });
+        return;
+      }
+      if (_questionError != null) {
+        setState(() => _questionError = null);
+      }
+    }
 
     final reduced = CasamaMotion.reduceMotion(context);
     final sliceCount = candidates.length;
@@ -159,18 +215,13 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
     });
 
     Future<void> onSpinSettled() async {
+      if (_isChatMode) return;
       final repo = ref.read(repositoryProvider);
       final targetTask =
           widget.task ??
           repo.tasks.cast<MaintenanceTask?>().firstWhere(
-            (t) =>
-                t != null &&
-                t.status != TaskStatus.done &&
-                (t.assigneeName == null || t.assigneeName!.isEmpty),
-            orElse: () => repo.tasks.cast<MaintenanceTask?>().firstWhere(
-              (t) => t != null && t.status != TaskStatus.done,
-              orElse: () => null,
-            ),
+            (t) => t != null && t.status != TaskStatus.done,
+            orElse: () => null,
           );
       try {
         final spinId = await repo.recordRouletteSpin(
@@ -245,11 +296,6 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
         return;
       }
     }
-    if (accepted && taskId != null && _winner != null) {
-      ref
-          .read(taskUiOverridesProvider.notifier)
-          .assignTask(taskId, _winner!.profile.displayName);
-    }
     await _persistCooldown();
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -266,6 +312,23 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
     }
   }
 
+  Future<void> _handleSendToChat() async {
+    final winner = _winner;
+    final question = _questionController.text.trim();
+    if (winner == null || question.isEmpty || _isSubmittingChat) return;
+    setState(() => _isSubmittingChat = true);
+    try {
+      await widget.onChatSpinSubmitted?.call(question, winner);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmittingChat = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pal = context.palette;
@@ -276,19 +339,15 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
     final MaintenanceTask? resolvedTask =
         widget.task ??
         repo.tasks.cast<MaintenanceTask?>().firstWhere(
-          (t) =>
-              t != null &&
-              t.status != TaskStatus.done &&
-              (t.assigneeName == null || t.assigneeName!.isEmpty),
-          orElse: () => repo.tasks.cast<MaintenanceTask?>().firstWhere(
-            (t) => t != null && t.status != TaskStatus.done,
-            orElse: () => null,
-          ),
+          (t) => t != null && t.status != TaskStatus.done,
+          orElse: () => null,
         );
     final taskTitle = resolvedTask?.title ?? 'Clean Bathroom';
 
     final homeMembers = repo.members.where((m) => m.isHome).toList();
-    final candidates = homeMembers.isNotEmpty ? homeMembers : repo.members;
+    final candidates = _isChatMode
+        ? repo.members
+        : (homeMembers.isNotEmpty ? homeMembers : repo.members);
 
     final displayAngle = _isSpinning
         ? (_angleAnim?.value ?? _currentAngle)
@@ -298,115 +357,165 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Spinning for task banner
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          decoration: BoxDecoration(
-            color: pal.track,
-            borderRadius: CasamaSpacing.roundedLg,
-            border: Border.all(color: pal.border),
+        if (_isChatMode) ...[
+          CasamaTextField(
+            controller: _questionController,
+            label: 'Your Question',
+            hint: "e.g., Who's buying dinner tonight?",
+            prefixIcon: Icons.help_outline_rounded,
+            maxLines: 2,
+            enabled: !_isSpinning,
+            readOnly: _isSpinning,
+            textCapitalization: TextCapitalization.sentences,
+            onChanged: (_) {
+              if (_questionError != null) {
+                setState(() => _questionError = null);
+              }
+            },
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'SPINNING FOR TASK',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: pal.textSecondary,
-                        fontSize: 11,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      taskTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: pal.textPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+          if (_questionError != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _questionError!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: pal.primaryCoral,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: CasamaSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: pal.softSage,
+                borderRadius: CasamaSpacing.roundedPill,
+                border: Border.all(
+                  color: pal.forestTeal.withValues(alpha: 0.28),
                 ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
+              child: Text(
+                'All Housemates (${candidates.length})',
+                style: theme.textTheme.labelSmall?.tabular.copyWith(
+                  color: pal.forestTeal,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11.5,
                 ),
+              ),
+            ),
+          ),
+        ] else ...[
+          // Spinning for task banner
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: pal.track,
+              borderRadius: CasamaSpacing.roundedLg,
+              border: Border.all(color: pal.border),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'SPINNING FOR TASK',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: pal.textSecondary,
+                          fontSize: 11,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        taskTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: pal.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: pal.successBg,
+                    borderRadius: CasamaSpacing.roundedPill,
+                    border: Border.all(
+                      color: pal.successFg.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  child: Text(
+                    '+5 pts + 2 bonus',
+                    style: theme.textTheme.labelSmall?.tabular.copyWith(
+                      color: pal.successFg,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: CasamaSpacing.sm),
+
+          // Eligibility & 24h Cooldown badges
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: pal.successBg,
                   borderRadius: CasamaSpacing.roundedPill,
                   border: Border.all(
-                    color: pal.successFg.withValues(alpha: 0.28),
+                    color: pal.successFg.withValues(alpha: 0.32),
                   ),
                 ),
                 child: Text(
-                  '+5 pts + 2 bonus',
+                  homeMembers.isNotEmpty
+                      ? '✓ Home Housemates (${candidates.length})'
+                      : 'All Housemates (${candidates.length})',
                   style: theme.textTheme.labelSmall?.tabular.copyWith(
                     color: pal.successFg,
                     fontWeight: FontWeight.w700,
-                    fontSize: 11,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _isOnCooldown ? pal.neutralBg : pal.amberBg,
+                  borderRadius: CasamaSpacing.roundedPill,
+                  border: Border.all(
+                    color: (_isOnCooldown ? pal.neutralFg : pal.amberFg)
+                        .withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Text(
+                  _cooldownLabel(),
+                  style: theme.textTheme.labelSmall?.tabular.copyWith(
+                    color: _isOnCooldown ? pal.neutralFg : pal.amberFg,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
                   ),
                 ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: CasamaSpacing.sm),
-
-        // Eligibility & 24h Cooldown badges
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: pal.successBg,
-                borderRadius: CasamaSpacing.roundedPill,
-                border: Border.all(
-                  color: pal.successFg.withValues(alpha: 0.32),
-                ),
-              ),
-              child: Text(
-                homeMembers.isNotEmpty
-                    ? '✓ Home Housemates (${candidates.length})'
-                    : 'All Housemates (${candidates.length})',
-                style: theme.textTheme.labelSmall?.tabular.copyWith(
-                  color: pal.successFg,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11.5,
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: _isOnCooldown ? pal.neutralBg : pal.amberBg,
-                borderRadius: CasamaSpacing.roundedPill,
-                border: Border.all(
-                  color: (_isOnCooldown ? pal.neutralFg : pal.amberFg)
-                      .withValues(alpha: 0.35),
-                ),
-              ),
-              child: Text(
-                _cooldownLabel(),
-                style: theme.textTheme.labelSmall?.tabular.copyWith(
-                  color: _isOnCooldown ? pal.neutralFg : pal.amberFg,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11.5,
-                ),
-              ),
-            ),
-          ],
-        ),
+        ],
         const SizedBox(height: CasamaSpacing.md),
 
         // Roulette Wheel w/ top `-π/2` diamond pointer
@@ -464,9 +573,7 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
                                       SizedBox(
                                         width: 72,
                                         child: Text(
-                                          candidates[i].profile.displayName
-                                              .split(' ')
-                                              .first,
+                                          _sliceLabel(candidates[i].profile),
                                           textAlign: TextAlign.center,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -519,47 +626,61 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
                 // Center Coral SPIN Trigger
                 Positioned(
                   bottom: 84,
-                  child: Semantics(
-                    button: true,
-                    label: 'Spin Task Roulette',
-                    child: CasamaPressable.fab(
-                      onTap: (_isSpinning || _isOnCooldown)
-                          ? null
-                          : () => _spin(candidates),
-                      child: AnimatedContainer(
-                        key: const Key('task_roulette_spin_button'),
-                        duration: CasamaMotion.resolve(
-                          context,
-                          CasamaMotion.press,
-                        ),
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: (_isSpinning || _isOnCooldown)
-                              ? pal.textMuted
-                              : pal.primaryCoral,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: pal.surface, width: 3),
-                          boxShadow: [
-                            BoxShadow(
-                              color: pal.primaryCoral.withValues(alpha: 0.38),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
+                  child: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _questionController,
+                    builder: (context, value, _) {
+                      final isDisabled =
+                          _isSpinning ||
+                          _isOnCooldown ||
+                          (_isChatMode && value.text.trim().isEmpty);
+                      return Semantics(
+                        button: true,
+                        label: _isChatMode
+                            ? 'Spin Chore Roulette'
+                            : 'Spin Task Roulette',
+                        child: CasamaPressable.fab(
+                          onTap: (_isSpinning || _isOnCooldown)
+                              ? null
+                              : () => _spin(candidates),
+                          child: AnimatedContainer(
+                            key: const Key('task_roulette_spin_button'),
+                            duration: CasamaMotion.resolve(
+                              context,
+                              CasamaMotion.press,
                             ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _isSpinning ? '...' : 'SPIN',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13.5,
-                            letterSpacing: 0.8,
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: isDisabled
+                                  ? pal.textMuted
+                                  : pal.primaryCoral,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: pal.surface, width: 3),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isDisabled
+                                          ? pal.textMuted
+                                          : pal.primaryCoral)
+                                      .withValues(alpha: 0.38),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              _isSpinning ? '...' : 'SPIN',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13.5,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -568,8 +689,61 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
         ),
         const SizedBox(height: CasamaSpacing.md),
 
-        // Accept / Reject result panel or rules caption
-        if (_winner != null) ...[
+        // Result panel or rules caption
+        if (_winner != null && _isChatMode) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: pal.track,
+              borderRadius: CasamaSpacing.roundedLg,
+              border: Border.all(color: pal.border),
+            ),
+            child: Row(
+              children: [
+                CasamaAvatar(
+                  radius: 18,
+                  avatarUrl: _winner!.profile.avatarUrl,
+                  name: _winner!.profile.displayName,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${_winnerDisplayName(_winner!.profile)} was chosen!',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: pal.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: CasamaSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: CasamaButton(
+                  label: 'Spin Again',
+                  style: CasamaButtonStyle.secondary,
+                  height: 48,
+                  onPressed: _isSubmittingChat
+                      ? null
+                      : () => _spin(candidates),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: CasamaButton(
+                  label: 'Send to Chat',
+                  icon: Icons.send_rounded,
+                  style: CasamaButtonStyle.primary,
+                  height: 48,
+                  onPressed: _isSubmittingChat ? null : _handleSendToChat,
+                ),
+              ),
+            ],
+          ),
+        ] else if (_winner != null) ...[
           Text(
             '${_winner!.profile.displayName} is up for $taskTitle!',
             textAlign: TextAlign.center,
@@ -610,9 +784,11 @@ class _TaskRouletteSheetBodyState extends ConsumerState<_TaskRouletteSheetBody>
           ),
         ] else
           Text(
-            _isOnCooldown
-                ? 'Daily spin already used for this household. Come back after cooldown.'
-                : 'Chosen housemate gets Accept (+2 bonus pts) or Reject (-3 pts). 24h cooldown applies after spinning.',
+            _isChatMode
+                ? 'Type a question above and tap SPIN. No cooldown or points apply in Chat mode.'
+                : (_isOnCooldown
+                      ? 'Daily spin already used for this household. Come back after cooldown.'
+                      : 'Chosen housemate gets Accept (+2 bonus pts) or Reject (-3 pts). 24h cooldown applies after spinning.'),
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: pal.textSecondary,
@@ -656,6 +832,17 @@ class _RouletteSlicesPainter extends CustomPainter {
         ..color = sliceColors[i % sliceColors.length]
         ..style = PaintingStyle.fill;
       canvas.drawArc(rect, startAngle, sweep, true, paint);
+      if (highlightedIndex == i) {
+        final highlightPaint = Paint()
+          ..color = CasamaColors.primaryCoral.withValues(alpha: 0.16)
+          ..style = PaintingStyle.fill;
+        canvas.drawArc(rect, startAngle, sweep, true, highlightPaint);
+        final highlightStroke = Paint()
+          ..color = CasamaColors.primaryCoral
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3;
+        canvas.drawArc(rect, startAngle, sweep, true, highlightStroke);
+      }
       canvas.drawArc(rect, startAngle, sweep, true, dividerPaint);
     }
 

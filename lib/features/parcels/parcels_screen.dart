@@ -50,6 +50,8 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
               title: 'Parcels & Deliveries',
               subtitle:
                   '${repo.currentHousehold.name} • Coordinate arrivals & COD',
+              titleMascotPose: CasPose.deliveries,
+              extendedWave: true,
               compact: true,
               onBackTap: () =>
                   context.canPop() ? context.pop() : context.go('/boards'),
@@ -82,44 +84,76 @@ class ParcelsBoardView extends ConsumerStatefulWidget {
 }
 
 class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
-  int _selectedSegment = 0; // 0 = Upcoming, 1 = History
-  int _previousSegment = 0;
+  int _selectedSegment = 1; // 0 = My Parcels, 1 = Upcoming, 2 = History
+  int _previousSegment = 1;
 
   @override
   Widget build(BuildContext context) {
     final pal = context.palette;
     final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
-    final upcomingParcels = repo.parcels
-        .where((p) => p.status == ParcelStatus.expected)
-        .toList();
-    final historyParcels = repo.parcels
-        .where((p) => p.status == ParcelStatus.received)
+    final currentUserId = repo.currentUser.id;
+
+    final unsettledParcels = repo.parcels
+        .where((p) => p.status != ParcelStatus.cancelled && !p.isSettled)
         .toList();
 
-    final codTotal = upcomingParcels.fold<double>(
+    final myParcels = unsettledParcels
+        .where((p) => p.buyerId == currentUserId)
+        .toList()
+      ..sort((a, b) {
+        if (a.isUnsettledClaim != b.isUnsettledClaim) {
+          return a.isUnsettledClaim ? -1 : 1;
+        }
+        return a.expectedArrival.compareTo(b.expectedArrival);
+      });
+
+    final upcomingParcels = unsettledParcels;
+    final historyParcels = repo.parcels.where((p) => p.isSettled).toList();
+    final expectedUnclaimed = upcomingParcels.where((p) => !p.isClaimed).toList();
+
+    final codTotal = unsettledParcels.fold<double>(
       0,
       (sum, p) =>
           p.paymentType == ParcelPaymentType.cod ? sum + (p.codAmount ?? 0) : sum,
     );
-    final arrivingToday = upcomingParcels.where((p) {
+    final arrivingToday = expectedUnclaimed.where((p) {
       final now = DateTime.now();
       return p.expectedArrival.year == now.year &&
           p.expectedArrival.month == now.month &&
           p.expectedArrival.day == now.day;
     }).length;
 
-    final currentList = _selectedSegment == 0 ? upcomingParcels : historyParcels;
+    final currentList = switch (_selectedSegment) {
+      0 => myParcels,
+      1 => upcomingParcels,
+      _ => historyParcels,
+    };
+    final tabMode = switch (_selectedSegment) {
+      0 => _ParcelTabMode.myParcels,
+      1 => _ParcelTabMode.upcoming,
+      _ => _ParcelTabMode.history,
+    };
+    final emptyTitle = switch (_selectedSegment) {
+      0 => 'No active parcels of yours',
+      1 => 'No upcoming deliveries',
+      _ => 'No settled parcels yet',
+    };
+    final emptySubtitle = switch (_selectedSegment) {
+      0 => 'Post a parcel you are expecting or settle claimed deliveries here.',
+      1 => 'Add a delivery when expecting a package.',
+      _ => 'Completed & settled deliveries appear here.',
+    };
 
     return SingleChildScrollView(
-      padding: EdgeInsets.only(top: 46, bottom: widget.bottomPadding),
+      padding: EdgeInsets.only(top: 4, bottom: widget.bottomPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Peeking summary card w/ unframed transparent mascot tucked behind edge
           CasamaPeekingSummaryBar(
             mascotPose: CasPose.deliveries,
-            leftTitle: '${upcomingParcels.length} Expected',
+            leftTitle: '${expectedUnclaimed.length} Expected',
             leftSubtitle: '$arrivingToday arriving today',
             rightTitle: '₱${NumberFormat('#,##0.00').format(codTotal)} COD',
             rightSubtitle: codTotal > 0 ? 'Cash needed today' : 'All prepaid',
@@ -134,8 +168,9 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
               _selectedSegment = next;
             }),
             segments: const [
-              CasamaFilterOption(value: 0, label: 'Upcoming'),
-              CasamaFilterOption(value: 1, label: 'History'),
+              CasamaFilterOption(value: 0, label: 'My Parcels'),
+              CasamaFilterOption(value: 1, label: 'Upcoming'),
+              CasamaFilterOption(value: 2, label: 'History'),
             ],
           ),
 
@@ -160,9 +195,7 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            _selectedSegment == 1
-                                ? 'No past parcels'
-                                : 'No upcoming deliveries',
+                            emptyTitle,
                             style: theme.textTheme.titleLarge?.copyWith(
                               color: pal.textPrimary,
                               fontWeight: FontWeight.w700,
@@ -170,7 +203,7 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Add a delivery when expecting a package.',
+                            emptySubtitle,
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: pal.textSecondary,
@@ -191,7 +224,7 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
                           if (i > 0) const SizedBox(height: 12),
                           _ParcelCard(
                             parcel: currentList[i],
-                            isHistory: _selectedSegment == 1,
+                            tabMode: tabMode,
                           ),
                         ],
                       ],
@@ -204,31 +237,27 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
   }
 }
 
+enum _ParcelTabMode { myParcels, upcoming, history }
+
 class _ParcelCard extends ConsumerWidget {
   final ParcelItem parcel;
-  final bool isHistory;
+  final _ParcelTabMode tabMode;
 
-  const _ParcelCard({required this.parcel, required this.isHistory});
+  const _ParcelCard({required this.parcel, required this.tabMode});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pal = context.palette;
     final theme = Theme.of(context);
-    final isShopee = parcel.courier.toLowerCase().contains('shopee');
-    final isLazada = parcel.courier.toLowerCase().contains('lazada');
+    final (
+      Color courierBg,
+      Color courierColor,
+      String courierMonogram,
+    ) = _resolveCourierStyle(parcel.courier, pal);
 
-    final Color courierBg;
-    final Color courierColor;
-    if (isShopee) {
-      courierBg = pal.softBlush;
-      courierColor = pal.primaryCoral;
-    } else if (isLazada) {
-      courierBg = pal.infoBg;
-      courierColor = pal.infoFg;
-    } else {
-      courierBg = pal.softSage;
-      courierColor = pal.forestTeal;
-    }
+    final now = DateTime.now();
+    final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    final isArrivingTodayOrPast = !parcel.expectedArrival.isAfter(endOfToday);
 
     final isCod = parcel.paymentType == ParcelPaymentType.cod;
     final paymentText = isCod
@@ -246,16 +275,20 @@ class _ParcelCard extends ConsumerWidget {
               Container(
                 width: 48,
                 height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(
                   color: courierBg,
                   borderRadius: CasamaSpacing.roundedMd,
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  parcel.courier.isNotEmpty ? parcel.courier[0] : 'P',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: courierColor,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    courierMonogram,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: courierColor,
+                    ),
                   ),
                 ),
               ),
@@ -302,6 +335,29 @@ class _ParcelCard extends ConsumerWidget {
             ),
           ],
 
+          if (tabMode == _ParcelTabMode.myParcels &&
+              parcel.isUnsettledClaim) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Claimed by ${parcel.claimedByName ?? 'Housemate'}${parcel.claimedAt != null ? ' • ${DateFormat('MMM d, h:mm a').format(parcel.claimedAt!)}' : ''}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: pal.forestTeal,
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
+            ),
+          ] else if (tabMode == _ParcelTabMode.history) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Claimed by ${parcel.claimedByName ?? 'Housemate'}${parcel.claimedAt != null ? ' (${DateFormat('MMM d').format(parcel.claimedAt!)})' : ''} • Settled${parcel.settledAt != null ? ' ${DateFormat('MMM d').format(parcel.settledAt!)}' : ''}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: pal.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
+            ),
+          ],
+
           const SizedBox(height: 12),
           Divider(height: 1, color: pal.border),
           const SizedBox(height: 10),
@@ -341,72 +397,28 @@ class _ParcelCard extends ConsumerWidget {
                     ),
                 ],
               ),
-              if (!isHistory)
-                if (isShopee)
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: pal.primaryCoral,
-                      foregroundColor: Colors.white,
-                      shape: const StadiumBorder(),
-                      minimumSize: const Size(0, 44),
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
-                    ),
-                    onPressed: () {
-                      ref.read(repositoryProvider).receiveParcel(parcel.id);
-                      _showPointsCelebrationDialog(
-                        context,
-                        5,
-                        'Parcel Received!',
-                      );
-                    },
-                    child: const Text(
-                      'I Got It',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+              if (tabMode == _ParcelTabMode.history)
+                const StatusChip(
+                  label: 'Settled',
+                  variant: ChipVariant.returned,
+                )
+              else if (parcel.isUnsettledClaim)
+                if (tabMode == _ParcelTabMode.myParcels)
+                  Wrap(
+                    spacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const StatusChip(
+                        label: 'Unsettled',
+                        variant: ChipVariant.cod,
                       ),
-                    ),
-                  )
-                else
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: pal.textPrimary,
-                      side: BorderSide(color: pal.border),
-                      shape: const StadiumBorder(),
-                      minimumSize: const Size(0, 44),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                    ),
-                    onPressed: () {
-                      ref
-                          .read(repositoryProvider)
-                          .toggleParcelAvailability(parcel.id);
-                      showCasamaToast(
-                        context,
-                        'Updated delivery availability',
-                        icon: Icons.check_circle_outline_rounded,
-                      );
-                    },
-                    child: const Text(
-                      'Mark Unavailable',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  )
-              else
-                Wrap(
-                  spacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (isCod && !parcel.codSettled)
                       OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           foregroundColor: pal.forestTeal,
                           side: BorderSide(color: pal.forestTeal),
                           shape: const StadiumBorder(),
-                          minimumSize: const Size(0, 38),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          minimumSize: const Size(48, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
                         ),
                         onPressed: () {
                           ref
@@ -414,29 +426,145 @@ class _ParcelCard extends ConsumerWidget {
                               .settleParcelClaim(parcel.id);
                           showCasamaToast(
                             context,
-                            'Marked COD as settled!',
+                            'Parcel marked as settled!',
                             icon: Icons.check_circle_outline_rounded,
                           );
                         },
                         child: const Text(
                           'Mark Settled',
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 12.5,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
-                    const StatusChip(
-                      label: 'Received',
-                      variant: ChipVariant.returned,
+                    ],
+                  )
+                else
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: pal.amberBg,
+                        borderRadius: CasamaSpacing.roundedPill,
+                        border: Border.all(
+                          color: pal.amberFg.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        'Claimed by ${parcel.claimedByName ?? 'Housemate'} • Unsettled',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: pal.amberFg,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11.5,
+                        ),
+                      ),
                     ),
-                  ],
+                  )
+              else if (isArrivingTodayOrPast)
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: pal.primaryCoral,
+                    foregroundColor: Colors.white,
+                    shape: const StadiumBorder(),
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                  ),
+                  onPressed: () {
+                    final repo = ref.read(repositoryProvider);
+                    final isSelfClaim = parcel.buyerId == repo.currentUser.id;
+                    repo.receiveParcel(parcel.id);
+                    if (isSelfClaim) {
+                      showCasamaToast(
+                        context,
+                        'Parcel received & settled!',
+                        icon: Icons.check_circle_outline_rounded,
+                      );
+                    } else {
+                      _showPointsCelebrationDialog(
+                        context,
+                        5,
+                        'Parcel Received!',
+                      );
+                    }
+                  },
+                  child: const Text(
+                    'I Got It',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              else
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: pal.textPrimary,
+                    side: BorderSide(color: pal.border),
+                    shape: const StadiumBorder(),
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                  ),
+                  onPressed: () {
+                    ref
+                        .read(repositoryProvider)
+                        .toggleParcelAvailability(parcel.id);
+                    showCasamaToast(
+                      context,
+                      'Updated delivery availability',
+                      icon: Icons.check_circle_outline_rounded,
+                    );
+                  },
+                  child: const Text(
+                    'Mark Unavailable',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  (Color bg, Color fg, String monogram) _resolveCourierStyle(
+    String courier,
+    CasamaPalette pal,
+  ) {
+    final normalized = courier.trim().toLowerCase();
+    if (normalized.contains('j&t')) {
+      return (pal.softBlush, pal.primaryCoral, 'J&T');
+    }
+    if (normalized.contains('flash')) {
+      return (pal.amberBg, pal.amberFg, 'FX');
+    }
+    if (normalized.contains('ninja')) {
+      return (pal.softBlush, pal.dangerFg, 'NV');
+    }
+    if (normalized == 'lbc' || normalized.startsWith('lbc ')) {
+      return (pal.softBlush, pal.primaryCoral, 'LBC');
+    }
+    if (normalized.contains('2go')) {
+      return (pal.infoBg, pal.infoFg, '2GO');
+    }
+    if (normalized.contains('lalamove')) {
+      return (pal.warningBg, pal.warningFg, 'LM');
+    }
+    if (normalized == 'spx' || normalized.contains('spx')) {
+      return (pal.warningBg, pal.warningFg, 'SPX');
+    }
+    final fallback = courier.trim().isNotEmpty
+        ? courier.trim()[0].toUpperCase()
+        : 'P';
+    return (pal.softSage, pal.forestTeal, fallback);
   }
 
   String _formatArrival(DateTime dt) {

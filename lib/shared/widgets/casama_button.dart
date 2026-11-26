@@ -74,12 +74,15 @@ class CasamaButton extends StatelessWidget {
     final effectiveBg = disabled && style != CasamaButtonStyle.ghost
         ? bgColor.withValues(alpha: 0.5)
         : bgColor;
+    final effectiveBorder = (disabled && border != null)
+        ? border.copyWith(color: border.color.withValues(alpha: 0.45))
+        : border;
 
     final OutlinedBorder shape = isPill
-        ? StadiumBorder(side: border ?? BorderSide.none)
+        ? StadiumBorder(side: effectiveBorder ?? BorderSide.none)
         : RoundedRectangleBorder(
             borderRadius: CasamaSpacing.roundedInput,
-            side: border ?? BorderSide.none,
+            side: effectiveBorder ?? BorderSide.none,
           );
 
     final minH = (height ?? CasamaSpacing.minTouchTarget).clamp(44.0, 72.0);

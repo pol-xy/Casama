@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/constants/colors.dart';
 import '../../../core/constants/dimensions.dart';
@@ -36,17 +37,63 @@ class _CreateMeetupSheetBodyState
     extends ConsumerState<_CreateMeetupSheetBody> {
   final _activityController = TextEditingController(text: 'Study Session 🎓');
   final _locationController = TextEditingController(text: 'Dorm Common Area');
-  final _dateController = TextEditingController(text: 'Today');
-  final _timeController = TextEditingController(text: '7:00 PM');
+  late DateTime _selectedDate;
+  TimeOfDay _selectedTime = const TimeOfDay(hour: 19, minute: 0);
   final Set<String> _selectedInvitees = {'all'};
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _selectedDate = DateTime(now.year, now.month, now.day);
+  }
 
   @override
   void dispose() {
     _activityController.dispose();
     _locationController.dispose();
-    _dateController.dispose();
-    _timeController.dispose();
     super.dispose();
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    if (date == today) return 'Today';
+    if (date == tomorrow) return 'Tomorrow';
+    return DateFormat('EEE, MMM d').format(date);
+  }
+
+  String _formatTime(TimeOfDay time) {
+    return DateFormat('h:mm a').format(
+      DateTime(2026, 1, 1, time.hour, time.minute),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isBefore(today) ? today : _selectedDate,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365)),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _selectedDate = DateTime(picked.year, picked.month, picked.day);
+      });
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedTime = picked);
+    }
   }
 
   void _toggleInvitee(String key) {
@@ -72,7 +119,6 @@ class _CreateMeetupSheetBodyState
   void _submit() {
     final activity = _activityController.text.trim();
     final location = _locationController.text.trim();
-    final when = '${_dateController.text.trim()} • ${_timeController.text.trim()}';
     if (activity.isEmpty || location.isEmpty) {
       showCasamaToast(
         widget.hostContext,
@@ -82,11 +128,18 @@ class _CreateMeetupSheetBodyState
       return;
     }
 
+    final scheduledTime = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      _selectedTime.hour,
+      _selectedTime.minute,
+    );
+
     ref.read(repositoryProvider).createMeetUp(
       activity: activity,
       location: location,
-      scheduledTime: DateTime.now().add(const Duration(hours: 3)),
-      announcementText: '📢 Meet-up Invitation: $activity at $location ($when)',
+      scheduledTime: scheduledTime,
     );
 
     Navigator.of(context).pop();
@@ -124,18 +177,22 @@ class _CreateMeetupSheetBodyState
         Row(
           children: [
             Expanded(
-              child: CasamaTextField(
-                controller: _dateController,
+              child: _PickerFieldTile(
                 label: 'Date',
-                hint: 'Today',
+                value: _formatDate(_selectedDate),
+                icon: Icons.calendar_today_rounded,
+                semanticsLabel: 'Select Date',
+                onTap: _pickDate,
               ),
             ),
             const SizedBox(width: CasamaSpacing.sm),
             Expanded(
-              child: CasamaTextField(
-                controller: _timeController,
+              child: _PickerFieldTile(
                 label: 'Time',
-                hint: '7:00 PM',
+                value: _formatTime(_selectedTime),
+                icon: Icons.schedule_rounded,
+                semanticsLabel: 'Select Time',
+                onTap: _pickTime,
               ),
             ),
           ],
@@ -271,6 +328,84 @@ class _InviteeChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PickerFieldTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final String semanticsLabel;
+  final VoidCallback onTap;
+
+  const _PickerFieldTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.semanticsLabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: pal.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Semantics(
+          button: true,
+          label: semanticsLabel,
+          value: value,
+          child: CasamaPressable(
+            onTap: onTap,
+            enableHaptic: true,
+            child: Container(
+              constraints: const BoxConstraints(
+                minHeight: CasamaSpacing.minTouchTarget,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: pal.surface,
+                borderRadius: CasamaSpacing.roundedMd,
+                border: Border.all(color: pal.border),
+              ),
+              child: Row(
+                children: [
+                  Icon(icon, size: 17, color: pal.forestTeal),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: pal.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: pal.textMuted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

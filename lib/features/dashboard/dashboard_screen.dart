@@ -85,12 +85,8 @@ class DashboardScreen extends ConsumerWidget {
               CasamaWaveHeader(
                 title: 'Hello, ${repo.currentUser.effectiveGreetingName}!',
                 subtitle: _getTimeBasedGreeting(),
-                unreadNotificationCount: repo.unreadNotificationCount,
+                showNotificationBell: true,
                 onMenuTap: () => _openDrawer(context),
-                onNotificationTap: () {
-                  ref.read(repositoryProvider).markAllNotificationsAsRead();
-                  _showNotificationsSheet(context, ref);
-                },
               ),
 
               // 2. Overlapping Split Hero (Transparent PNG Mascot + Casa Status)
@@ -430,6 +426,9 @@ class DashboardScreen extends ConsumerWidget {
 
     for (final task in pendingTasks) {
       final isUrgent = task.urgency == TaskUrgency.urgent;
+      final dueOrCreator = task.dueDate != null
+          ? 'Due ${DateFormat('MMM d').format(task.dueDate!)}'
+          : 'By ${task.createdByName}';
       items.add(
         _AttentionRowData(
           priority: isUrgent ? 1 : 3,
@@ -439,7 +438,7 @@ class DashboardScreen extends ConsumerWidget {
           rowBg: pal.softSage.withValues(alpha: 0.65),
           title: task.title,
           subtitle:
-              'Assigned to ${task.assigneeName ?? 'Unassigned'} • ${task.urgency.label}',
+              '${task.category.label} • ${task.urgency.label} • $dueOrCreator',
           trailingAction: 'Tasks ›',
           trailingColor: pal.forestTeal,
           onTap: () => _openBoardTab(context, 1, '/boards?tab=tasks'),
@@ -754,73 +753,6 @@ class DashboardScreen extends ConsumerWidget {
       },
     );
   }
-
-  void _showNotificationsSheet(BuildContext context, WidgetRef ref) {
-    showCasamaSheet<void>(
-      context,
-      icon: Icons.notifications_none_rounded,
-      title: 'Notifications',
-      subtitle: 'Recent household updates',
-      builder: (sheetCtx) {
-        final pal = sheetCtx.palette;
-        final theme = Theme.of(sheetCtx);
-        final items = ref.watch(repositoryProvider).notifications;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (items.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: CasamaSpacing.md),
-                child: Text(
-                  "You're all caught up! No new notifications.",
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: pal.textSecondary,
-                  ),
-                ),
-              )
-            else
-              for (var i = 0; i < items.length; i++) ...[
-                if (i > 0) Divider(height: 16, color: pal.border),
-                _NotificationRow(
-                  icon: items[i].type == 'parcel_received'
-                      ? Icons.local_shipping_outlined
-                      : items[i].type == 'roulette_chosen'
-                      ? Icons.casino_outlined
-                      : Icons.notifications_none_rounded,
-                  iconBg: items[i].type == 'parcel_received'
-                      ? pal.softBlush
-                      : pal.softSage,
-                  iconColor: items[i].type == 'parcel_received'
-                      ? pal.primaryCoral
-                      : pal.forestTeal,
-                  title: items[i].title,
-                  subtitle: items[i].subtitle,
-                  time: DateFormat('h:mm a').format(items[i].createdAt),
-                  pal: pal,
-                  theme: theme,
-                ),
-              ],
-            const SizedBox(height: CasamaSpacing.md),
-            CasamaButton(
-              label: 'Mark all read',
-              style: CasamaButtonStyle.secondary,
-              height: 48,
-              onPressed: () {
-                ref.read(repositoryProvider).markAllNotificationsAsRead();
-                Navigator.of(sheetCtx).pop();
-                showCasamaToast(
-                  context,
-                  'All notifications marked as read',
-                  icon: Icons.done_all_rounded,
-                );
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
 
 class _AttentionRowData {
@@ -944,73 +876,6 @@ class _AttentionActionTile extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _NotificationRow extends StatelessWidget {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final String time;
-  final CasamaPalette pal;
-  final ThemeData theme;
-
-  const _NotificationRow({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.time,
-    required this.pal,
-    required this.theme,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-          child: Icon(icon, color: iconColor, size: 19),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: pal.textPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: pal.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          time,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: pal.textMuted,
-            fontSize: 11,
-          ),
-        ),
-      ],
     );
   }
 }

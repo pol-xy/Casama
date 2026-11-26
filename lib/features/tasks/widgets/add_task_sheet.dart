@@ -12,8 +12,7 @@ import '../../../shared/widgets/casama_text_field.dart';
 import '../task_ui_state_provider.dart';
 
 /// Opens the unified slide-up Create Task sheet (`280ms` ease-out rise,
-/// Light/Dark parity). New tasks start unassigned so housemates can claim
-/// them or spin them via Task Roulette.
+/// Light/Dark parity). Any household member can create and complete tasks.
 Future<void> showNewTaskSheet(BuildContext context) {
   return showCasamaSheet<void>(
     context,
@@ -61,7 +60,6 @@ class _AddTaskSheetBodyState extends ConsumerState<_AddTaskSheetBody> {
       title: title,
       category: selectedUiCategory.backendCategory,
       urgency: _selectedUrgency,
-      assigneeName: null,
     );
 
     final createdTask = repo.tasks.cast<MaintenanceTask?>().firstWhere(
@@ -90,6 +88,10 @@ class _AddTaskSheetBodyState extends ConsumerState<_AddTaskSheetBody> {
   Widget build(BuildContext context) {
     final pal = context.palette;
     final theme = Theme.of(context);
+    final previewPoints = MaintenanceTask.computePoints(
+      _selectedCategory.backendCategory,
+      _selectedUrgency,
+    );
     const topRow = [
       CasamaTaskUiCategory.cleaning,
       CasamaTaskUiCategory.repair,
@@ -194,6 +196,32 @@ class _AddTaskSheetBodyState extends ConsumerState<_AddTaskSheetBody> {
                   setState(() => _selectedUrgency = TaskUrgency.urgent),
             ),
           ],
+        ),
+        const SizedBox(height: CasamaSpacing.md),
+
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: pal.softSage,
+            borderRadius: CasamaSpacing.roundedPill,
+            border: Border.all(
+              color: pal.forestTeal.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.stars_rounded, size: 18, color: pal.forestTeal),
+              const SizedBox(width: 8),
+              Text(
+                'Task Reward: +$previewPoints pts',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: pal.forestTeal,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: CasamaSpacing.lg),
 

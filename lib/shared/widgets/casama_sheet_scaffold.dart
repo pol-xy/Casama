@@ -12,15 +12,18 @@ import '../../core/motion/casama_motion.dart';
 /// button, `SafeArea`, `SingleChildScrollView`, and keyboard `viewInsets` padding.
 Future<T?> showCasamaSheet<T>(
   BuildContext context, {
-  required IconData icon,
+  IconData? icon,
+  Widget? iconWidget,
   required String title,
   required String subtitle,
+  Widget Function(BuildContext sheetContext)? subtitleBuilder,
   required Widget Function(BuildContext sheetContext) builder,
   Color? iconBackgroundColor,
   Color? iconColor,
   Color? sheetBackgroundColor,
   bool darkSurfaceOverride = false,
 }) {
+  assert(icon != null || iconWidget != null);
   final reduced = CasamaMotion.reduceMotion(context);
   final pal = context.palette;
 
@@ -33,8 +36,10 @@ Future<T?> showCasamaSheet<T>(
     pageBuilder: (ctx, animation, secondaryAnimation) {
       return _CasamaSheetHost(
         icon: icon,
+        iconWidget: iconWidget,
         title: title,
         subtitle: subtitle,
+        subtitleBuilder: subtitleBuilder,
         iconBackgroundColor: iconBackgroundColor,
         iconColor: iconColor,
         sheetBackgroundColor: sheetBackgroundColor,
@@ -67,9 +72,11 @@ Future<T?> showCasamaSheet<T>(
 }
 
 class _CasamaSheetHost extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
   final String title;
   final String subtitle;
+  final Widget Function(BuildContext sheetContext)? subtitleBuilder;
   final Color? iconBackgroundColor;
   final Color? iconColor;
   final Color? sheetBackgroundColor;
@@ -77,9 +84,11 @@ class _CasamaSheetHost extends StatelessWidget {
   final Widget Function(BuildContext sheetContext) builder;
 
   const _CasamaSheetHost({
-    required this.icon,
+    this.icon,
+    this.iconWidget,
     required this.title,
     required this.subtitle,
+    this.subtitleBuilder,
     required this.builder,
     this.iconBackgroundColor,
     this.iconColor,
@@ -164,7 +173,16 @@ class _CasamaSheetHost extends StatelessWidget {
                               color: badgeBg,
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(icon, color: badgeFg, size: 22),
+                            alignment: Alignment.center,
+                            child: iconWidget != null
+                                ? IconTheme(
+                                    data: IconThemeData(
+                                      color: badgeFg,
+                                      size: 24,
+                                    ),
+                                    child: iconWidget!,
+                                  )
+                                : Icon(icon!, color: badgeFg, size: 22),
                           ),
                           const SizedBox(width: CasamaSpacing.sm),
                           Expanded(
@@ -183,15 +201,29 @@ class _CasamaSheetHost extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
-                                  subtitle,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: subColor,
-                                    fontSize: 12.5,
+                                if (subtitleBuilder != null)
+                                  DefaultTextStyle(
+                                    style:
+                                        (theme.textTheme.bodySmall ??
+                                                const TextStyle())
+                                            .copyWith(
+                                              color: subColor,
+                                              fontSize: 12.5,
+                                            ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    child: subtitleBuilder!(context),
+                                  )
+                                else
+                                  Text(
+                                    subtitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: subColor,
+                                      fontSize: 12.5,
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                           ),

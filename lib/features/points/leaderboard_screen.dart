@@ -46,7 +46,7 @@ class LeaderboardScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               CasamaWaveHeader(
-                title: 'Kasama Leaderboard',
+                title: 'Casama Leaderboard',
                 subtitle: '${repo.currentHousehold.name} • November 2026',
                 compact: true,
                 onBackTap: () {
@@ -235,16 +235,22 @@ class LeaderboardScreen extends ConsumerWidget {
                                     points: '+5 pts',
                                   ),
                                   const _PointRuleRow(
-                                    label: 'Complete maintenance repair / chore',
+                                    label: 'Complete cleaning or restock task',
+                                    points: '+7 to +11 pts',
+                                  ),
+                                  const _PointRuleRow(
+                                    label: 'Complete repair or personal request',
+                                    points: '+10 to +14 pts',
+                                  ),
+                                  const _PointRuleRow(
+                                    label:
+                                        "Find & return a housemate's lost item",
                                     points: '+5 pts',
                                   ),
                                   const _PointRuleRow(
-                                    label: 'Restock household supplies',
+                                    label:
+                                        'Post a found item claimed by a housemate',
                                     points: '+2 pts',
-                                  ),
-                                  const _PointRuleRow(
-                                    label: 'Locate and return lost item',
-                                    points: '+3 pts',
                                     isLast: true,
                                   ),
                                 ],

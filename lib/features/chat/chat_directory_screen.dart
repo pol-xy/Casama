@@ -6,10 +6,12 @@ import 'package:intl/intl.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../dashboard/main_navigation_shell.dart';
 import '../dashboard/widgets/casama_household_drawer.dart';
@@ -44,6 +46,14 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
     showCasamaHouseholdDrawer(context);
   }
 
+  String _messagePreviewText(ChatMessage msg) {
+    final trimmed = msg.content.trim();
+    if (msg.hasAttachment) {
+      return trimmed.isEmpty ? '📷 Photo' : '📷 $trimmed';
+    }
+    return msg.content;
+  }
+
   void _openRoute(BuildContext context, String location) {
     GoRouter.maybeOf(context)?.push(location);
   }
@@ -70,8 +80,8 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
         : null;
     final groupPreview = groupLastMsg != null
         ? (groupLastMsg.isCurrentUser
-              ? 'You: ${groupLastMsg.content}'
-              : '${groupLastMsg.senderName}: ${groupLastMsg.content}')
+              ? 'You: ${_messagePreviewText(groupLastMsg)}'
+              : '${groupLastMsg.senderName}: ${_messagePreviewText(groupLastMsg)}')
         : 'No messages yet in household chat';
     final groupTime = groupLastMsg != null
         ? DateFormat('h:mm a').format(groupLastMsg.createdAt)
@@ -121,19 +131,8 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
               CasamaWaveHeader(
                 title: 'Chat',
                 subtitle: '${repo.currentHousehold.name} • ${members.length} members',
+                showNotificationBell: true,
                 onMenuTap: () => _openDrawer(context),
-                rightActions: [
-                  CasamaCircleIconButton(
-                    icon: Icons.person_add_alt_1_outlined,
-                    semanticLabel: 'Add Housemate',
-                    onTap: () => showAddHousemateDialog(context),
-                  ),
-                  CasamaCircleIconButton(
-                    icon: Icons.calendar_month_outlined,
-                    semanticLabel: 'Plan a Meet-up',
-                    onTap: () => showCreateMeetupSheet(context),
-                  ),
-                ],
               ),
 
               Center(
@@ -343,8 +342,8 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                                         ?.startsWith('SPC-') ??
                                                     false)
                                             ? (s.messages.last.isCurrentUser
-                                                  ? 'You: ${s.messages.last.content}'
-                                                  : '${s.messages.last.senderName}: ${s.messages.last.content}')
+                                                  ? 'You: ${_messagePreviewText(s.messages.last)}'
+                                                  : '${s.messages.last.senderName}: ${_messagePreviewText(s.messages.last)}')
                                             : s.description,
                                         time: DateFormat('h:mm a').format(
                                           s.messages.lastOrNull?.createdAt ??
@@ -429,8 +428,8 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                                               : null;
                                           final preview = lastMsg != null
                                               ? (lastMsg.isCurrentUser
-                                                    ? 'You: ${lastMsg.content}'
-                                                    : lastMsg.content)
+                                                    ? 'You: ${_messagePreviewText(lastMsg)}'
+                                                    : _messagePreviewText(lastMsg))
                                               : (m.note != null
                                                     ? 'Status: ${m.note}'
                                                     : 'Tap to message ${m.profile.displayName}');
@@ -488,82 +487,130 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
                               ),
                             ),
                             const SizedBox(height: CasamaSpacing.xs),
-                            CasamaCard(
-                              padding: const EdgeInsets.all(14),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 44,
-                                    height: 44,
-                                    decoration: BoxDecoration(
-                                      color: pal.softSage,
-                                      shape: BoxShape.circle,
+                            if (!meetup.hasValidData || !meetup.isActive)
+                              CasamaCard(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: pal.softSage,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        Icons.event_note_rounded,
+                                        color: pal.forestTeal,
+                                        size: 22,
+                                      ),
                                     ),
-                                    child: Icon(
-                                      Icons.groups_rounded,
-                                      color: pal.forestTeal,
-                                      size: 22,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'No meet-up invitations yet',
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: pal.textPrimary,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Tap + New to invite your housemates.',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: pal.textSecondary,
+                                                  fontSize: 12.5,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          meetup.activity,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.titleMedium
+                                  ],
+                                ),
+                              )
+                            else
+                              CasamaCard(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: pal.softSage,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        Icons.groups_rounded,
+                                        color: pal.forestTeal,
+                                        size: 22,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            meetup.activity,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.titleMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: pal.textPrimary,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${DateFormat('EEE, MMM d • h:mm a').format(meetup.scheduledTime)} • ${meetup.location} • ${meetup.goingCount} going',
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: pal.textSecondary,
+                                                  fontSize: 12.5,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    CasamaPressable(
+                                      onTap: () =>
+                                          _showMeetupDetailsSheet(context),
+                                      child: Container(
+                                        height: 48,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: pal.track,
+                                          borderRadius:
+                                              CasamaSpacing.roundedPill,
+                                          border: Border.all(color: pal.border),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          'View',
+                                          style: theme.textTheme.labelMedium
                                               ?.copyWith(
                                                 fontWeight: FontWeight.w700,
                                                 color: pal.textPrimary,
                                               ),
                                         ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          '${meetup.location} • ${meetup.goingCount} going',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                color: pal.textSecondary,
-                                                fontSize: 12.5,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  CasamaPressable(
-                                    onTap: () =>
-                                        _openRoute(context, '/group-chat'),
-                                    child: Container(
-                                      height: 44,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: pal.track,
-                                        borderRadius:
-                                            CasamaSpacing.roundedPill,
-                                        border: Border.all(color: pal.border),
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        'View',
-                                        style: theme.textTheme.labelMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w700,
-                                              color: pal.textPrimary,
-                                            ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -1028,6 +1075,436 @@ class _MiniHeaderPill extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void _showMeetupDetailsSheet(BuildContext context) {
+  showCasamaSheet<void>(
+    context,
+    icon: Icons.event_available_rounded,
+    title: 'Meet-up Invitation',
+    subtitle: 'Coordinate plans & RSVP with your housemates',
+    builder: (ctx) {
+      return Consumer(
+        builder: (ctx, ref, _) {
+          final repo = ref.watch(repositoryProvider);
+          final meetup = repo.activeMeetUp;
+          final pal = ctx.palette;
+          final theme = Theme.of(ctx);
+
+          if (!meetup.hasValidData) {
+            return Text(
+              'No active meet-up invitation.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: pal.textSecondary,
+              ),
+            );
+          }
+
+          final timeLabel = DateFormat(
+            'EEE, MMM d • h:mm a',
+          ).format(meetup.scheduledTime);
+          final isCompleted = !meetup.isActive;
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      meetup.activity,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: pal.textPrimary,
+                      ),
+                    ),
+                  ),
+                  if (isCompleted) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: pal.neutralBg,
+                        borderRadius: CasamaSpacing.roundedPill,
+                        border: Border.all(color: pal.border),
+                      ),
+                      child: Text(
+                        'Completed',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: pal.neutralFg,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '$timeLabel • ${meetup.location}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: pal.textSecondary,
+                ),
+              ),
+              const SizedBox(height: CasamaSpacing.md),
+              Text(
+                isCompleted ? 'FINAL RESPONSES' : 'YOUR RESPONSE',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: pal.textSecondary,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const SizedBox(height: CasamaSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: _MeetupRsvpChip(
+                      label: 'Going (${meetup.goingCount})',
+                      selected: meetup.currentUserResponse == 'going',
+                      activeBg: pal.successFg,
+                      onTap: isCompleted
+                          ? null
+                          : () => ref
+                              .read(repositoryProvider)
+                              .respondMeetUp('going'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _MeetupRsvpChip(
+                      label: 'Maybe (${meetup.maybeCount})',
+                      selected: meetup.currentUserResponse == 'maybe',
+                      activeBg: pal.amberFg,
+                      onTap: isCompleted
+                          ? null
+                          : () => ref
+                              .read(repositoryProvider)
+                              .respondMeetUp('maybe'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _MeetupRsvpChip(
+                      label: "Can't (${meetup.cantMakeCount})",
+                      selected: meetup.currentUserResponse == 'cant_make_it',
+                      activeBg: pal.neutralFg,
+                      onTap: isCompleted
+                          ? null
+                          : () => ref
+                              .read(repositoryProvider)
+                              .respondMeetUp('cant_make_it'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: CasamaSpacing.md),
+              _MeetupResponderRow(
+                label: 'Going',
+                accentColor: pal.successFg,
+                responders: meetup.goingResponders,
+              ),
+              const SizedBox(height: CasamaSpacing.sm),
+              _MeetupResponderRow(
+                label: 'Maybe',
+                accentColor: pal.amberFg,
+                responders: meetup.maybeResponders,
+              ),
+              const SizedBox(height: CasamaSpacing.sm),
+              _MeetupResponderRow(
+                label: "Can't",
+                accentColor: pal.neutralFg,
+                responders: meetup.cantMakeResponders,
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+class _MeetupResponderRow extends StatelessWidget {
+  final String label;
+  final Color accentColor;
+  final List<MeetUpResponder> responders;
+
+  const _MeetupResponderRow({
+    required this.label,
+    required this.accentColor,
+    required this.responders,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    const maxVisible = 6;
+    const avatarSize = 28.0;
+    const step = 18.0;
+    final visible = responders.take(maxVisible).toList();
+    final overflow = responders.length - visible.length;
+    final totalItems = visible.length + (overflow > 0 ? 1 : 0);
+    final stackWidth =
+        totalItems == 0 ? 0.0 : avatarSize + (totalItems - 1) * step;
+    final namesSummary = responders.map((r) => r.displayName).join(', ');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 88,
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: pal.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: responders.isEmpty
+                ? Text(
+                    'None yet',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: pal.textMuted,
+                      fontSize: 12,
+                    ),
+                  )
+                : Tooltip(
+                    message: namesSummary,
+                    child: Semantics(
+                      button: true,
+                      label: '$label responders: $namesSummary',
+                      child: CasamaPressable(
+                        key: Key('meetup_responders_$label'),
+                        onTap: () => _showResponderListSheet(
+                          context,
+                          label,
+                          accentColor,
+                          responders,
+                        ),
+                        child: Container(
+                          constraints: const BoxConstraints(minHeight: 36),
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: stackWidth,
+                                height: avatarSize,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    for (var i = 0; i < visible.length; i++)
+                                      Positioned(
+                                        left: i * step,
+                                        top: 0,
+                                        child: Container(
+                                          width: avatarSize,
+                                          height: avatarSize,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: pal.surface,
+                                              width: 2,
+                                            ),
+                                          ),
+                                          child: CasamaAvatar(
+                                            avatarUrl: visible[i].avatarUrl,
+                                            radius: 12,
+                                            name: visible[i].displayName,
+                                          ),
+                                        ),
+                                      ),
+                                    if (overflow > 0)
+                                      Positioned(
+                                        left: visible.length * step,
+                                        top: 0,
+                                        child: Container(
+                                          width: avatarSize,
+                                          height: avatarSize,
+                                          decoration: BoxDecoration(
+                                            color: pal.track,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: pal.surface,
+                                              width: 2,
+                                            ),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            '+$overflow',
+                                            style: theme.textTheme.labelSmall
+                                                ?.copyWith(
+                                                  color: pal.textPrimary,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${responders.length}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: pal.textMuted,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _showResponderListSheet(
+  BuildContext context,
+  String label,
+  Color accentColor,
+  List<MeetUpResponder> responders,
+) {
+  showCasamaSheet<void>(
+    context,
+    icon: Icons.groups_rounded,
+    title: '$label (${responders.length})',
+    subtitle: 'Housemates who responded $label',
+    builder: (ctx) {
+      final pal = ctx.palette;
+      final theme = Theme.of(ctx);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < responders.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            Row(
+              children: [
+                CasamaAvatar(
+                  avatarUrl: responders[i].avatarUrl,
+                  radius: 16,
+                  name: responders[i].displayName,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    responders[i].displayName,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: pal.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      );
+    },
+  );
+}
+
+class _MeetupRsvpChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color activeBg;
+  final VoidCallback? onTap;
+
+  const _MeetupRsvpChip({
+    required this.label,
+    required this.selected,
+    required this.activeBg,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final reduced = CasamaMotion.reduceMotion(context);
+    final disabled = onTap == null;
+    final effectiveBg = selected
+        ? (disabled ? activeBg.withValues(alpha: 0.45) : activeBg)
+        : (disabled ? pal.surface.withValues(alpha: 0.6) : pal.surface);
+    final effectiveFg = selected
+        ? Colors.white.withValues(alpha: disabled ? 0.75 : 1.0)
+        : pal.textPrimary.withValues(alpha: disabled ? 0.45 : 1.0);
+
+    return Semantics(
+      button: true,
+      enabled: !disabled,
+      selected: selected,
+      label: label,
+      child: CasamaPressable(
+        onTap: onTap,
+        enableHaptic: !disabled,
+        child: AnimatedContainer(
+          duration: reduced ? Duration.zero : CasamaMotion.press,
+          curve: CasamaMotion.easeOut,
+          height: CasamaSpacing.minTouchTarget,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: effectiveBg,
+            borderRadius: CasamaSpacing.roundedPill,
+            border: Border.all(
+              color: selected
+                  ? effectiveBg
+                  : pal.border.withValues(alpha: disabled ? 0.5 : 1.0),
+              width: 1,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: effectiveFg,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
           ),
         ),
       ),

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -27,6 +25,7 @@ class ChatSpaceScreen extends ConsumerStatefulWidget {
 class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
   final TextEditingController _msgController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  XFile? _pendingAttachment;
 
   @override
   void initState() {
@@ -47,10 +46,16 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
 
   void _sendMessage() {
     final text = _msgController.text.trim();
-    if (text.isEmpty) return;
+    final attachment = _pendingAttachment;
+    if (text.isEmpty && attachment == null) return;
 
-    ref.read(repositoryProvider).sendSpaceMessage(widget.spaceId, text);
     _msgController.clear();
+    if (_pendingAttachment != null) {
+      setState(() => _pendingAttachment = null);
+    }
+    ref
+        .read(repositoryProvider)
+        .sendSpaceMessage(widget.spaceId, text, attachmentFile: attachment);
     _scrollToBottom();
   }
 
@@ -71,26 +76,16 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
     });
   }
 
-  Future<void> _pickAndSendPhoto(ImageSource source) async {
+  Future<void> _pickAttachment(ImageSource source) async {
     try {
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: source,
-        maxWidth: 1024,
-        maxHeight: 1024,
+        maxWidth: 1440,
         imageQuality: 80,
       );
       if (picked != null && mounted) {
-        final bytes = await picked.readAsBytes();
-        final base64String = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-        ref
-            .read(repositoryProvider)
-            .sendSpaceMessage(
-              widget.spaceId,
-              '📷 Photo shared',
-              mediaUrl: base64String,
-            );
-        _scrollToBottom();
+        setState(() => _pendingAttachment = picked);
       }
     } catch (e) {
       if (mounted) {
@@ -118,20 +113,24 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
             icon: Icons.camera_alt_outlined,
             iconColor: pal.primaryCoral,
             iconBg: pal.softBlush,
-            title: 'Take Photo',
+            title: _pendingAttachment != null
+                ? 'Replace Photo (Camera)'
+                : 'Take Photo',
             onTap: () {
               Navigator.pop(ctx);
-              _pickAndSendPhoto(ImageSource.camera);
+              _pickAttachment(ImageSource.camera);
             },
           ),
           CasamaSheetActionRow(
             icon: Icons.photo_library_outlined,
             iconColor: pal.infoFg,
             iconBg: pal.infoBg,
-            title: 'Choose from Gallery',
+            title: _pendingAttachment != null
+                ? 'Replace Photo (Gallery)'
+                : 'Choose from Gallery',
             onTap: () {
               Navigator.pop(ctx);
-              _pickAndSendPhoto(ImageSource.gallery);
+              _pickAttachment(ImageSource.gallery);
             },
           ),
         ],
@@ -358,6 +357,13 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
                         return CasamaMessageBubble(
                           message: msg,
                           timeLabel: DateFormat('h:mm a').format(msg.createdAt),
+                          onRetry: msg.deliveryStatus ==
+                                  MessageDeliveryStatus.failed
+                              ? () => repo.retrySpaceMessage(
+                                    widget.spaceId,
+                                    msg.id,
+                                  )
+                              : null,
                         );
                       },
                     ),
@@ -371,6 +377,10 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
                 attachTooltip: 'Attach photo or Share code',
                 onAttach: () => _showAttachmentMenu(context, space),
                 onSend: _sendMessage,
+                pendingAttachment: _pendingAttachment,
+                onRemoveAttachment: () =>
+                    setState(() => _pendingAttachment = null),
+                onReplaceAttachment: () => _showAttachmentMenu(context, space),
               ),
             ),
           ],

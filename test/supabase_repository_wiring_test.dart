@@ -48,6 +48,24 @@ void main() {
       expect(repo, isA<SupabaseRepository>());
       expect(repo.isAuthenticated, isFalse);
       expect(repo.hasActiveHousehold, isFalse);
+      expect(repo.userHouseholds, isEmpty);
+    });
+
+    test('Household model supports displaySubtitle, copyWith, and optional JSON fields', () {
+      final hh = Household.fromJson({
+        'id': 'hh-1',
+        'name': 'TeenTitans',
+        'invite_code': 'SYZKB2',
+        'created_by': 'u-1',
+        'member_count': 3,
+      });
+      expect(hh.displaySubtitle, 'Community Space');
+      expect(hh.memberCount, 3);
+
+      final updated = hh.copyWith(spaceType: 'Dorm Suite', memberCount: 5);
+      expect(updated.displaySubtitle, 'Dorm Suite');
+      expect(updated.memberCount, 5);
+      expect(updated.toJson().containsKey('member_count'), isFalse);
     });
 
     test('resolveStartupRoute routes authenticated users cleanly by household membership', () {
@@ -121,15 +139,37 @@ void main() {
         senderId: 'u1',
         senderName: 'JP',
         imageUrl: 'https://example.supabase.co/storage/v1/object/public/casnaps/a.jpg',
-        recipientType: QuickSnapRecipientType.selectedHousemates,
-        createdAt: DateTime(2026, 11, 26),
+        caption: 'Balcony view',
+        createdAt: DateTime.utc(2026, 11, 26),
       );
       final snapJson = snap.toJson();
-      expect(snapJson['recipient_type'], 'selected_friends');
+      expect(
+        snapJson.keys.toSet(),
+        {'id', 'household_id', 'creator_id', 'creator_name', 'image_url', 'caption', 'created_at'},
+      );
+      expect(snapJson.containsKey('recipient_type'), isFalse);
+      expect(snapJson.containsKey('creator_avatar'), isFalse);
+      expect(snapJson.containsKey('expires_at'), isFalse);
       expect(snapJson['creator_name'], 'JP');
 
       final parsedSnap = QuickSnap.fromJson({
         ...snapJson,
+        'quick_snap_reactions': [
+          {
+            'emoji': '🔥',
+            'user_id': 'u2',
+            'user_name': 'Maria',
+            'count': 3,
+            'created_at': '2026-11-26T00:00:00Z',
+            'updated_at': '2026-11-26T00:02:00Z',
+          },
+          {
+            'emoji': '❤️',
+            'user_id': 'u3',
+            'user_name': 'Leo',
+            'created_at': '2026-11-26T00:01:00Z',
+          },
+        ],
         'quick_snap_comments': [
           {
             'id': 'c1',
@@ -140,15 +180,33 @@ void main() {
           },
         ],
       });
-      expect(parsedSnap.recipientType, QuickSnapRecipientType.selectedHousemates);
+      expect(parsedSnap.creatorId, 'u1');
+      expect(parsedSnap.creatorName, 'JP');
+      expect(parsedSnap.totalReactionCount, 4);
+      expect(parsedSnap.reactions.first.count, 3);
+      expect(parsedSnap.reactions.first.updatedAt, isNotNull);
+      expect(parsedSnap.reactions.last.count, 1);
       expect(parsedSnap.comments.first.text, 'Nice shot!');
+      expect(kCasSnapReactionEmojis, ['❤️', '😂', '😍', '🔥', '👍', '👎']);
+
+      expect(CasamaCouriers.defaultCourier, 'J&T Express');
+      expect(CasamaCouriers.options, [
+        'J&T Express',
+        'Flash Express',
+        'Ninja Van',
+        'LBC',
+        '2GO Express',
+        'Lalamove',
+        'SPX',
+        'Other',
+      ]);
 
       final paidParcel = ParcelItem(
         id: 'p1',
         householdId: 'h1',
         buyerId: 'u1',
         buyerName: 'JP',
-        courier: 'Shopee',
+        courier: 'J&T Express',
         expectedArrival: DateTime(2026, 11, 26),
         paymentType: ParcelPaymentType.paid,
         codAmount: 350,
@@ -156,17 +214,164 @@ void main() {
       );
       expect(paidParcel.toJson()['cod_amount'], isNull);
 
-      final foundLostItem = LostFoundItem.fromJson({
+      final openLostItem = LostFoundItem.fromJson({
         'id': 'l1',
         'household_id': 'h1',
         'title': 'Keys',
-        'status': 'found',
-        'reported_by': 'u1',
-        'found_by_id': 'u2',
+        'last_seen_location': 'Kitchen',
+        'status': 'open',
+        'owner_id': 'u1',
+        'resolved_found_item_id': 'f_win',
         'created_at': '2026-11-26T00:00:00Z',
       }, forcedType: ItemType.lost);
-      expect(foundLostItem.status, ItemStatus.found);
-      expect(foundLostItem.foundById, 'u2');
+      expect(openLostItem.status, ItemStatus.open);
+      expect(openLostItem.ownerId, 'u1');
+      expect(openLostItem.location, 'Kitchen');
+      expect(openLostItem.resolvedFoundItemId, 'f_win');
+      final lostJson = openLostItem.toJson();
+      expect(lostJson.containsKey('reported_by'), isFalse);
+      expect(lostJson['owner_id'], 'u1');
+      expect(lostJson['last_seen_location'], 'Kitchen');
+      expect(lostJson['resolved_found_item_id'], 'f_win');
+      expect(lostJson['status'], 'open');
+
+      final resolvedLostItem = LostFoundItem.fromJson({
+        'id': 'l2',
+        'household_id': 'h1',
+        'title': 'Wallet',
+        'last_seen_location': 'Sofa',
+        'status': 'resolved',
+        'owner_id': 'u1',
+        'found_by_id': 'u2',
+        'resolved_found_item_id': 'f2',
+        'created_at': '2026-11-26T00:00:00Z',
+      }, forcedType: ItemType.lost);
+      expect(resolvedLostItem.status, ItemStatus.resolved);
+      expect(resolvedLostItem.isResolved, isTrue);
+      expect(resolvedLostItem.foundById, 'u2');
+
+      final standaloneFound = LostFoundItem.fromJson({
+        'id': 'f1',
+        'household_id': 'h1',
+        'title': 'Umbrella',
+        'found_location': 'Lobby',
+        'status': 'unclaimed',
+        'finder_id': 'u2',
+        'created_at': '2026-11-26T00:00:00Z',
+      }, forcedType: ItemType.found);
+      expect(standaloneFound.finderId, 'u2');
+      expect(standaloneFound.isStandalone, isTrue);
+      expect(standaloneFound.isLinkedToLost, isFalse);
+      expect(standaloneFound.location, 'Lobby');
+      final foundJson = standaloneFound.toJson();
+      expect(foundJson.containsKey('reported_by'), isFalse);
+      expect(foundJson['finder_id'], 'u2');
+      expect(foundJson['found_location'], 'Lobby');
+      expect(foundJson['lost_item_id'], isNull);
+
+      final localTime = DateTime(2026, 11, 27, 19, 0);
+      final meetup = MeetUpInvitation(
+        id: 'mu-1',
+        activity: 'Movie Night',
+        location: 'Living Room',
+        scheduledTime: localTime,
+      );
+      final meetupJson = meetup.toJson(conversationId: 'conv-1', creatorId: 'u1');
+      expect(meetupJson['status'], 'active');
+      expect(meetupJson['reminder_sent'], isFalse);
+      expect(meetupJson['arrival_handled'], isFalse);
+      expect((meetupJson['scheduled_time'] as String).endsWith('Z'), isTrue);
+
+      final parsedMeetup = MeetUpInvitation.fromJson({
+        ...meetupJson,
+        'status': 'done',
+        'reminder_sent': true,
+        'arrival_handled': true,
+      });
+      expect(parsedMeetup.isActive, isFalse);
+      expect(parsedMeetup.isDone, isTrue);
+      expect(parsedMeetup.reminderSent, isTrue);
+      expect(parsedMeetup.arrivalHandled, isTrue);
+      expect(parsedMeetup.scheduledTime.isUtc, isFalse);
+      expect(parsedMeetup.scheduledTime.toUtc(), localTime.toUtc());
+
+      final reminderNotif = HouseholdNotificationItem(
+        id: 'n-rem-1',
+        type: 'meetup_reminder',
+        title: '',
+        subtitle: '',
+        createdAt: DateTime.now(),
+        isRead: false,
+        payload: const {
+          'title': 'Movie Night',
+          'location': 'Living Room',
+        },
+      );
+      expect(reminderNotif.displayTitle, 'Meet-up Reminder: Movie Night');
+      expect(reminderNotif.displaySubtitle, 'Starting soon at Living Room');
+
+      final rejectedLinkedFind = LostFoundItem.fromJson({
+        'id': 'f2',
+        'household_id': 'h1',
+        'title': 'Keys',
+        'found_location': 'Balcony',
+        'lost_item_id': 'l1',
+        'status': 'rejected',
+        'finder_id': 'u2',
+        'rejected_at': '2026-11-26T02:00:00Z',
+        'created_at': '2026-11-26T01:00:00Z',
+      }, forcedType: ItemType.found);
+      expect(rejectedLinkedFind.isLinkedToLost, isTrue);
+      expect(rejectedLinkedFind.isStandalone, isFalse);
+      expect(rejectedLinkedFind.status, ItemStatus.rejected);
+      expect(rejectedLinkedFind.rejectedAt, isNotNull);
+      final linkedJson = rejectedLinkedFind.toJson();
+      expect(linkedJson['lost_item_id'], 'l1');
+      expect(linkedJson['rejected_at'], isNotNull);
+      expect(linkedJson['status'], 'rejected');
+
+      final task = MaintenanceTask.fromJson({
+        'id': 't1',
+        'household_id': 'h1',
+        'title': 'Clean Sink',
+        'category': 'cleaning',
+        'urgency': 'medium',
+        'status': 'done',
+        'created_by': 'u2',
+        'created_by_name': 'Maria',
+        'completed_by': 'u1',
+        'completed_by_name': 'JP',
+        'completed_at': '2026-11-26T10:00:00Z',
+        'created_at': '2026-11-26T08:00:00Z',
+        'due_date': '2026-11-27T08:00:00Z',
+      });
+      expect(task.createdBy, 'u2');
+      expect(task.createdByName, 'Maria');
+      expect(task.computedPoints, 9);
+      expect(task.completedById, 'u1');
+      expect(task.completedByName, 'JP');
+      expect(task.completedAt, isNotNull);
+      expect(task.dueDate, isNotNull);
+      final taskJson = task.toJson();
+      expect(taskJson.containsKey('assignee_id'), isFalse);
+      expect(taskJson['created_by'], 'u2');
+      expect(taskJson['completed_by'], 'u1');
+      expect(taskJson['completed_at'], isNotNull);
+
+      final chatMsg = ChatMessage(
+        id: 'm1',
+        senderId: 'u1',
+        senderName: 'JP',
+        content: 'Hello!',
+        inviteCode: 'SYZKB2',
+        inviteSpaceName: 'TeenTitans',
+        createdAt: DateTime(2026, 11, 26),
+        isCurrentUser: true,
+      );
+      final chatJson = chatMsg.toJson();
+      expect(chatJson.containsKey('invite_code'), isFalse);
+      expect(chatJson.containsKey('invite_space_name'), isFalse);
+      expect(chatJson.containsKey('media_url'), isFalse);
     });
 
     testWidgets(

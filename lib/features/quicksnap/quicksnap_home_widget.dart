@@ -183,8 +183,11 @@ class QuickSnapHomeWidget extends ConsumerWidget {
                 if (index < maxPhotoSlots) {
                   final snap = snaps[index];
                   final heroTag = 'home_casnap_${index}_${snap.id}';
+                  final creator = resolveSnapCreatorProfile(repo, snap);
                   return _SnapGridTile(
                     snap: snap,
+                    creatorAvatarUrl: creator.avatarUrl,
+                    creatorDisplayName: creator.displayName,
                     heroTag: heroTag,
                     onTap: () => showCasamaSnapLightbox(
                       context,
@@ -289,11 +292,15 @@ class QuickSnapHomeWidget extends ConsumerWidget {
 
 class _SnapGridTile extends StatelessWidget {
   final QuickSnap snap;
+  final String? creatorAvatarUrl;
+  final String creatorDisplayName;
   final String heroTag;
   final VoidCallback onTap;
 
   const _SnapGridTile({
     required this.snap,
+    required this.creatorAvatarUrl,
+    required this.creatorDisplayName,
     required this.heroTag,
     required this.onTap,
   });
@@ -301,14 +308,12 @@ class _SnapGridTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pal = context.palette;
-    final isDirect =
-        snap.recipientType == QuickSnapRecipientType.selectedHousemates;
 
     return Semantics(
       button: true,
       container: true,
       excludeSemantics: true,
-      label: 'Photo by ${snap.senderName}',
+      label: 'Photo by $creatorDisplayName',
       child: CasamaPressable(
         enableHaptic: true,
         onTap: onTap,
@@ -342,29 +347,6 @@ class _SnapGridTile extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (isDirect)
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: pal.primaryCoral,
-                        borderRadius: CasamaSpacing.roundedPill,
-                      ),
-                      child: const Text(
-                        'To You',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
                 Positioned(
                   left: 6,
                   right: 6,
@@ -373,13 +355,13 @@ class _SnapGridTile extends StatelessWidget {
                     children: [
                       CasamaAvatar(
                         radius: 10,
-                        avatarUrl: snap.senderAvatar,
-                        name: snap.senderName,
+                        avatarUrl: creatorAvatarUrl,
+                        name: creatorDisplayName,
                       ),
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
-                          snap.senderName.split(' ').first,
+                          creatorDisplayName.split(' ').first,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

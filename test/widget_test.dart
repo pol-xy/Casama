@@ -22,7 +22,6 @@ import 'package:casama/features/calendar/household_calendar_view.dart';
 import 'package:casama/features/parcels/parcels_screen.dart';
 import 'package:casama/features/items/lost_found_screen.dart';
 import 'package:casama/features/tasks/maintenance_screen.dart';
-import 'package:casama/features/chore_roulette/chore_roulette_screen.dart';
 import 'package:casama/features/chat/create_meetup_screen.dart';
 import 'package:casama/features/chat/chat_directory_screen.dart';
 import 'package:casama/features/chat/group_chat_screen.dart';
@@ -94,7 +93,7 @@ void main() {
   });
 
   testWidgets(
-    'OptionalProfileScreen renders all four optional fields and skippable actions',
+    'OptionalProfileScreen renders required profile fields, Birthday, Terms consent, and no Skip actions',
     (WidgetTester tester) async {
       await tester.pumpWidget(
         const ProviderScope(child: MaterialApp(home: OptionalProfileScreen())),
@@ -103,10 +102,11 @@ void main() {
       expect(find.text('Tell Us About You'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
       expect(find.text('Nickname'), findsOneWidget);
-      expect(find.text('Birthday (Optional)'), findsOneWidget);
+      expect(find.text('Birthday'), findsOneWidget);
+      expect(find.textContaining('Terms & Privacy Policy'), findsOneWidget);
       expect(find.text('Save & Continue'), findsOneWidget);
-      expect(find.text('Skip Profile for Now'), findsOneWidget);
-      expect(find.text('Skip'), findsOneWidget);
+      expect(find.text('Skip Profile for Now'), findsNothing);
+      expect(find.text('Skip'), findsNothing);
     },
   );
 
@@ -140,7 +140,7 @@ void main() {
       expect(find.text('Device Permissions'), findsOneWidget);
       expect(find.text('Push Notifications'), findsOneWidget);
       expect(find.text('Camera & Photo Library'), findsOneWidget);
-      expect(find.text('Contacts Assistance'), findsOneWidget);
+      expect(find.text('Contacts Assistance'), findsNothing);
       expect(find.text('Save & Continue'), findsOneWidget);
       expect(find.text('Skip All for Now'), findsOneWidget);
       expect(find.text('Skip All'), findsOneWidget);
@@ -375,8 +375,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify QuickSnap Camera screen is displayed
-      expect(find.text('Everyone'), findsOneWidget);
+      expect(find.text('Shared with Casa 204'), findsOneWidget);
       expect(find.text('History'), findsOneWidget);
+      expect(find.byKey(const Key('gallery_picker_button')), findsNothing);
     },
   );
 
@@ -397,10 +398,36 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Form is displayed
+      // Form is displayed with J&T Express selected by default
       expect(find.text('Add Expected Parcel'), findsOneWidget);
       expect(find.text('Courier'), findsOneWidget);
+      expect(find.text('J&T Express'), findsWidgets);
       expect(find.text('Save Parcel'), findsOneWidget);
+
+      // Open courier dropdown and verify Philippine courier options
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+
+      for (final courier in [
+        'J&T Express',
+        'Flash Express',
+        'Ninja Van',
+        'LBC',
+        '2GO Express',
+        'Lalamove',
+        'SPX',
+        'Other',
+      ]) {
+        expect(find.text(courier), findsWidgets);
+      }
+      expect(find.text('Shopee'), findsNothing);
+      expect(find.text('Lazada'), findsNothing);
+      expect(find.text('TikTok Shop'), findsNothing);
+      expect(find.text('FedEx'), findsNothing);
+
+      // Select SPX
+      await tester.tap(find.text('SPX').last);
+      await tester.pumpAndSettle();
 
       // Save parcel
       await tester.tap(find.text('Save Parcel'));
@@ -408,6 +435,7 @@ void main() {
 
       // Verify data saved to repository
       expect(mockRepo.parcels.length, initialCount + 1);
+      expect(mockRepo.parcels.first.courier, 'SPX');
       expect(mockRepo.parcels.first.status, ParcelStatus.expected);
     },
   );
@@ -455,7 +483,7 @@ void main() {
   );
 
   testWidgets(
-    'Add a Household Task action launches Create Task form and saves unassigned task to repository',
+    'Add a Household Task action launches Create Task form and saves open task to repository',
     (WidgetTester tester) async {
       final mockRepo = MockRepository();
       final initialCount = mockRepo.tasks.length;
@@ -481,6 +509,26 @@ void main() {
       expect(find.text('Personal Request'), findsOneWidget);
       expect(find.text('Assign Housemate'), findsNothing);
 
+      // Live reward preview updates with Category and Urgency
+      expect(find.text('Task Reward: +9 pts'), findsOneWidget);
+      await tester.tap(find.text('Repair / Maintenance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Urgent').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Task Reward: +14 pts'), findsOneWidget);
+
+      await tester.tap(find.text('Personal Request'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Medium').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Task Reward: +12 pts'), findsOneWidget);
+
+      await tester.tap(find.text('Restock'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Low').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Task Reward: +7 pts'), findsOneWidget);
+
       // Enter task title
       await tester.enterText(
         find.widgetWithText(
@@ -495,10 +543,14 @@ void main() {
       await tester.tap(find.text('Create Task').last);
       await tester.pumpAndSettle();
 
-      // Verify data saved to repository as unassigned
+      // Verify data saved to repository as open task created by current user
       expect(mockRepo.tasks.length, initialCount + 1);
       expect(mockRepo.tasks.first.title, 'Clean kitchen microwave');
-      expect(mockRepo.tasks.first.assigneeName, isNull);
+      expect(mockRepo.tasks.first.status, TaskStatus.open);
+      expect(
+        mockRepo.tasks.first.createdByName,
+        mockRepo.currentUser.displayName,
+      );
     },
   );
 
@@ -529,12 +581,9 @@ void main() {
       await tester.tap(find.text('Send Invitation'));
       await tester.pumpAndSettle();
 
-      // Message sent to group chat
-      expect(mockRepo.groupMessages.length, initialMessages + 1);
-      expect(
-        mockRepo.groupMessages.last.content,
-        contains('Meet-up Invitation'),
-      );
+      // Meet-up saved without posting a group chat message
+      expect(mockRepo.groupMessages.length, initialMessages);
+      expect(mockRepo.activeMeetUp.activity, isNotEmpty);
     },
   );
 
@@ -1018,16 +1067,20 @@ void main() {
       expect(find.text('Personal Information'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
       expect(find.text('Nickname'), findsOneWidget);
-      expect(find.text('Age'), findsOneWidget);
+      expect(find.text('Birthday'), findsOneWidget);
+      expect(find.textContaining('May 15, 2005'), findsOneWidget);
 
       // Verify Points card
       expect(find.text('Good Kasama Points'), findsOneWidget);
       expect(find.text('120 pts'), findsOneWidget);
       expect(find.text('Gold Tier'), findsOneWidget);
 
-      // Verify Menu options & Log Out
-      expect(find.text('My Household'), findsOneWidget);
+      // Verify Menu options & Log Out (removed My Household & Kasama Leaderboard)
+      expect(find.text('My Household'), findsNothing);
+      expect(find.text('Kasama Leaderboard'), findsNothing);
       expect(find.text('Application Settings'), findsOneWidget);
+      expect(find.text('Privacy & Permissions'), findsOneWidget);
+      expect(find.text('About Casama'), findsOneWidget);
       expect(find.text('Log Out'), findsOneWidget);
     },
   );
@@ -1061,13 +1114,13 @@ void main() {
       expect(find.text('Kasama Points Ledger'), findsOneWidget);
       expect(find.text('Total Balance: 120 pts'), findsOneWidget);
       expect(find.text('Recent Activity & Points Earned'), findsOneWidget);
-      expect(find.textContaining('Shopee'), findsOneWidget);
+      expect(find.textContaining('J&T Express'), findsOneWidget);
       expect(find.textContaining('welcome bonus'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'EditProfileDialog allows editing full name, nickname, age, and saving changes',
+    'EditProfileDialog allows editing full name, nickname, birthday, and saving changes',
     (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
@@ -1090,15 +1143,18 @@ void main() {
       expect(find.text('Edit Profile'), findsOneWidget);
       expect(find.text('Full Name'), findsOneWidget);
       expect(find.text('Nickname'), findsOneWidget);
-      expect(find.text('Age (Optional)'), findsOneWidget);
+      expect(find.text('Birthday'), findsOneWidget);
+      expect(find.text('Handle'), findsNothing);
 
-      // Enter updated full name and nickname
+      // Enter updated full name, nickname, and pick birthday via calendar
       await tester.enterText(
         find.widgetWithText(TextField, 'Jon Paul Berana'),
         'Jonathan Paul',
       );
       await tester.enterText(find.widgetWithText(TextField, 'JP'), 'Nate');
-      await tester.enterText(find.widgetWithText(TextField, '21'), '24');
+      await tester.tap(find.byTooltip('Pick date from calendar'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
       // Save changes
@@ -1108,7 +1164,7 @@ void main() {
       // Verify repository record was updated
       expect(mockRepo.currentUser.fullName, 'Jonathan Paul');
       expect(mockRepo.currentUser.nickname, 'Nate');
-      expect(mockRepo.currentUser.age, 24);
+      expect(mockRepo.currentUser.birthday, isNotNull);
       expect(mockRepo.effectiveGreetingName, 'Nate');
     },
   );
@@ -1209,6 +1265,9 @@ void main() {
       expect(find.text('Privacy and Security'), findsOneWidget);
       expect(find.text('Presence & Status Sharing'), findsOneWidget);
       expect(find.text('Application Permissions'), findsOneWidget);
+      expect(find.text('Terms of Service & Privacy Policy'), findsOneWidget);
+      expect(find.text('Terms of Service'), findsNothing);
+      expect(find.text('Privacy Policy'), findsNothing);
 
       // 5. About Casama
       expect(find.text('About Casama'), findsOneWidget);
@@ -1343,65 +1402,6 @@ void main() {
   });
 
   testWidgets(
-    'ChoreRouletteScreen switches between Random Dormmate and Just For Me modes and spins',
-    (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final mockRepo = MockRepository();
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
-          child: const MaterialApp(home: ChoreRouletteScreen()),
-        ),
-      );
-
-      await tester.pumpAndSettle();
-
-      // Verify title and mode toggle options
-      expect(find.text('Chore Roulette'), findsOneWidget);
-      expect(find.text('Random Dormmate'), findsOneWidget);
-      expect(find.text('Just For Me'), findsOneWidget);
-      expect(
-        find.text("Let's settle who does what fairly! 👥"),
-        findsOneWidget,
-      );
-      expect(
-        find.text("Good luck, Kasama! Let's see who's up! 🎉"),
-        findsOneWidget,
-      );
-
-      // Switch to "Just For Me" mode
-      await tester.tap(find.text('Just For Me'));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text("Can't decide what to do? Spin for yourself! 👤"),
-        findsOneWidget,
-      );
-      expect(
-        find.text('Ready to get things done? Spin away! 🚀'),
-        findsOneWidget,
-      );
-
-      // Tap Spin button
-      expect(find.text('Spin'), findsOneWidget);
-      await tester.tap(find.text('Spin'));
-      await tester.pump(const Duration(milliseconds: 500));
-
-      // Re-switch to "Random Dormmate"
-      await tester.tap(find.text('Random Dormmate'));
-      await tester.pump(const Duration(seconds: 4));
-      await tester.pumpAndSettle();
-    },
-  );
-
-  testWidgets(
     'BoardsScreen displays unified 4-tab boards hub and switches to Bills tab',
     (tester) async {
       await tester.pumpWidget(
@@ -1464,7 +1464,6 @@ void main() {
       mockRepo.sendQuickSnap(
         imageUrl: 'https://images.unsplash.com/photo-test',
         caption: 'Balcony sunrise',
-        recipientType: QuickSnapRecipientType.everyone,
       );
       await tester.pumpAndSettle();
 
@@ -1495,7 +1494,6 @@ void main() {
       mockRepo.sendQuickSnap(
         imageUrl: 'https://images.unsplash.com/photo-test',
         caption: 'First dorm moment',
-        recipientType: QuickSnapRecipientType.everyone,
       );
       await tester.pumpWidget(
         ProviderScope(
@@ -1505,12 +1503,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Live Snaps'), findsOneWidget);
-      expect(find.text('Memories'), findsOneWidget);
-      expect(find.text('Send message... 💬'), findsOneWidget);
+      expect(find.text('Highlights'), findsOneWidget);
+      expect(find.text('All CASnaps'), findsOneWidget);
+      expect(find.text('Comment... 💬'), findsOneWidget);
 
-      // Switch to Memories tab
-      await tester.tap(find.text('Memories'));
+      // Switch to All CASnaps tab
+      await tester.tap(find.text('All CASnaps'));
       await tester.pumpAndSettle();
 
       expect(
@@ -1545,7 +1543,7 @@ void main() {
       // Viewfinder displays with clean dark viewfinder and permission needed pill
       expect(find.text('Permission Needed'), findsOneWidget);
       expect(find.text('Camera Access Needed'), findsOneWidget);
-      expect(find.text('Everyone'), findsOneWidget);
+      expect(find.text('Shared with Casa 204'), findsOneWidget);
     },
   );
 
@@ -1568,7 +1566,8 @@ void main() {
       // Verified: No permission modal is shown!
       expect(find.text('Enable Camera for QuickSnap'), findsNothing);
       expect(find.byKey(const Key('quicksnap_shutter_button')), findsOneWidget);
-      expect(find.text('Everyone'), findsOneWidget);
+      expect(find.text('Shared with Casa 204'), findsOneWidget);
+      expect(find.byKey(const Key('gallery_picker_button')), findsNothing);
     },
   );
 
