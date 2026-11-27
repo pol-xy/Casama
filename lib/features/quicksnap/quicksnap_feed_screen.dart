@@ -9,9 +9,11 @@ import '../../core/theme/app_theme.dart';
 import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
+import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import 'cas_snap_interactive_view.dart';
 import 'quicksnap_camera_screen.dart';
@@ -62,13 +64,16 @@ class _QuickSnapFeedScreenState extends ConsumerState<QuickSnapFeedScreen> {
         child: Column(
           children: [
             CasamaWaveHeader(
-              title: '${repo.currentHousehold.name} Gallery',
-              subtitle:
-                  '${snaps.length} ${snaps.length == 1 ? 'photo' : 'photos'} • Shared household moments',
+              title: repo.hasActiveHousehold
+                  ? '${repo.currentHousehold.name} Gallery'
+                  : 'CASnap Gallery',
+              subtitle: repo.hasActiveHousehold
+                  ? '${snaps.length} ${snaps.length == 1 ? 'photo' : 'photos'} • Shared household moments'
+                  : 'Join or create a household to share moments',
               compact: true,
               onBackTap: () => Navigator.of(context).pop(),
               rightActions: [
-                if (streak > 0)
+                if (repo.hasActiveHousehold && streak > 0)
                   Container(
                     height: 44,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -89,20 +94,34 @@ class _QuickSnapFeedScreenState extends ConsumerState<QuickSnapFeedScreen> {
                       ),
                     ),
                   ),
-                CasamaCircleIconButton(
-                  icon: Icons.photo_camera_rounded,
-                  semanticLabel: 'New CASnap',
-                  onTap: () {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                        builder: (_) => const QuickSnapCameraScreen(),
-                      ),
-                    );
-                  },
-                ),
+                if (repo.hasActiveHousehold)
+                  CasamaCircleIconButton(
+                    icon: Icons.photo_camera_rounded,
+                    semanticLabel: 'New CASnap',
+                    onTap: () {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (_) => const QuickSnapCameraScreen(),
+                        ),
+                      );
+                    },
+                  ),
               ],
             ),
 
+            if (!repo.hasActiveHousehold)
+              const Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(CasamaSpacing.md),
+                  child: CasamaNoHouseholdPrompt(
+                    title: 'Join a household',
+                    subtitle:
+                        'Join or create a household to capture and view shared CASnap memories.',
+                    mascotPose: CasPose.jumping,
+                  ),
+                ),
+              )
+            else ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: CasamaSpacing.md),
               child: CasamaSegmentedTrack<int>(
@@ -127,6 +146,7 @@ class _QuickSnapFeedScreenState extends ConsumerState<QuickSnapFeedScreen> {
                           : _buildAllCasnapsView(context, repo, snaps, streak),
                     ),
             ),
+            ],
           ],
         ),
       ),
@@ -256,30 +276,31 @@ class _QuickSnapFeedScreenState extends ConsumerState<QuickSnapFeedScreen> {
     final pal = context.palette;
     final theme = Theme.of(context);
     final monthName = DateFormat('MMMM yyyy').format(DateTime.now());
-    final myName = repo.currentUser.displayName;
-    final memberNames = repo.members
+    final memberFilters = repo.members
         .where((m) => m.profile.id != repo.currentUser.id)
-        .map((m) => m.profile.displayName)
         .toList();
 
     final filterOptions = <CasamaFilterOption<String>>[
       CasamaFilterOption(value: 'all', label: 'All (${snaps.length})'),
       const CasamaFilterOption(value: 'you', label: 'Your Shots'),
-      for (final name in memberNames)
-        CasamaFilterOption(value: 'sender:$name', label: name.split(' ').first),
+      for (final m in memberFilters)
+        CasamaFilterOption(
+          value: 'senderId:${m.profile.id}',
+          label: m.preferredName,
+        ),
     ];
 
     final filtered = snaps.where((s) {
       if (_galleryFilter == 'all') return true;
       if (_galleryFilter == 'you') {
         return s.senderId == repo.currentUser.id ||
-            s.senderName == myName ||
+            s.creatorId == repo.currentUser.id ||
+            s.senderName == repo.currentUser.preferredName ||
             s.senderName == 'You';
       }
-      if (_galleryFilter.startsWith('sender:')) {
-        final target = _galleryFilter.substring(7);
-        return s.senderName == target ||
-            s.senderName.split(' ').first == target.split(' ').first;
+      if (_galleryFilter.startsWith('senderId:')) {
+        final targetId = _galleryFilter.substring(9);
+        return s.senderId == targetId || s.creatorId == targetId;
       }
       return true;
     }).toList();
@@ -435,7 +456,7 @@ class _QuickSnapFeedScreenState extends ConsumerState<QuickSnapFeedScreen> {
                   final creator = resolveSnapCreatorProfile(repo, snap);
                   return Semantics(
                     button: true,
-                    label: 'Open photo by ${creator.displayName}',
+                    label: 'Open photo by ${creator.preferredName}',
                     child: CasamaPressable(
                       enableHaptic: true,
                       onTap: () => showCasamaSnapLightbox(
@@ -486,12 +507,12 @@ class _QuickSnapFeedScreenState extends ConsumerState<QuickSnapFeedScreen> {
                                       CasamaAvatar(
                                         radius: 9,
                                         avatarUrl: creator.avatarUrl,
-                                        name: creator.displayName,
+                                        name: creator.preferredName,
                                       ),
                                       const SizedBox(width: 4),
                                       Expanded(
                                         child: Text(
-                                          creator.displayName.split(' ').first,
+                                          creator.preferredName,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(

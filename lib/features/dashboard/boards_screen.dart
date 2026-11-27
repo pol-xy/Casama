@@ -9,8 +9,6 @@ import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_lost_found_icon.dart';
 import '../../shared/widgets/casama_wave_header.dart';
-import '../bills/bills_dashboard_screen.dart';
-import '../bills/widgets/edit_billings_sheet.dart';
 import '../items/lost_found_screen.dart';
 import '../items/widgets/report_item_sheet.dart';
 import '../parcels/parcels_screen.dart';
@@ -20,7 +18,7 @@ import '../tasks/widgets/add_task_sheet.dart';
 import 'main_navigation_shell.dart';
 import 'widgets/casama_household_drawer.dart';
 
-/// Unified 4-tab Household Boards hub (`Parcels`, `Tasks`, `Bills`, `Items`)
+/// Unified 3-tab Household Boards hub (`Parcels`, `Tasks`, `Items`)
 /// with horizontal swipe navigation synced with [CasamaShellScope],
 /// `CasamaPeekingSummaryBar`, and contextual [CasamaMorphingFab].
 class BoardsScreen extends ConsumerStatefulWidget {
@@ -57,15 +55,6 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       mascotPose: CasPose.tasks,
     ),
     _BoardTabMeta(
-      headerTitle: 'Bills & Payments',
-      headerSubtitle: 'Shared utilities & due dates',
-      pillLabel: 'Bills',
-      pillIcon: Icons.receipt_long_outlined,
-      fabLabel: 'Edit billings',
-      fabIcon: Icons.edit_note_rounded,
-      mascotPose: CasPose.chatting,
-    ),
-    _BoardTabMeta(
       headerTitle: 'Lost & Found',
       headerSubtitle: 'Missing & found items',
       pillLabel: 'Items',
@@ -78,7 +67,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   @override
   void initState() {
     super.initState();
-    _activeTab = widget.initialTab.clamp(0, 3);
+    _activeTab = widget.initialTab.clamp(0, 2);
     _pageController = PageController(initialPage: _activeTab);
   }
 
@@ -92,7 +81,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       _shellBoardListenable = nextListenable;
       _shellBoardListenable?.addListener(_handleExternalBoardChange);
       if (nextListenable != null && nextListenable.value != _activeTab) {
-        _activeTab = nextListenable.value.clamp(0, 3);
+        _activeTab = nextListenable.value.clamp(0, 2);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _pageController.hasClients) {
             _pageController.jumpToPage(_activeTab);
@@ -105,7 +94,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   void _handleExternalBoardChange() {
     final target = _shellBoardListenable?.value ?? 0;
     if (target == _activeTab || !mounted) return;
-    setState(() => _activeTab = target.clamp(0, 3));
+    setState(() => _activeTab = target.clamp(0, 2));
     if (_pageController.hasClients) {
       _pageController.jumpToPage(_activeTab);
     }
@@ -119,7 +108,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   }
 
   void _selectTab(int index) {
-    final target = index.clamp(0, 3);
+    final target = index.clamp(0, 2);
     final scope = CasamaShellScope.maybeOf(context);
     if (scope != null &&
         scope.boardTabListenable is ValueNotifier<int> &&
@@ -142,11 +131,12 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   }
 
   void _onPageChanged(int index) {
-    if (_activeTab == index) return;
-    setState(() => _activeTab = index);
+    final clamped = index.clamp(0, 2);
+    if (_activeTab == clamped) return;
+    setState(() => _activeTab = clamped);
     final scope = CasamaShellScope.maybeOf(context);
     if (scope != null && scope.boardTabListenable is ValueNotifier<int>) {
-      (scope.boardTabListenable as ValueNotifier<int>).value = index;
+      (scope.boardTabListenable as ValueNotifier<int>).value = clamped;
     }
   }
 
@@ -157,8 +147,6 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       case 1:
         showNewTaskSheet(context);
       case 2:
-        showEditBillingsSheet(context);
-      case 3:
         showReportItemSheet(context);
     }
   }
@@ -179,7 +167,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   Widget build(BuildContext context) {
     final pal = context.palette;
     final repo = ref.watch(repositoryProvider);
-    final meta = _tabs[_activeTab];
+    final meta = _tabs[_activeTab.clamp(0, _tabs.length - 1)];
     final inShell = CasamaShellScope.maybeOf(context) != null;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final fabBottomOffset = inShell ? 84.0 + bottomInset : 20.0 + bottomInset;
@@ -194,8 +182,9 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
               children: [
                 CasamaWaveHeader(
                   title: meta.headerTitle,
-                  subtitle:
-                      '${repo.currentHousehold.name} • ${meta.headerSubtitle}',
+                  subtitle: repo.hasActiveHousehold
+                      ? '${repo.currentHousehold.name} • ${meta.headerSubtitle}'
+                      : 'No household yet • ${meta.headerSubtitle}',
                   titleMascotPose: meta.mascotPose,
                   extendedWave: true,
                   compact: true,
@@ -216,7 +205,6 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
                     children: [
                       ParcelsBoardView(bottomPadding: bodyBottomPadding),
                       TasksBoardView(bottomPadding: bodyBottomPadding),
-                      BillsBoardView(bottomPadding: bodyBottomPadding),
                       ItemsBoardView(bottomPadding: bodyBottomPadding),
                     ],
                   ),
@@ -229,7 +217,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
               right: 16,
               bottom: fabBottomOffset,
               child: CasamaMorphingFab(
-                visible: true,
+                visible: repo.hasActiveHousehold,
                 icon: meta.useLostFoundIcon ? null : meta.fabIcon,
                 iconWidget: meta.useLostFoundIcon
                     ? const CasamaLostFoundIcon(size: 20, color: Colors.white)

@@ -114,12 +114,12 @@ class _ReactorBreakdownRow extends ConsumerWidget {
         CasamaAvatar(
           avatarUrl: profile.avatarUrl,
           radius: 18,
-          name: profile.displayName,
+          name: profile.preferredName,
         ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
-            profile.displayName,
+            profile.preferredName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleSmall?.copyWith(
@@ -175,7 +175,7 @@ Future<void> showCasSnapCommentsSheet(
         final snap = _resolveLiveSnap(repo.quickSnaps, snapId, fallbackSnap);
         final count = snap?.comments.length ?? 0;
         final creator = snap != null
-            ? resolveSnapCreatorProfile(repo, snap).displayName
+            ? resolveSnapCreatorProfile(repo, snap).preferredName
             : 'Housemate';
         return Text(
           '$count ${count == 1 ? 'reply' : 'replies'} to $creator',
@@ -222,7 +222,7 @@ Future<void> showCasSnapCommentsSheet(
                       CasamaAvatar(
                         avatarUrl: profile.avatarUrl ?? comment.userAvatar,
                         radius: 16,
-                        name: profile.displayName,
+                        name: profile.preferredName,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -230,7 +230,7 @@ Future<void> showCasSnapCommentsSheet(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              profile.displayName,
+                              profile.preferredName,
                               style: theme.textTheme.titleSmall?.copyWith(
                                 color: pal.textPrimary,
                                 fontWeight: FontWeight.w700,
@@ -419,7 +419,7 @@ class _CasSnapInteractiveViewState
                                 CasamaAvatar(
                                   avatarUrl: creator.avatarUrl,
                                   radius: 17,
-                                  name: creator.displayName,
+                                  name: creator.preferredName,
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(
@@ -428,7 +428,7 @@ class _CasSnapInteractiveViewState
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        creator.displayName,
+                                        creator.preferredName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(

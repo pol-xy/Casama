@@ -187,7 +187,7 @@ class QuickSnapHomeWidget extends ConsumerWidget {
                   return _SnapGridTile(
                     snap: snap,
                     creatorAvatarUrl: creator.avatarUrl,
-                    creatorDisplayName: creator.displayName,
+                    creatorDisplayName: creator.preferredName,
                     heroTag: heroTag,
                     onTap: () => showCasamaSnapLightbox(
                       context,

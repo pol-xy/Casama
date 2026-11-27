@@ -21,8 +21,13 @@ final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
 String resolveStartupRoute({
   required bool isAuthenticated,
   required bool hasActiveHousehold,
+  bool hasCompleteRequiredProfile = true,
+  bool? hasCompletedOnboarding,
 }) {
   if (!isAuthenticated) return '/';
+  if (hasCompletedOnboarding == true) return '/dashboard';
+  if (!hasCompleteRequiredProfile) return '/profile-setup';
+  if (hasCompletedOnboarding == false) return '/household-setup';
   return hasActiveHousehold ? '/dashboard' : '/household-setup';
 }
 
@@ -49,8 +54,15 @@ void main() async {
   final initialRoute = resolveStartupRoute(
     isAuthenticated: supabaseRepo.isAuthenticated,
     hasActiveHousehold: supabaseRepo.hasActiveHousehold,
+    hasCompleteRequiredProfile:
+        supabaseRepo.currentUser.hasCompleteRequiredProfile,
+    hasCompletedOnboarding: supabaseRepo.currentUser.hasCompletedOnboarding,
   );
-  final router = createAppRouter(initialLocation: initialRoute);
+  final router = createAppRouter(
+    initialLocation: initialRoute,
+    isAuthenticated: () => supabaseRepo.isAuthenticated,
+    currentUser: () => supabaseRepo.currentUser,
+  );
 
   runApp(
     ProviderScope(

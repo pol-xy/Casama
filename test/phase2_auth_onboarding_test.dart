@@ -138,6 +138,10 @@ void main() {
             path: '/intro',
             builder: (context, state) => const CasamaIntroScreen(),
           ),
+          GoRoute(
+            path: '/interactive-tutorial',
+            builder: (context, state) => const InteractiveTutorialScreen(),
+          ),
         ],
       );
 
@@ -157,9 +161,11 @@ void main() {
 
       expect(find.text('Device Permissions'), findsOneWidget);
       expect(find.text('Step 4 of 4'), findsNothing);
+      expect(find.text('Push Notifications'), findsNothing);
       expect(find.text('Skip All'), findsNothing);
+      expect(find.text('Skip All for Now'), findsNothing);
 
-      await tester.tap(find.text('Push Notifications'));
+      await tester.tap(find.text('Camera & Photo Library'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Save & Continue'));
       await tester.pumpAndSettle();
@@ -167,7 +173,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Open Permissions'), findsOneWidget);
-      expect(repo.notificationPreferences.parcelNotifications, isFalse);
       expect(find.byType(CasamaIntroScreen), findsNothing);
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
@@ -192,7 +197,7 @@ void main() {
 
       await tester.tap(find.text('Chat'));
       await tester.pumpAndSettle();
-      expect(find.text('4. Household Chat & Meet-ups'), findsOneWidget);
+      expect(find.text('4. Household Chat & Agendas'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('center_quicksnap_shutter_button')));
       await tester.pumpAndSettle();
@@ -233,6 +238,10 @@ void main() {
             path: '/intro',
             builder: (context, state) => const CasamaIntroScreen(),
           ),
+          GoRoute(
+            path: '/interactive-tutorial',
+            builder: (context, state) => const InteractiveTutorialScreen(),
+          ),
         ],
       );
 
@@ -263,7 +272,7 @@ void main() {
 
       // Fill Full Name, Nickname, Birthday via calendar picker, and accept Terms
       await tester.enterText(
-        find.widgetWithText(TextField, 'Enter your full name'),
+        find.widgetWithText(TextField, 'e.g., Jon Paul Berana'),
         'Clara Reyes',
       );
       await tester.enterText(
@@ -295,17 +304,30 @@ void main() {
       expect(repo.currentUser.birthday, isNotNull);
       expect(repo.currentUser.hasConsentedTerms, isTrue);
 
-      // Step 4: DevicePermissionsScreen (no Contacts Assistance)
+      // Step 4: DevicePermissionsScreen (no Push Notifications, Contacts Assistance, or Skip buttons)
       await tester.tap(find.text('Go Permissions'));
       await tester.pumpAndSettle();
+      expect(find.text('Push Notifications'), findsNothing);
       expect(find.text('Contacts Assistance'), findsNothing);
+      expect(find.text('Skip All'), findsNothing);
+      expect(find.text('Skip All for Now'), findsNothing);
 
       await tester.ensureVisible(find.text('Save & Continue'));
       await tester.tap(find.text('Save & Continue'));
       await tester.pumpAndSettle();
 
-      expect(repo.currentUser.hasCompletedOnboarding, isTrue);
+      expect(repo.currentUser.hasCompletedOnboarding, isFalse);
       expect(find.byType(CasamaIntroScreen), findsOneWidget);
+      expect(find.text('Skip to Home'), findsNothing);
+      expect(find.text('Skip Tutorial & Go to Dashboard'), findsNothing);
+
+      await tester.ensureVisible(find.text("Let's Get Started"));
+      await tester.tap(find.text("Let's Get Started"));
+      await tester.pumpAndSettle();
+
+      expect(repo.currentUser.hasCompletedOnboarding, isTrue);
+      expect(find.byType(InteractiveTutorialScreen), findsOneWidget);
+      expect(find.text('Skip Tour'), findsNothing);
 
       // Verify ProfileScreen immediately reflects saved data
       await tester.pumpWidget(

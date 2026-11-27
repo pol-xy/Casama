@@ -14,6 +14,7 @@ import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
 import '../../shared/widgets/casama_lost_found_icon.dart';
+import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../../shared/widgets/status_chip.dart';
 import 'widgets/report_item_sheet.dart';
@@ -41,7 +42,9 @@ class _LostFoundScreenState extends ConsumerState<LostFoundScreen> {
     super.initState();
     if (widget.initialOpenPostModal) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) showReportItemSheet(context);
+        if (mounted && ref.read(repositoryProvider).hasActiveHousehold) {
+          showReportItemSheet(context);
+        }
       });
     }
   }
@@ -53,33 +56,38 @@ class _LostFoundScreenState extends ConsumerState<LostFoundScreen> {
 
     return Scaffold(
       backgroundColor: pal.scaffoldBg,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showReportItemSheet(context),
-        backgroundColor: pal.coralFab,
-        foregroundColor: Colors.white,
-        icon: const CasamaLostFoundIcon(size: 20, color: Colors.white),
-        label: const Text(
-          'Report item',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-      ),
+      floatingActionButton: repo.hasActiveHousehold
+          ? FloatingActionButton.extended(
+              onPressed: () => showReportItemSheet(context),
+              backgroundColor: pal.coralFab,
+              foregroundColor: Colors.white,
+              icon: const CasamaLostFoundIcon(size: 20, color: Colors.white),
+              label: const Text(
+                'Report item',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            )
+          : null,
       body: CasamaAmbientCanvas(
         child: Column(
           children: [
             CasamaWaveHeader(
               title: 'Lost & Found',
-              subtitle: '${repo.currentHousehold.name} • Missing & found items',
+              subtitle: repo.hasActiveHousehold
+                  ? '${repo.currentHousehold.name} • Missing & found items'
+                  : 'No household yet • Missing & found items',
               titleMascotPose: CasPose.together,
               extendedWave: true,
               compact: true,
               onBackTap: () =>
                   context.canPop() ? context.pop() : context.go('/boards'),
               rightActions: [
-                CasamaHeaderActionPill(
-                  iconWidget: const CasamaLostFoundIcon(size: 16),
-                  label: 'Report item',
-                  onTap: () => showReportItemSheet(context),
-                ),
+                if (repo.hasActiveHousehold)
+                  CasamaHeaderActionPill(
+                    iconWidget: const CasamaLostFoundIcon(size: 16),
+                    label: 'Report item',
+                    onTap: () => showReportItemSheet(context),
+                  ),
               ],
             ),
             const Expanded(
@@ -109,13 +117,16 @@ class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
   String? _expandedItemId;
 
   Future<void> _handleAcceptFind(LostFoundItem submission) async {
-    final err = await ref
-        .read(repositoryProvider)
-        .acceptLostItemFind(submission.id);
+    final repo = ref.read(repositoryProvider);
+    final err = await repo.acceptLostItemFind(submission.id);
     if (!mounted) return;
+    final finder = repo.resolveHousemateName(
+      submission.reportedBy,
+      fallback: submission.reportedByName,
+    );
     showCasamaToast(
       context,
-      err ?? 'Confirmed! ${submission.reportedByName} earned +5 pts.',
+      err ?? 'Confirmed! $finder earned +5 pts.',
       icon: err != null
           ? Icons.info_outline_rounded
           : Icons.verified_rounded,
@@ -123,13 +134,16 @@ class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
   }
 
   Future<void> _handleRejectFind(LostFoundItem submission) async {
-    final err = await ref
-        .read(repositoryProvider)
-        .rejectLostItemFind(submission.id);
+    final repo = ref.read(repositoryProvider);
+    final err = await repo.rejectLostItemFind(submission.id);
     if (!mounted) return;
+    final finder = repo.resolveHousemateName(
+      submission.reportedBy,
+      fallback: submission.reportedByName,
+    );
     showCasamaToast(
       context,
-      err ?? 'Marked find from ${submission.reportedByName} as not a match.',
+      err ?? 'Marked find from $finder as not a match.',
       icon: Icons.info_outline_rounded,
     );
   }
@@ -150,17 +164,19 @@ class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
   }
 
   Future<void> _handleClaimStandaloneFound(LostFoundItem foundItem) async {
-    final err = await ref
-        .read(repositoryProvider)
-        .claimStandaloneFoundItem(foundItem.id);
+    final repo = ref.read(repositoryProvider);
+    final err = await repo.claimStandaloneFoundItem(foundItem.id);
     if (!mounted) return;
     if (_expandedItemId == foundItem.id && err == null) {
       setState(() => _expandedItemId = null);
     }
+    final finder = repo.resolveHousemateName(
+      foundItem.reportedBy,
+      fallback: foundItem.reportedByName,
+    );
     showCasamaToast(
       context,
-      err ??
-          'Claimed "${foundItem.title}"! ${foundItem.reportedByName} earned +2 pts.',
+      err ?? 'Claimed "${foundItem.title}"! $finder earned +2 pts.',
       icon: Icons.check_circle_outline_rounded,
     );
   }
@@ -170,6 +186,22 @@ class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
     final pal = context.palette;
     final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
+    if (!repo.hasActiveHousehold) {
+      return SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          CasamaSpacing.md,
+          CasamaSpacing.md,
+          CasamaSpacing.md,
+          widget.bottomPadding,
+        ),
+        child: const CasamaNoHouseholdPrompt(
+          title: 'Join a household',
+          subtitle:
+              'Post missing or found items and reunite belongings with housemates once you join or create a household.',
+          mascotPose: CasPose.together,
+        ),
+      );
+    }
     final currentUserId = repo.currentUser.id;
     final items = repo.items;
 
@@ -523,7 +555,7 @@ class _ActivityFilterPill extends StatelessWidget {
   }
 }
 
-class _ExpandableItemCard extends StatelessWidget {
+class _ExpandableItemCard extends ConsumerWidget {
   final LostFoundItem item;
   final _ItemSubTab tab;
   final String currentUserId;
@@ -551,9 +583,22 @@ class _ExpandableItemCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final pal = context.palette;
     final theme = Theme.of(context);
+    final repo = ref.watch(repositoryProvider);
+    final reporterName = repo.resolveHousemateName(
+      item.reportedBy,
+      fallback: item.reportedByName,
+    );
+    final finderName = repo.resolveHousemateName(
+      item.foundById,
+      fallback: item.foundByName ?? 'Housemate',
+    );
+    final claimerName = repo.resolveHousemateName(
+      item.claimedById,
+      fallback: item.claimedByName ?? 'Housemate',
+    );
     final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
     final Duration animDuration = reduceMotion
         ? Duration.zero
@@ -578,9 +623,9 @@ class _ExpandableItemCard extends StatelessWidget {
     ).format(item.returnedAt ?? item.claimedAt ?? item.createdAt);
     final metaLine = isResolvedTab
         ? (isLost
-              ? 'Lost by ${item.reportedByName} • Resolved $resolvedShortDate'
-              : 'Found by ${item.reportedByName} • Resolved $resolvedShortDate')
-        : 'By ${item.reportedByName}$locSuffix • $shortDate';
+              ? 'Lost by $reporterName • Resolved $resolvedShortDate'
+              : 'Found by $reporterName • Resolved $resolvedShortDate')
+        : 'By $reporterName$locSuffix • $shortDate';
 
     final (String pillLabel, ChipVariant pillVariant, Color? customBg, Color? customFg) =
         _statusPill(pal, isLost, pendingFinds.length, isResolvedTab: isResolvedTab);
@@ -719,6 +764,8 @@ class _ExpandableItemCard extends StatelessWidget {
                       theme,
                       isLost: isLost,
                       hasPhoto: hasPhoto,
+                      reporterName: reporterName,
+                      claimerName: claimerName,
                     )
                   : _buildExpandedBody(
                       context,
@@ -727,6 +774,8 @@ class _ExpandableItemCard extends StatelessWidget {
                       isLost: isLost,
                       isOwnerOrFinder: isOwnerOrFinder,
                       hasPhoto: hasPhoto,
+                      finderName: finderName,
+                      claimerName: claimerName,
                     ),
           ] else
             AnimatedSize(
@@ -744,6 +793,8 @@ class _ExpandableItemCard extends StatelessWidget {
                               theme,
                               isLost: isLost,
                               hasPhoto: hasPhoto,
+                              reporterName: reporterName,
+                              claimerName: claimerName,
                             )
                           : _buildExpandedBody(
                               context,
@@ -752,6 +803,8 @@ class _ExpandableItemCard extends StatelessWidget {
                               isLost: isLost,
                               isOwnerOrFinder: isOwnerOrFinder,
                               hasPhoto: hasPhoto,
+                              finderName: finderName,
+                              claimerName: claimerName,
                             ))
                     : const SizedBox.shrink(),
               ),
@@ -798,6 +851,8 @@ class _ExpandableItemCard extends StatelessWidget {
     required bool isLost,
     required bool isOwnerOrFinder,
     required bool hasPhoto,
+    required String finderName,
+    required String claimerName,
   }) {
     final desc = item.description?.trim() ?? '';
     final loc = item.location?.trim() ?? '';
@@ -917,8 +972,8 @@ class _ExpandableItemCard extends StatelessWidget {
                 text: item.foundByName != null &&
                         item.foundByName!.trim().isNotEmpty
                     ? isInteractionLost && item.foundById != currentUserId
-                          ? 'Resolved by ${item.foundByName}'
-                          : 'Returned by ${item.foundByName} • +5 pts awarded'
+                          ? 'Resolved by $finderName'
+                          : 'Returned by $finderName • +5 pts awarded'
                     : 'Resolved by owner (0 pts)',
               ),
             ],
@@ -949,7 +1004,7 @@ class _ExpandableItemCard extends StatelessWidget {
                 theme: theme,
                 text: item.claimedById == currentUserId
                     ? 'You claimed this item • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)}'
-                    : 'Claimed by ${item.claimedByName ?? 'Housemate'} • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)} • +2 pts earned',
+                    : 'Claimed by $claimerName • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)} • +2 pts earned',
               ),
           ],
 
@@ -988,6 +1043,8 @@ class _ExpandableItemCard extends StatelessWidget {
     ThemeData theme, {
     required bool isLost,
     required bool hasPhoto,
+    required String reporterName,
+    required String claimerName,
   }) {
     final desc = item.description?.trim() ?? '';
     final loc = item.location?.trim() ?? '';
@@ -1077,7 +1134,7 @@ class _ExpandableItemCard extends StatelessWidget {
           if (isLost) ...[
             _ResolutionMilestoneRow(
               title:
-                  '${item.reportedByName} reported item lost • ${_formatShortDateTime(item.createdAt)}',
+                  '$reporterName reported item lost • ${_formatShortDateTime(item.createdAt)}',
               dotColor: pal.forestTeal,
               isLast: linkedFinds.isEmpty && !isSelfResolved,
             ),
@@ -1089,7 +1146,7 @@ class _ExpandableItemCard extends StatelessWidget {
                 confirmedByLabel:
                     (linkedFinds[i].id == item.resolvedFoundItemId ||
                             linkedFinds[i].status == ItemStatus.resolved)
-                        ? 'Confirmed by ${item.reportedByName} • ${_formatShortDateTime(item.returnedAt ?? linkedFinds[i].returnedAt ?? linkedFinds[i].createdAt)}'
+                        ? 'Confirmed by $reporterName • ${_formatShortDateTime(item.returnedAt ?? linkedFinds[i].returnedAt ?? linkedFinds[i].createdAt)}'
                         : null,
                 onAccept: () {},
                 onReject: () {},
@@ -1097,7 +1154,7 @@ class _ExpandableItemCard extends StatelessWidget {
             if (isSelfResolved)
               _ResolutionMilestoneRow(
                 title:
-                    '${item.reportedByName} found it themselves • ${_formatShortDateTime(item.returnedAt ?? item.createdAt)}',
+                    '$reporterName found it themselves • ${_formatShortDateTime(item.returnedAt ?? item.createdAt)}',
                 badgeText: 'Self-resolved • 0 pts',
                 badgeBg: pal.neutralBg,
                 badgeFg: pal.neutralFg,
@@ -1107,15 +1164,15 @@ class _ExpandableItemCard extends StatelessWidget {
           ] else ...[
             _ResolutionMilestoneRow(
               title:
-                  '${item.reportedByName} posted found item • ${_formatShortDateTime(item.createdAt)}',
+                  '$reporterName posted found item • ${_formatShortDateTime(item.createdAt)}',
               subtitle: loc.isNotEmpty ? 'Found at: $loc' : null,
               dotColor: pal.forestTeal,
               isLast: false,
             ),
             _ResolutionMilestoneRow(
               title:
-                  'Claimed by ${item.claimedByName ?? 'Housemate'} ("That\'s Mine") • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)}',
-              badgeText: '+2 pts to ${item.reportedByName}',
+                  'Claimed by $claimerName ("That\'s Mine") • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)}',
+              badgeText: '+2 pts to $reporterName',
               badgeBg: pal.successBg,
               badgeFg: pal.successFg,
               dotColor: pal.successFg,
@@ -1263,7 +1320,7 @@ class _ResolutionMilestoneRow extends StatelessWidget {
   }
 }
 
-class _TimelineEntryRow extends StatelessWidget {
+class _TimelineEntryRow extends ConsumerWidget {
   final LostFoundItem submission;
   final bool canReview;
   final bool isLast;
@@ -1281,9 +1338,14 @@ class _TimelineEntryRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final pal = context.palette;
     final theme = Theme.of(context);
+    final repo = ref.watch(repositoryProvider);
+    final subReporterName = repo.resolveHousemateName(
+      submission.reportedBy,
+      fallback: submission.reportedByName,
+    );
     final hasThumb =
         submission.imageUrl != null && submission.imageUrl!.trim().isNotEmpty;
 
@@ -1356,7 +1418,7 @@ class _TimelineEntryRow extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          '${submission.reportedByName} • ${_formatShortDateTime(submission.createdAt)}',
+                          '$subReporterName • ${_formatShortDateTime(submission.createdAt)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelMedium?.copyWith(
@@ -1424,7 +1486,7 @@ class _TimelineEntryRow extends StatelessWidget {
                       onTap: () => _showItemPhotoLightbox(
                         context,
                         submission.imageUrl!,
-                        '${submission.reportedByName} find photo',
+                        '$subReporterName find photo',
                       ),
                       child: ClipRRect(
                         borderRadius: CasamaSpacing.roundedSm,

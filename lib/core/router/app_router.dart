@@ -1,17 +1,16 @@
 import 'package:go_router/go_router.dart';
 
+import '../../data/models.dart';
+
 import '../../features/auth/auth_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/optional_profile_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/auth/splash_screen.dart';
-import '../../features/bills/add_bill_screen.dart';
-import '../../features/bills/bill_detail_screen.dart';
-import '../../features/bills/bills_dashboard_screen.dart';
 import '../../features/chat/chat_space_screen.dart';
-import '../../features/chat/create_meetup_screen.dart';
 import '../../features/chat/direct_chat_screen.dart';
 import '../../features/chat/group_chat_screen.dart';
+import '../../features/chat/plan_housemates_agenda_screen.dart';
 import '../../features/dashboard/main_navigation_shell.dart';
 import '../../features/household/household_setup_screen.dart';
 import '../../features/items/lost_found_screen.dart';
@@ -30,9 +29,57 @@ import '../../features/tasks/maintenance_screen.dart';
 
 final appRouter = createAppRouter();
 
-GoRouter createAppRouter({String initialLocation = '/'}) {
+/// Computes the canonical post-auth destination:
+/// 1. Returning user (`hasCompletedOnboarding == true`) -> `/dashboard`
+///    (with or without an active household).
+/// 2. Incomplete user (`hasCompletedOnboarding == false`):
+///    - Missing required profile fields or Terms -> `/profile-setup`
+///    - Profile + Terms saved -> `/household-setup`
+String resolveAuthenticatedDestination(UserProfile user) {
+  if (user.hasCompletedOnboarding) return '/dashboard';
+  if (!user.hasCompleteRequiredProfile) return '/profile-setup';
+  return '/household-setup';
+}
+
+String? resolveProfileCompletenessRedirect({
+  required bool isAuthenticated,
+  required UserProfile currentUser,
+  required String matchedLocation,
+}) {
+  if (!isAuthenticated) return null;
+  if (currentUser.hasCompletedOnboarding) return null;
+  if (currentUser.hasCompleteRequiredProfile) return null;
+  const allowedIncompleteRoutes = <String>{
+    '/',
+    '/auth',
+    '/login',
+    '/register',
+    '/profile-setup',
+    '/terms-consent',
+    '/terms',
+    '/terms-privacy',
+  };
+  if (allowedIncompleteRoutes.contains(matchedLocation)) {
+    return null;
+  }
+  return '/profile-setup';
+}
+
+GoRouter createAppRouter({
+  String initialLocation = '/',
+  bool Function()? isAuthenticated,
+  UserProfile Function()? currentUser,
+}) {
   return GoRouter(
     initialLocation: initialLocation,
+    redirect: (context, state) {
+      if (isAuthenticated == null || currentUser == null) return null;
+      return resolveProfileCompletenessRedirect(
+        isAuthenticated: isAuthenticated(),
+        currentUser: currentUser(),
+        matchedLocation: state.matchedLocation,
+      );
+    },
     routes: [
     GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
     GoRoute(
@@ -99,8 +146,7 @@ GoRouter createAppRouter({String initialLocation = '/'}) {
         final initialBoardIndex = switch (tabParam) {
           'parcels' || '0' => 0,
           'tasks' || '1' => 1,
-          'bills' || '2' => 2,
-          'items' || '3' => 3,
+          'items' || '2' => 2,
           _ => 0,
         };
         return MainNavigationShell(
@@ -128,21 +174,6 @@ GoRouter createAppRouter({String initialLocation = '/'}) {
       builder: (context, state) {
         final openAdd = state.uri.queryParameters['openAdd'] == 'true';
         return MaintenanceScreen(initialOpenAddModal: openAdd);
-      },
-    ),
-    GoRoute(
-      path: '/bills',
-      builder: (context, state) => const BillsDashboardScreen(),
-    ),
-    GoRoute(
-      path: '/add-bill',
-      builder: (context, state) => const AddBillScreen(),
-    ),
-    GoRoute(
-      path: '/bill-detail',
-      builder: (context, state) {
-        final billId = state.uri.queryParameters['id'] ?? '';
-        return BillDetailScreen(billId: billId);
       },
     ),
     GoRoute(
@@ -182,8 +213,8 @@ GoRouter createAppRouter({String initialLocation = '/'}) {
       },
     ),
     GoRoute(
-      path: '/create-meetup',
-      builder: (context, state) => const CreateMeetupScreen(),
+      path: '/plan-agenda',
+      builder: (context, state) => const PlanHousematesAgendaScreen(),
     ),
     GoRoute(
       path: '/leaderboard',

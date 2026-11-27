@@ -123,6 +123,7 @@ class _CasamaTextFieldState extends State<CasamaTextField> {
             decoration: InputDecoration(
               filled: true,
               fillColor: widget.fillColor ?? pal.track,
+              constraints: const BoxConstraints(minHeight: 52),
               hintText: widget.hint,
               helperText: widget.helperText,
               errorMaxLines: 2,

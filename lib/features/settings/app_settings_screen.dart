@@ -31,7 +31,6 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
     final theme = Theme.of(context);
     final currentThemeMode = ref.watch(themeModeProvider);
     final repo = ref.watch(repositoryProvider);
-    final notifs = repo.notificationPreferences;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final maxW = CasamaBreakpoints.isTablet(context)
         ? CasamaBreakpoints.maxContentWidth
@@ -81,7 +80,7 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                                 iconBg: pal.softBlush,
                                 title: 'Edit Profile',
                                 subtitle:
-                                    '${repo.currentUser.displayName} (${repo.currentUser.handle})',
+                                    '${repo.currentUser.preferredName} (${repo.currentUser.handle})',
                                 onTap: () => _showEditProfileModal(context),
                               ),
                               Divider(height: 1, indent: 64, color: pal.divider),
@@ -201,130 +200,7 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                         ),
                         const SizedBox(height: CasamaSpacing.lg),
 
-                        // 3. Notification Settings (4 Switch widgets)
-                        const _SettingsSectionHeader(
-                          title: 'Notification Settings',
-                        ),
-                        const SizedBox(height: CasamaSpacing.xs),
-                        CasamaCard(
-                          padding: EdgeInsets.zero,
-                          child: Material(
-                            type: MaterialType.transparency,
-                            child: Column(
-                              children: [
-                                SwitchListTile(
-                                  title: Text(
-                                    'Household Updates',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      color: pal.textPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'Member presence, housemate joins, and announcements',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontSize: 12,
-                                      color: pal.textSecondary,
-                                    ),
-                                  ),
-                                  value: notifs.householdUpdates,
-                                  activeTrackColor: pal.primaryCoral,
-                                  onChanged: (v) => repo
-                                      .updateNotificationPreferences(
-                                        householdUpdates: v,
-                                      ),
-                                ),
-                                Divider(
-                                  height: 1,
-                                  indent: 16,
-                                  endIndent: 16,
-                                  color: pal.divider,
-                                ),
-                                SwitchListTile(
-                                  title: Text(
-                                    'Parcel & Delivery Alerts',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      color: pal.textPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'When packages arrive or COD payment is needed',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontSize: 12,
-                                      color: pal.textSecondary,
-                                    ),
-                                  ),
-                                  value: notifs.parcelNotifications,
-                                  activeTrackColor: pal.primaryCoral,
-                                  onChanged: (v) => repo
-                                      .updateNotificationPreferences(
-                                        parcelNotifications: v,
-                                      ),
-                                ),
-                                Divider(
-                                  height: 1,
-                                  indent: 16,
-                                  endIndent: 16,
-                                  color: pal.divider,
-                                ),
-                                SwitchListTile(
-                                  title: Text(
-                                    'Task & Chore Reminders',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      color: pal.textPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'When household tasks are added or due',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontSize: 12,
-                                      color: pal.textSecondary,
-                                    ),
-                                  ),
-                                  value: notifs.taskReminders,
-                                  activeTrackColor: pal.primaryCoral,
-                                  onChanged: (v) => repo
-                                      .updateNotificationPreferences(
-                                        taskReminders: v,
-                                      ),
-                                ),
-                                Divider(
-                                  height: 1,
-                                  indent: 16,
-                                  endIndent: 16,
-                                  color: pal.divider,
-                                ),
-                                SwitchListTile(
-                                  title: Text(
-                                    'Chat & Meet-up Notifications',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      color: pal.textPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'Group messages, direct chats, and meet-up invites',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontSize: 12,
-                                      color: pal.textSecondary,
-                                    ),
-                                  ),
-                                  value: notifs.chatNotifications,
-                                  activeTrackColor: pal.primaryCoral,
-                                  onChanged: (v) => repo
-                                      .updateNotificationPreferences(
-                                        chatNotifications: v,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: CasamaSpacing.lg),
-
-                        // 4. Privacy and Security (1 Switch widget = 5 total)
+                        // 3. Privacy and Security (1 Switch widget)
                         const _SettingsSectionHeader(
                           title: 'Privacy and Security',
                         ),

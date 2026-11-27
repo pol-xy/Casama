@@ -109,9 +109,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Device Permissions'), findsOneWidget);
-      expect(find.text('Push Notifications'), findsOneWidget);
+      expect(find.text('Push Notifications'), findsNothing);
       expect(find.text('Camera & Photo Library'), findsOneWidget);
       expect(find.text('Contacts Assistance'), findsNothing);
+      expect(find.text('Skip All'), findsNothing);
+      expect(find.text('Skip All for Now'), findsNothing);
       expect(find.text('Save & Continue'), findsOneWidget);
 
       // 6. Casama Introduction Screen
@@ -123,7 +125,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.textContaining('Welcome,'), findsOneWidget);
-      expect(find.text('Skip to Home'), findsOneWidget);
+      expect(find.text('Skip to Home'), findsNothing);
+      expect(find.text('Skip Tutorial & Go to Dashboard'), findsNothing);
       expect(find.text("Let's Get Started"), findsOneWidget);
 
       // 7. Interactive Tutorial Screen
@@ -136,7 +139,7 @@ void main() {
       await tester.pumpAndSettle();
       // Initial step: Home
       expect(find.text('1. Home Dashboard & Presence'), findsOneWidget);
-      expect(find.text('Skip Tour'), findsOneWidget);
+      expect(find.text('Skip Tour'), findsNothing);
       expect(find.text('Next: Boards ›'), findsOneWidget);
 
       // Advance to Step 2: Boards
@@ -288,7 +291,7 @@ void main() {
 
         await tester.tap(
           find.bySemanticsLabel(
-            'Open photo by ${mockRepo.currentUser.displayName}',
+            'Open photo by ${mockRepo.currentUser.preferredName}',
           ),
         );
         await tester.pumpAndSettle();
@@ -438,10 +441,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // 5 Sections
+        // 4 Active Sections (Notification Settings removed)
         expect(find.text('Account Settings'), findsOneWidget);
         expect(find.text('Appearance'), findsOneWidget);
-        expect(find.text('Notification Settings'), findsOneWidget);
+        expect(find.text('Notification Settings'), findsNothing);
         expect(find.text('Privacy and Security'), findsOneWidget);
         expect(find.text('About Casama'), findsOneWidget);
 
@@ -584,17 +587,17 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('3 Open Tasks'), findsOneWidget);
-        expect(find.text('30 pts'), findsOneWidget);
-        expect(find.text('Across ongoing requests'), findsOneWidget);
+        expect(find.text('16 pts'), findsOneWidget);
+        expect(find.text('Across ongoing tasks'), findsOneWidget);
         expect(find.text('Leaking Faucet'), findsOneWidget);
         expect(find.text('Buy Drinking Water'), findsOneWidget);
         expect(find.text('Defrost Freezer'), findsOneWidget);
-        expect(find.text('Ongoing Requests'), findsOneWidget);
-        expect(find.text('Completed Requests'), findsOneWidget);
+        expect(find.text('Ongoing Tasks'), findsOneWidget);
+        expect(find.text('Completed Tasks'), findsOneWidget);
 
-        await tester.tap(find.text('Completed Requests'));
+        await tester.tap(find.text('Completed Tasks'));
         await tester.pumpAndSettle();
-        expect(find.text('No completed requests yet'), findsOneWidget);
+        expect(find.text('No completed tasks yet'), findsOneWidget);
       },
     );
   });

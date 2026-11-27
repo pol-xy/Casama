@@ -202,7 +202,7 @@ class _TermsPrivacyScreenState extends State<TermsPrivacyScreen> {
           icon: Icons.notifications_active_outlined,
           title: 'Push Notifications',
           reason:
-              'Used to alert you when a parcel arrives, when someone covers your COD, or when a housemate invites you to a household meet-up.',
+              'Used to alert you when a parcel arrives, when someone covers your COD, or when a housemate shares a household agenda.',
           isOptional: true,
         ),
         const SizedBox(height: CasamaSpacing.sm),

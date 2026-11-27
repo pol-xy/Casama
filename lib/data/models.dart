@@ -45,6 +45,17 @@ class UserProfile {
     return age >= 0 ? age : null;
   }
 
+  /// Canonical UI name: nickname -> fullName -> displayName -> 'Housemate'.
+  String get preferredName {
+    final nick = nickname?.trim();
+    if (nick != null && nick.isNotEmpty) return nick;
+    final full = fullName?.trim();
+    if (full != null && full.isNotEmpty) return full;
+    final disp = displayName.trim();
+    if (disp.isNotEmpty) return disp;
+    return 'Housemate';
+  }
+
   /// Sensible fallback for user greeting throughout the app (uses nickname if available)
   String get effectiveGreetingName {
     if (nickname != null && nickname!.trim().isNotEmpty) {
@@ -65,11 +76,70 @@ class UserProfile {
         'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80';
   }
 
+  bool get hasCompleteRequiredProfile =>
+      (fullName ?? '').trim().isNotEmpty &&
+      (nickname ?? '').trim().isNotEmpty &&
+      birthday != null &&
+      hasConsentedTerms;
+
+  static String joinFullName(String firstName, String lastName) {
+    final first = firstName.trim();
+    final last = lastName.trim();
+    if (first.isEmpty) return last;
+    if (last.isEmpty) return first;
+    return '$first $last';
+  }
+
+  static ({String firstName, String lastName}) splitFullName(String? fullName) {
+    final trimmed = (fullName ?? '').trim();
+    if (trimmed.isEmpty) return (firstName: '', lastName: '');
+    final parts = trimmed.split(RegExp(r'\s+'));
+    if (parts.length == 1) return (firstName: parts.first, lastName: '');
+    return (
+      firstName: parts.first,
+      lastName: parts.sublist(1).join(' '),
+    );
+  }
+
+  static bool isPlaceholderHandle(String? handle) {
+    final trimmed = (handle ?? '').trim().toLowerCase();
+    return trimmed.isEmpty || trimmed == '@' || trimmed == '@member';
+  }
+
+  static String buildFallbackHandle({
+    String? preferred,
+    required String userId,
+  }) {
+    final cleanPreferred =
+        (preferred ?? '').replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '').toLowerCase();
+    final base = cleanPreferred.isEmpty ? 'member' : cleanPreferred;
+    final cleanId = userId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+    final suffix = cleanId.length >= 6
+        ? cleanId.substring(0, 6)
+        : (cleanId.isEmpty ? 'user' : cleanId);
+    return '@${base}_$suffix';
+  }
+
+  static String buildCollisionRetryHandle({
+    required String baseHandle,
+    required String randomSuffix,
+  }) {
+    final cleanBase = baseHandle
+        .replaceFirst(RegExp(r'^@+'), '')
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '')
+        .toLowerCase();
+    final prefix = cleanBase.isEmpty ? 'member' : cleanBase;
+    final cleanSuffix =
+        randomSuffix.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+    final suffix = cleanSuffix.isEmpty ? '1a2b' : cleanSuffix;
+    return '@${prefix}_$suffix';
+  }
+
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       id: json['id'] as String,
       displayName: json['display_name'] as String? ?? 'Housemate',
-      handle: json['handle'] as String? ?? '@member',
+      handle: (json['handle'] as String?)?.trim() ?? '',
       fullName: json['full_name'] as String?,
       nickname: json['nickname'] as String?,
       birthday: parseDateOnly(json['birthday'] ?? json['birth_date']),
@@ -188,6 +258,8 @@ class MemberPresence {
     this.note,
     required this.updatedAt,
   });
+
+  String get preferredName => profile.preferredName;
 }
 
 /// Shared Philippine delivery courier options for expected parcel tracking.
@@ -225,7 +297,7 @@ extension ParcelStatusX on ParcelStatus {
       case ParcelStatus.expected:
         return 'Expected';
       case ParcelStatus.arrived:
-        return 'Arrived';
+        return 'Arriving Now';
       case ParcelStatus.received:
         return 'Received';
       case ParcelStatus.cancelled:
@@ -660,6 +732,32 @@ class MaintenanceTask {
 
   int get computedPoints => computePoints(category, urgency);
 
+  int totalRewardPoints({ChoreRouletteRecord? rouletteRecord}) =>
+      computedPoints + (rouletteRecord?.bonusPoints ?? 0);
+
+  bool isBonusEligibleForUser(
+    String viewerUserId, {
+    ChoreRouletteRecord? rouletteRecord,
+  }) {
+    if (rouletteRecord == null || viewerUserId.isEmpty) return false;
+    if (createdBy.isNotEmpty && viewerUserId == createdBy) return false;
+    return rouletteRecord.selectedUserId == viewerUserId;
+  }
+
+  int rewardPointsForUser(
+    String viewerUserId, {
+    ChoreRouletteRecord? rouletteRecord,
+  }) {
+    if (createdBy.isNotEmpty && viewerUserId == createdBy) return 0;
+    final bonus = isBonusEligibleForUser(
+      viewerUserId,
+      rouletteRecord: rouletteRecord,
+    )
+        ? rouletteRecord!.bonusPoints
+        : 0;
+    return computedPoints + bonus;
+  }
+
   MaintenanceTask copyWith({
     String? title,
     String? description,
@@ -770,7 +868,7 @@ class ChatMessage {
   final bool isCurrentUser;
   final bool isRead;
   final MessageDeliveryStatus deliveryStatus;
-  final MeetUpInvitation? meetUpInvitation;
+  final HousematesAgendaInvitation? housematesAgendaInvitation;
 
   const ChatMessage({
     required this.id,
@@ -788,7 +886,7 @@ class ChatMessage {
     required this.isCurrentUser,
     this.isRead = true,
     this.deliveryStatus = MessageDeliveryStatus.delivered,
-    this.meetUpInvitation,
+    this.housematesAgendaInvitation,
   }) : attachmentUrl = attachmentUrl ?? mediaUrl;
 
   String? get mediaUrl => attachmentUrl;
@@ -796,6 +894,10 @@ class ChatMessage {
   bool get hasAttachment =>
       (attachmentUrl != null && attachmentUrl!.isNotEmpty) ||
       (localAttachmentPath != null && localAttachmentPath!.isNotEmpty);
+
+  bool get isHousematesAgendaArrival =>
+      (clientMessageId?.startsWith('housemates_agenda_arrival_') ?? false) ||
+      (clientMessageId?.startsWith('meetup_arrival_') ?? false);
 
   ChatMessage copyWith({
     String? id,
@@ -824,7 +926,7 @@ class ChatMessage {
       isCurrentUser: isCurrentUser,
       isRead: isRead ?? this.isRead,
       deliveryStatus: deliveryStatus ?? this.deliveryStatus,
-      meetUpInvitation: meetUpInvitation,
+      housematesAgendaInvitation: housematesAgendaInvitation,
     );
   }
 
@@ -909,13 +1011,13 @@ class ChatSpace {
   }
 }
 
-class MeetUpResponder {
+class HousematesAgendaResponse {
   final String userId;
   final String displayName;
   final String? avatarUrl;
   final String response; // 'going', 'maybe', 'cant_make_it'
 
-  const MeetUpResponder({
+  const HousematesAgendaResponse({
     required this.userId,
     required this.displayName,
     this.avatarUrl,
@@ -923,7 +1025,7 @@ class MeetUpResponder {
   });
 }
 
-class MeetUpInvitation {
+class HousematesAgendaInvitation {
   final String id;
   final String creatorId;
   final String activity;
@@ -936,15 +1038,15 @@ class MeetUpInvitation {
   final int maybeCount;
   final int cantMakeCount;
   final String? currentUserResponse; // 'going', 'maybe', 'cant_make_it'
-  final List<MeetUpResponder> responders;
+  final List<HousematesAgendaResponse> responders;
 
-  const MeetUpInvitation({
+  const HousematesAgendaInvitation({
     required this.id,
     this.creatorId = '',
     required this.activity,
     required this.location,
     required this.scheduledTime,
-    this.status = 'active',
+    this.status = 'upcoming',
     this.reminderSent = false,
     this.arrivalHandled = false,
     this.goingCount = 0,
@@ -954,36 +1056,47 @@ class MeetUpInvitation {
     this.responders = const [],
   });
 
-  bool get isActive => status != 'done';
+  bool get isUpcoming => status == 'upcoming';
+  bool get isOngoing => status == 'ongoing';
   bool get isDone => status == 'done';
+  bool get isMissed => status == 'missed';
+  bool get isActive => isUpcoming || isOngoing;
+  bool get isHistory => isDone || isMissed;
 
-  List<MeetUpResponder> get goingResponders =>
+  List<HousematesAgendaResponse> get goingResponders =>
       responders.where((r) => r.response == 'going').toList();
 
-  List<MeetUpResponder> get maybeResponders =>
+  List<HousematesAgendaResponse> get maybeResponders =>
       responders.where((r) => r.response == 'maybe').toList();
 
-  List<MeetUpResponder> get cantMakeResponders =>
+  List<HousematesAgendaResponse> get cantMakeResponders =>
       responders.where((r) => r.response == 'cant_make_it').toList();
 
   bool get hasValidData =>
       id.isNotEmpty && id != 'placeholder_m' && activity.trim().isNotEmpty;
 
-  factory MeetUpInvitation.fromJson(
+  factory HousematesAgendaInvitation.fromJson(
     Map<String, dynamic> json, {
     int goingCount = 0,
     int maybeCount = 0,
     int cantMakeCount = 0,
     String? currentUserResponse,
-    List<MeetUpResponder> responders = const [],
+    List<HousematesAgendaResponse> responders = const [],
   }) {
-    return MeetUpInvitation(
+    final scheduled = parseSupabaseTimestamp(json['scheduled_time']);
+    final rawStatus =
+        (json['status'] as String?)?.trim().toLowerCase() ?? 'upcoming';
+    final normalizedStatus = (rawStatus.isEmpty || rawStatus == 'active')
+        ? (scheduled.isAfter(DateTime.now()) ? 'upcoming' : 'ongoing')
+        : rawStatus;
+
+    return HousematesAgendaInvitation(
       id: json['id'] as String? ?? '',
       creatorId: json['creator_id'] as String? ?? '',
       activity: json['activity'] as String? ?? '',
       location: json['location'] as String? ?? '',
-      scheduledTime: parseSupabaseTimestamp(json['scheduled_time']),
-      status: json['status'] as String? ?? 'active',
+      scheduledTime: scheduled,
+      status: normalizedStatus,
       reminderSent: json['reminder_sent'] as bool? ?? false,
       arrivalHandled: json['arrival_handled'] as bool? ?? false,
       goingCount: goingCount,
@@ -1006,7 +1119,7 @@ class MeetUpInvitation {
     'arrival_handled': arrivalHandled,
   };
 
-  MeetUpInvitation copyWith({
+  HousematesAgendaInvitation copyWith({
     String? id,
     String? creatorId,
     String? activity,
@@ -1019,9 +1132,9 @@ class MeetUpInvitation {
     int? maybeCount,
     int? cantMakeCount,
     String? currentUserResponse,
-    List<MeetUpResponder>? responders,
+    List<HousematesAgendaResponse>? responders,
   }) {
-    return MeetUpInvitation(
+    return HousematesAgendaInvitation(
       id: id ?? this.id,
       creatorId: creatorId ?? this.creatorId,
       activity: activity ?? this.activity,
@@ -1053,398 +1166,6 @@ class PointAuditEntry {
     required this.timestamp,
     required this.category,
   });
-}
-
-// ==========================================
-// BILLS & PAYMENTS MODELS
-// ==========================================
-
-enum BillCategory {
-  electricity,
-  water,
-  internet,
-  appliance,
-  rent,
-  associationDues,
-  gas,
-  maintenanceFee,
-  other,
-}
-
-extension BillCategoryX on BillCategory {
-  String get label {
-    switch (this) {
-      case BillCategory.electricity:
-        return 'Electricity';
-      case BillCategory.water:
-        return 'Water';
-      case BillCategory.internet:
-        return 'Internet';
-      case BillCategory.appliance:
-        return 'Appliance';
-      case BillCategory.rent:
-        return 'Rent';
-      case BillCategory.associationDues:
-        return 'Association Dues';
-      case BillCategory.gas:
-        return 'Gas';
-      case BillCategory.maintenanceFee:
-        return 'Maintenance Fee';
-      case BillCategory.other:
-        return 'Other';
-    }
-  }
-
-  String get emoji {
-    switch (this) {
-      case BillCategory.electricity:
-        return '⚡';
-      case BillCategory.water:
-        return '💧';
-      case BillCategory.internet:
-        return '🌐';
-      case BillCategory.appliance:
-        return '🖥';
-      case BillCategory.rent:
-        return '🏠';
-      case BillCategory.associationDues:
-        return '🏢';
-      case BillCategory.gas:
-        return '🔥';
-      case BillCategory.maintenanceFee:
-        return '🔧';
-      case BillCategory.other:
-        return '📋';
-    }
-  }
-}
-
-enum BillStatus { unpaid, paid, overdue }
-
-extension BillStatusX on BillStatus {
-  String get label {
-    switch (this) {
-      case BillStatus.unpaid:
-        return 'Unpaid';
-      case BillStatus.paid:
-        return 'Paid';
-      case BillStatus.overdue:
-        return 'Overdue';
-    }
-  }
-}
-
-enum ReminderTiming {
-  onDueDate,
-  oneDayBefore,
-  twoDaysBefore,
-  threeDaysBefore,
-  oneWeekBefore,
-}
-
-extension ReminderTimingX on ReminderTiming {
-  String get label {
-    switch (this) {
-      case ReminderTiming.onDueDate:
-        return 'On the due date';
-      case ReminderTiming.oneDayBefore:
-        return '1 day before';
-      case ReminderTiming.twoDaysBefore:
-        return '2 days before';
-      case ReminderTiming.threeDaysBefore:
-        return '3 days before';
-      case ReminderTiming.oneWeekBefore:
-        return '1 week before';
-    }
-  }
-
-  int get daysBeforeDue {
-    switch (this) {
-      case ReminderTiming.onDueDate:
-        return 0;
-      case ReminderTiming.oneDayBefore:
-        return 1;
-      case ReminderTiming.twoDaysBefore:
-        return 2;
-      case ReminderTiming.threeDaysBefore:
-        return 3;
-      case ReminderTiming.oneWeekBefore:
-        return 7;
-    }
-  }
-}
-
-enum BillRecipientType { onlyMe, allMembers, selectedMembers }
-
-extension BillRecipientTypeX on BillRecipientType {
-  String get label {
-    switch (this) {
-      case BillRecipientType.onlyMe:
-        return 'Only Me';
-      case BillRecipientType.allMembers:
-        return 'All Household Members';
-      case BillRecipientType.selectedMembers:
-        return 'Selected Members';
-    }
-  }
-}
-
-class HouseholdBill {
-  final String id;
-  final String householdId;
-  final String creatorId;
-  final String creatorName;
-  final BillCategory category;
-  final String? customCategoryLabel; // set when category == other
-  final String? billName;
-  final double? amount;
-  final DateTime deadline;
-  final String? notes;
-  final BillStatus status;
-  final bool reminderEnabled;
-  final ReminderTiming reminderTiming;
-  final BillRecipientType recipientType;
-  final List<String> selectedRecipientNames;
-  final String? responsibleMember; // who is responsible for paying
-  final DateTime createdAt;
-  final DateTime? paidAt;
-  final String? paidByName;
-
-  const HouseholdBill({
-    required this.id,
-    required this.householdId,
-    required this.creatorId,
-    required this.creatorName,
-    required this.category,
-    this.customCategoryLabel,
-    this.billName,
-    this.amount,
-    required this.deadline,
-    this.notes,
-    this.status = BillStatus.unpaid,
-    this.reminderEnabled = true,
-    this.reminderTiming = ReminderTiming.oneDayBefore,
-    this.recipientType = BillRecipientType.allMembers,
-    this.selectedRecipientNames = const [],
-    this.responsibleMember,
-    required this.createdAt,
-    this.paidAt,
-    this.paidByName,
-  });
-
-  String get effectiveCategoryLabel {
-    if (category == BillCategory.other &&
-        customCategoryLabel != null &&
-        customCategoryLabel!.trim().isNotEmpty) {
-      return customCategoryLabel!.trim();
-    }
-    return category.label;
-  }
-
-  String get effectiveBillName {
-    if (billName != null && billName!.trim().isNotEmpty) {
-      return billName!.trim();
-    }
-    return effectiveCategoryLabel;
-  }
-
-  /// Recompute status based on current time (overdue if past deadline and not paid)
-  BillStatus get effectiveStatus {
-    if (status == BillStatus.paid) return BillStatus.paid;
-    final now = DateTime.now();
-    final localDeadline = deadline.toLocal();
-    final deadlineDate = DateTime(
-      localDeadline.year,
-      localDeadline.month,
-      localDeadline.day,
-    );
-    final today = DateTime(now.year, now.month, now.day);
-    if (deadlineDate.isBefore(today)) return BillStatus.overdue;
-    return BillStatus.unpaid;
-  }
-
-  factory HouseholdBill.fromJson(Map<String, dynamic> json) {
-    BillCategory parseCategory(String? cat) {
-      if (cat == null) return BillCategory.other;
-      switch (cat.toLowerCase()) {
-        case 'electricity':
-          return BillCategory.electricity;
-        case 'water':
-          return BillCategory.water;
-        case 'internet':
-          return BillCategory.internet;
-        case 'appliance':
-          return BillCategory.appliance;
-        case 'rent':
-          return BillCategory.rent;
-        case 'association_dues':
-        case 'associationdues':
-          return BillCategory.associationDues;
-        case 'gas':
-          return BillCategory.gas;
-        case 'maintenance_fee':
-        case 'maintenancefee':
-          return BillCategory.maintenanceFee;
-        default:
-          return BillCategory.other;
-      }
-    }
-
-    BillStatus parseStatus(String? st) {
-      switch (st?.toLowerCase()) {
-        case 'paid':
-          return BillStatus.paid;
-        case 'overdue':
-          return BillStatus.overdue;
-        default:
-          return BillStatus.unpaid;
-      }
-    }
-
-    ReminderTiming parseReminder(String? rem) {
-      switch (rem) {
-        case 'on_due_date':
-          return ReminderTiming.onDueDate;
-        case '1_day_before':
-        case 'one_day_before':
-          return ReminderTiming.oneDayBefore;
-        case '2_days_before':
-        case 'two_days_before':
-          return ReminderTiming.twoDaysBefore;
-        case '3_days_before':
-        case 'three_days_before':
-          return ReminderTiming.threeDaysBefore;
-        case '1_week_before':
-        case 'one_week_before':
-          return ReminderTiming.oneWeekBefore;
-        default:
-          return ReminderTiming.oneDayBefore;
-      }
-    }
-
-    BillRecipientType parseRecipient(String? rec) {
-      switch (rec) {
-        case 'only_me':
-          return BillRecipientType.onlyMe;
-        case 'selected_members':
-        case 'specific_members':
-          return BillRecipientType.selectedMembers;
-        default:
-          return BillRecipientType.allMembers;
-      }
-    }
-
-    return HouseholdBill(
-      id: json['id'] as String,
-      householdId: json['household_id'] as String? ?? '',
-      creatorId: json['created_by'] as String? ?? '',
-      creatorName:
-          json['created_by_name'] as String? ??
-          json['creator_name'] as String? ??
-          'Housemate',
-      category: parseCategory(json['category'] as String?),
-      customCategoryLabel:
-          json['custom_category_name'] as String? ??
-          json['custom_category'] as String?,
-      billName: json['title'] as String? ?? json['name'] as String?,
-      amount: (json['amount'] as num?)?.toDouble(),
-      deadline: parseSupabaseTimestamp(json['deadline']),
-      notes: json['notes'] as String?,
-      status: parseStatus(json['status'] as String?),
-      reminderEnabled:
-          json['reminder_enabled'] as bool? ??
-          json['has_reminder'] as bool? ??
-          true,
-      reminderTiming: parseReminder(json['reminder_timing'] as String?),
-      recipientType: parseRecipient(
-        json['recipient_type'] as String? ??
-            json['reminder_recipients'] as String?,
-      ),
-      responsibleMember:
-          json['responsible_member_name'] as String? ??
-          json['responsible_member'] as String?,
-      createdAt: parseSupabaseTimestamp(json['created_at']),
-      paidAt: parseSupabaseTimestampOrNull(json['paid_at']),
-      paidByName: json['paid_by_name'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toSupabaseJson({bool includeId = true}) {
-    final base = <String, dynamic>{
-      if (includeId) 'id': id,
-      'household_id': householdId,
-      'title': billName ?? effectiveCategoryLabel,
-      'category': switch (category) {
-        BillCategory.associationDues => 'association_dues',
-        BillCategory.maintenanceFee => 'maintenance_fee',
-        _ => category.name,
-      },
-      'custom_category_name': customCategoryLabel,
-      'amount': amount ?? 0.0,
-      'deadline': toSupabaseUtcIso(deadline),
-      'status': status.name,
-      'responsible_member': responsibleMember,
-      'notes': notes,
-      'reminder_enabled': reminderEnabled,
-      'reminder_timing': switch (reminderTiming) {
-        ReminderTiming.onDueDate => 'on_due_date',
-        ReminderTiming.oneDayBefore => 'one_day_before',
-        ReminderTiming.twoDaysBefore => 'three_days_before',
-        ReminderTiming.threeDaysBefore => 'three_days_before',
-        ReminderTiming.oneWeekBefore => 'one_week_before',
-      },
-      'recipient_type': recipientType == BillRecipientType.allMembers
-          ? 'all_members'
-          : 'specific_members',
-      'created_by': creatorId.isNotEmpty ? creatorId : null,
-      'created_by_name': creatorName,
-      'paid_at': toSupabaseUtcIsoOrNull(paidAt),
-      'paid_by_name': paidByName,
-    };
-    return base;
-  }
-
-  Map<String, dynamic> toJson() => toSupabaseJson();
-
-  HouseholdBill copyWith({
-    String? billName,
-    double? amount,
-    DateTime? deadline,
-    String? notes,
-    BillStatus? status,
-    bool? reminderEnabled,
-    ReminderTiming? reminderTiming,
-    BillRecipientType? recipientType,
-    List<String>? selectedRecipientNames,
-    String? responsibleMember,
-    String? paidByName,
-    DateTime? paidAt,
-    String? customCategoryLabel,
-    BillCategory? category,
-  }) {
-    return HouseholdBill(
-      id: id,
-      householdId: householdId,
-      creatorId: creatorId,
-      creatorName: creatorName,
-      category: category ?? this.category,
-      customCategoryLabel: customCategoryLabel ?? this.customCategoryLabel,
-      billName: billName ?? this.billName,
-      amount: amount ?? this.amount,
-      deadline: deadline ?? this.deadline,
-      notes: notes ?? this.notes,
-      status: status ?? this.status,
-      reminderEnabled: reminderEnabled ?? this.reminderEnabled,
-      reminderTiming: reminderTiming ?? this.reminderTiming,
-      recipientType: recipientType ?? this.recipientType,
-      selectedRecipientNames:
-          selectedRecipientNames ?? this.selectedRecipientNames,
-      responsibleMember: responsibleMember ?? this.responsibleMember,
-      createdAt: createdAt,
-      paidAt: paidAt ?? this.paidAt,
-      paidByName: paidByName ?? this.paidByName,
-    );
-  }
 }
 
 // ==========================================
@@ -1742,48 +1463,98 @@ class QuickSnap {
 class ChoreRouletteRecord {
   final String id;
   final String householdId;
+  final String? taskId;
   final String choreTitle;
-  final String assignedToName;
-  final String? assignedToId;
+  final String selectedUserId;
+  final String selectedUserName;
+  final String spunByUserId;
   final String spunByName;
-  final String mode; // 'random_dormmate' or 'just_for_me'
-  final bool completed;
+  final String status; // 'assigned' | 'completed'
+  final int bonusPoints;
   final DateTime createdAt;
+  final DateTime? completedAt;
 
   const ChoreRouletteRecord({
     required this.id,
     required this.householdId,
+    this.taskId,
     required this.choreTitle,
-    required this.assignedToName,
-    this.assignedToId,
+    required this.selectedUserId,
+    required this.selectedUserName,
+    required this.spunByUserId,
     required this.spunByName,
-    required this.mode,
-    this.completed = false,
+    this.status = 'assigned',
+    this.bonusPoints = 4,
     required this.createdAt,
+    this.completedAt,
   });
 
-  factory ChoreRouletteRecord.fromJson(Map<String, dynamic> json) {
+  bool get isAssigned => status == 'assigned';
+  bool get isCompleted => status == 'completed';
+
+  ChoreRouletteRecord copyWith({
+    String? id,
+    String? householdId,
+    String? taskId,
+    String? choreTitle,
+    String? selectedUserId,
+    String? selectedUserName,
+    String? spunByUserId,
+    String? spunByName,
+    String? status,
+    int? bonusPoints,
+    DateTime? createdAt,
+    DateTime? completedAt,
+  }) {
     return ChoreRouletteRecord(
-      id: json['id'] as String,
+      id: id ?? this.id,
+      householdId: householdId ?? this.householdId,
+      taskId: taskId ?? this.taskId,
+      choreTitle: choreTitle ?? this.choreTitle,
+      selectedUserId: selectedUserId ?? this.selectedUserId,
+      selectedUserName: selectedUserName ?? this.selectedUserName,
+      spunByUserId: spunByUserId ?? this.spunByUserId,
+      spunByName: spunByName ?? this.spunByName,
+      status: status ?? this.status,
+      bonusPoints: bonusPoints ?? this.bonusPoints,
+      createdAt: createdAt ?? this.createdAt,
+      completedAt: completedAt ?? this.completedAt,
+    );
+  }
+
+  factory ChoreRouletteRecord.fromJson(Map<String, dynamic> json) {
+    final rawStatus = (json['status'] as String?)?.trim().toLowerCase() ?? '';
+    final normalizedStatus =
+        rawStatus == 'completed' ? 'completed' : 'assigned';
+    return ChoreRouletteRecord(
+      id: json['id'] as String? ?? '',
       householdId: json['household_id'] as String? ?? '',
-      choreTitle: json['chore_title'] as String? ?? 'Chore',
-      assignedToName: json['assigned_to_name'] as String? ?? 'Dormmate',
-      assignedToId: json['assigned_to'] as String?,
+      taskId: json['task_id'] as String?,
+      choreTitle: json['chore_title'] as String? ?? 'Task',
+      selectedUserId: json['selected_user_id'] as String? ?? '',
+      selectedUserName: json['selected_user_name'] as String? ?? 'Housemate',
+      spunByUserId: json['spun_by_user_id'] as String? ?? '',
       spunByName: json['spun_by_name'] as String? ?? 'Housemate',
-      mode: json['mode'] as String? ?? 'random_dormmate',
-      completed: json['completed'] as bool? ?? false,
+      status: normalizedStatus,
+      bonusPoints: (json['bonus_points'] as num?)?.toInt() ?? 4,
       createdAt: parseSupabaseTimestamp(json['created_at']),
+      completedAt: parseSupabaseTimestampOrNull(json['completed_at']),
     );
   }
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'household_id': householdId,
+    if (taskId != null) 'task_id': taskId,
     'chore_title': choreTitle,
-    'assigned_to': assignedToId,
-    'mode': mode,
-    'completed': completed,
+    'selected_user_id': selectedUserId,
+    'selected_user_name': selectedUserName,
+    'spun_by_user_id': spunByUserId,
+    'spun_by_name': spunByName,
+    'status': status,
+    'bonus_points': bonusPoints,
     'created_at': toSupabaseUtcIso(createdAt),
+    'completed_at': toSupabaseUtcIsoOrNull(completedAt),
   };
 }
 
@@ -1840,7 +1611,49 @@ class LeaderboardStanding {
   });
 }
 
+enum NotificationDomain { parcels, tasks, lostFound, agenda, household, general }
+
 class HouseholdNotificationItem {
+  static const Set<String> parcelTypes = {
+    'parcel_posted',
+    'parcel_reminder',
+    'parcel_arrived',
+    'parcel_claimed',
+    'parcel_settled',
+    'parcel_cancelled',
+    'parcel_received',
+  };
+
+  static const Set<String> taskTypes = {
+    'task_created',
+    'task_due_soon',
+    'task_overdue',
+    'task_completed',
+    'roulette_chosen',
+  };
+
+  static const Set<String> lostFoundTypes = {
+    'lost_item_posted',
+    'lost_item_find_submitted',
+    'lost_item_find_accepted',
+    'lost_item_find_rejected',
+    'lost_item_self_resolved',
+    'found_item_posted',
+    'found_item_claimed',
+  };
+
+  static const Set<String> agendaTypes = {
+    'housemates_agenda_created',
+    'housemates_agenda_reminder',
+    'housemates_agenda_started',
+    'housemates_agenda_resolved',
+    'meetup_reminder',
+  };
+
+  static const Set<String> householdUpdateTypes = {
+    'housemate_joined',
+  };
+
   final String id;
   final String type;
   final String title;
@@ -1863,29 +1676,195 @@ class HouseholdNotificationItem {
 
   bool get isUnread => !isRead && readAt == null;
 
-  String get displayTitle {
-    if (type == 'meetup_reminder') {
-      if (title.startsWith('Meet-up Reminder:')) return title;
-      final rawTitle = (payload['title'] as String?)?.trim();
-      final fallback =
-          rawTitle != null && rawTitle.isNotEmpty
-              ? rawTitle
-              : (title.trim().isNotEmpty ? title.trim() : 'Household Meet-up');
-      return 'Meet-up Reminder: $fallback';
+  bool get isParcelNotification =>
+      parcelTypes.contains(type) || type.startsWith('parcel_');
+
+  bool get isTaskNotification =>
+      taskTypes.contains(type) ||
+      type.startsWith('task_') ||
+      type == 'roulette_chosen';
+
+  bool get isLostFoundNotification =>
+      lostFoundTypes.contains(type) ||
+      type.startsWith('lost_item_') ||
+      type.startsWith('found_item_');
+
+  bool get isRouletteNotification => type == 'roulette_chosen';
+
+  int? get rouletteBonusPoints => isRouletteNotification
+      ? ((payload['bonus_points'] as num?)?.toInt() ?? 4)
+      : null;
+
+  bool get isHousematesAgendaNotification =>
+      agendaTypes.contains(type) || type.startsWith('housemates_agenda_');
+
+  bool get isHouseholdUpdateNotification =>
+      householdUpdateTypes.contains(type);
+
+  NotificationDomain get domain {
+    if (isParcelNotification) return NotificationDomain.parcels;
+    if (isTaskNotification) return NotificationDomain.tasks;
+    if (isLostFoundNotification) return NotificationDomain.lostFound;
+    if (isHousematesAgendaNotification) return NotificationDomain.agenda;
+    if (isHouseholdUpdateNotification) return NotificationDomain.household;
+    return NotificationDomain.general;
+  }
+
+  /// Active notification types rendered in the in-app Notifications sheet.
+  /// Legacy or retired notification rows in the database are safely ignored.
+  bool get isSupportedNotification =>
+      isParcelNotification ||
+      isTaskNotification ||
+      isLostFoundNotification ||
+      isHousematesAgendaNotification ||
+      isHouseholdUpdateNotification ||
+      type == 'update';
+
+  String? get entityType {
+    final v = (payload['entity_type'] as String?)?.trim();
+    return (v != null && v.isNotEmpty) ? v : null;
+  }
+
+  String? get entityId {
+    for (final key in const [
+      'entity_id',
+      'parcel_id',
+      'task_id',
+      'lost_item_id',
+      'found_item_id',
+      'invitation_id',
+    ]) {
+      final v = (payload[key] as String?)?.trim();
+      if (v != null && v.isNotEmpty) return v;
     }
-    return title;
+    return null;
+  }
+
+  String? get actorId {
+    for (final key in const [
+      'actor_id',
+      'creator_id',
+      'spinner_id',
+      'spun_by_user_id',
+      'receiver_id',
+      'claimer_id',
+      'finder_id',
+    ]) {
+      final v = (payload[key] as String?)?.trim();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    return null;
+  }
+
+  String? get actorFallbackName {
+    for (final key in const [
+      'actor_name',
+      'spinner_name',
+      'creator_name',
+      'receiver_name',
+      'claimer_name',
+      'finder_name',
+    ]) {
+      final v = (payload[key] as String?)?.trim();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    return null;
+  }
+
+  int? get earnedPoints {
+    final pts = (payload['points'] as num?)?.toInt();
+    return (pts != null && pts > 0) ? pts : null;
+  }
+
+  bool matchesEntity({
+    required String entityType,
+    required String entityId,
+  }) {
+    final targetId = entityId.trim();
+    if (targetId.isEmpty) return false;
+    final payloadEntityId = (payload['entity_id'] as String?)?.trim();
+    if (this.entityType == entityType && payloadEntityId == targetId) {
+      return true;
+    }
+    return switch (entityType) {
+      'parcel' => (payload['parcel_id'] as String?)?.trim() == targetId,
+      'task' => (payload['task_id'] as String?)?.trim() == targetId,
+      'lost_item' => (payload['lost_item_id'] as String?)?.trim() == targetId,
+      'found_item' =>
+        (payload['found_item_id'] as String?)?.trim() == targetId,
+      'housemates_agenda' =>
+        (payload['invitation_id'] as String?)?.trim() == targetId,
+      _ => payloadEntityId == targetId,
+    };
+  }
+
+  String get displayTitle {
+    if (type == 'housemates_agenda_reminder' || type == 'meetup_reminder') {
+      if (title.trim().startsWith('Agenda Reminder:')) return title.trim();
+      final rawTitle = (payload['title'] as String?)?.trim();
+      if (rawTitle != null && rawTitle.isNotEmpty) {
+        if (payload.containsKey('entity_type') ||
+            rawTitle.startsWith('Agenda Reminder:') ||
+            rawTitle.contains('!') ||
+            rawTitle.startsWith('⏰') ||
+            rawTitle.startsWith('📅')) {
+          return rawTitle;
+        }
+        return 'Agenda Reminder: $rawTitle';
+      }
+      final cleanedTitle = title
+          .replaceFirst(RegExp(r'^Meet-up Reminder:\s*'), '')
+          .trim();
+      final fallback = cleanedTitle.isNotEmpty ? cleanedTitle : 'Housemates Agenda';
+      return 'Agenda Reminder: $fallback';
+    }
+
+    final payloadTitle = (payload['title'] as String?)?.trim();
+    if (payloadTitle != null && payloadTitle.isNotEmpty) {
+      return payloadTitle;
+    }
+    if (title.trim().isNotEmpty) return title.trim();
+
+    if (type == 'roulette_chosen') {
+      return '🎡 You were chosen for a task!';
+    }
+    if (type == 'housemate_joined') {
+      return '${actorFallbackName ?? 'A housemate'} joined the household';
+    }
+    if (isParcelNotification) return 'Parcel update';
+    if (isTaskNotification) return 'Task update';
+    if (isLostFoundNotification) return 'Lost & Found update';
+    if (isHousematesAgendaNotification) return 'Housemates Agenda update';
+    return 'Household update';
   }
 
   String get displaySubtitle {
-    if (type == 'meetup_reminder') {
-      final msg = (payload['message'] as String?)?.trim();
-      if (msg != null && msg.isNotEmpty) return msg;
-      final sub = subtitle.trim();
-      if (sub.isNotEmpty) return sub;
-      final location = (payload['location'] as String?)?.trim();
-      return 'Starting soon at ${location != null && location.isNotEmpty ? location : 'shared spot'}';
+    final payloadMsg = (payload['message'] as String?)?.trim();
+    if (payloadMsg != null && payloadMsg.isNotEmpty) return payloadMsg;
+    final sub = subtitle.trim();
+    if (sub.isNotEmpty) return sub;
+
+    if (type == 'roulette_chosen') {
+      final taskTitle = (payload['task_title'] as String?)?.trim();
+      final label = (taskTitle != null && taskTitle.isNotEmpty)
+          ? taskTitle
+          : 'your task';
+      return 'Check out "$label" — you got +${rouletteBonusPoints ?? 4} bonus pts!';
     }
-    return subtitle;
+    if (type == 'housemates_agenda_reminder' || type == 'meetup_reminder') {
+      final location = (payload['location'] as String?)?.trim();
+      return location != null && location.isNotEmpty
+          ? 'Starting soon — $location'
+          : 'Starting soon — Housemates Agenda';
+    }
+    if (type == 'housemate_joined') {
+      return 'Say hello to your new housemate!';
+    }
+    if (isParcelNotification) return 'Tap to view Parcels';
+    if (isTaskNotification) return 'Tap to view Tasks';
+    if (isLostFoundNotification) return 'Tap to view Lost & Found';
+    if (isHousematesAgendaNotification) return 'Tap to view Housemates Agenda';
+    return 'Tap to view';
   }
 
   HouseholdNotificationItem copyWith({

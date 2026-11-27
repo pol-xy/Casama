@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
@@ -23,45 +24,41 @@ class DevicePermissionsScreen extends ConsumerStatefulWidget {
 
 class _DevicePermissionsScreenState
     extends ConsumerState<DevicePermissionsScreen> {
-  bool _notificationsAllowed = false;
+  static const String _prefKeyCameraPermission =
+      'quicksnap_camera_permission_granted';
   bool _cameraPhotosAllowed = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.isOnboarding) {
-      _notificationsAllowed = false;
-    } else {
-      final prefs = ref.read(repositoryProvider).notificationPreferences;
-      _notificationsAllowed =
-          prefs.householdUpdates ||
-          prefs.parcelNotifications ||
-          prefs.taskReminders ||
-          prefs.chatNotifications;
+    if (!widget.isOnboarding) {
+      _loadCameraPreference();
     }
   }
 
-  void _savePreferences(bool notifications) {
-    ref
-        .read(repositoryProvider)
-        .updateNotificationPreferences(
-          householdUpdates: notifications,
-          parcelNotifications: notifications,
-          taskReminders: notifications,
-          chatNotifications: notifications,
-        );
+  Future<void> _loadCameraPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getBool(_prefKeyCameraPermission) ?? false;
+      if (mounted) {
+        setState(() => _cameraPhotosAllowed = saved);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveCameraPreference(bool allowed) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefKeyCameraPermission, allowed);
+    } catch (_) {}
   }
 
   bool _hasCompletedProfileAndConsent() {
-    final user = ref.read(repositoryProvider).currentUser;
-    return user.hasConsentedTerms &&
-        user.birthday != null &&
-        (user.fullName ?? '').trim().isNotEmpty &&
-        (user.nickname ?? '').trim().isNotEmpty;
+    return ref.read(repositoryProvider).currentUser.hasCompleteRequiredProfile;
   }
 
   void _continue() {
-    _savePreferences(_notificationsAllowed);
+    _saveCameraPreference(_cameraPhotosAllowed);
     if (!widget.isOnboarding) {
       showCasamaToast(
         context,
@@ -84,26 +81,6 @@ class _DevicePermissionsScreenState
       GoRouter.maybeOf(context)?.go('/profile-setup');
       return;
     }
-    ref.read(repositoryProvider).completeOnboardingTutorial();
-    GoRouter.maybeOf(context)?.push('/intro');
-  }
-
-  void _skipAll() {
-    setState(() {
-      _notificationsAllowed = false;
-      _cameraPhotosAllowed = false;
-    });
-    _savePreferences(false);
-    if (!_hasCompletedProfileAndConsent()) {
-      showCasamaToast(
-        context,
-        'Please complete your profile and Terms & Privacy consent first.',
-        icon: Icons.info_outline_rounded,
-      );
-      GoRouter.maybeOf(context)?.go('/profile-setup');
-      return;
-    }
-    ref.read(repositoryProvider).completeOnboardingTutorial();
     GoRouter.maybeOf(context)?.push('/intro');
   }
 
@@ -114,8 +91,6 @@ class _DevicePermissionsScreenState
 
     return CasamaAuthShell(
       stepLabel: widget.isOnboarding ? 'Step 4 of 4' : null,
-      skipLabel: widget.isOnboarding ? 'Skip All' : null,
-      onSkip: widget.isOnboarding ? _skipAll : null,
       onBack: () {
         if (context.canPop()) {
           context.pop();
@@ -136,28 +111,13 @@ class _DevicePermissionsScreenState
           ),
           const SizedBox(height: 6),
           Text(
-            'Casama requests only what supports household coordination. You can toggle or adjust these anytime.',
+            'Casama requests camera and photo access only when needed for household coordination. You can adjust this anytime.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: pal.textSecondary,
               height: 1.45,
             ),
           ),
           const SizedBox(height: CasamaSpacing.lg),
-
-          _buildPermissionTile(
-            context: context,
-            icon: Icons.notifications_active_outlined,
-            iconBg: pal.softBlush,
-            iconColor: pal.primaryCoral,
-            title: 'Push Notifications',
-            badge: 'Recommended',
-            isRecommended: true,
-            reason:
-                'Receive timely alerts when deliveries arrive, bills need attention, or housemates post updates.',
-            value: _notificationsAllowed,
-            onChanged: (val) => setState(() => _notificationsAllowed = val),
-          ),
-          const SizedBox(height: CasamaSpacing.md),
 
           _buildPermissionTile(
             context: context,
@@ -180,15 +140,6 @@ class _DevicePermissionsScreenState
             height: 50,
             onPressed: _continue,
           ),
-          if (widget.isOnboarding) ...[
-            const SizedBox(height: CasamaSpacing.xs),
-            CasamaButton(
-              label: 'Skip All for Now',
-              style: CasamaButtonStyle.ghost,
-              onPressed: _skipAll,
-              height: 48,
-            ),
-          ],
         ],
       ),
     );

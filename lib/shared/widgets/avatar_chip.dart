@@ -11,6 +11,7 @@ class AvatarChip extends StatelessWidget {
   final String? avatarUrl;
   final bool isHome;
   final bool isCurrentUser;
+  final String? note;
   final VoidCallback? onTap;
   final Color? labelColor;
   final Color? dotBorderColor;
@@ -21,6 +22,7 @@ class AvatarChip extends StatelessWidget {
     this.avatarUrl,
     required this.isHome,
     this.isCurrentUser = false,
+    this.note,
     this.onTap,
     this.labelColor,
     this.dotBorderColor,
@@ -30,14 +32,17 @@ class AvatarChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final pal = context.palette;
     final cleanName = name.trim();
-    final firstName = cleanName.isNotEmpty
-        ? cleanName.split(RegExp(r'\s+')).first
-        : 'Member';
-    final displayLabel = isCurrentUser ? 'You' : firstName;
+    final cleanNote = note?.trim() ?? '';
+    final hasNote = cleanNote.isNotEmpty;
+    final displayLabel = isCurrentUser
+        ? 'You'
+        : (cleanName.isNotEmpty ? cleanName : 'Housemate');
 
     return Semantics(
       button: onTap != null,
-      label: '$displayLabel, ${isHome ? 'Home' : 'Out'}',
+      label: hasNote
+          ? '$displayLabel, ${isHome ? 'Home' : 'Out'}, Note: $cleanNote'
+          : '$displayLabel, ${isHome ? 'Home' : 'Out'}',
       child: CasamaPressable(
         onTap: onTap,
         enableHaptic: true,
@@ -45,11 +50,75 @@ class AvatarChip extends StatelessWidget {
           constraints: const BoxConstraints(
             minWidth: CasamaSpacing.minTouchTarget,
             minHeight: CasamaSpacing.minTouchTarget,
-            maxWidth: 76,
+            maxWidth: 96,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              if (hasNote) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: pal.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: pal.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    cleanNote,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      height: 1.2,
+                      fontWeight: FontWeight.w500,
+                      color: pal.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Transform.translate(
+                  offset: const Offset(-6, 0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: pal.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: pal.border, width: 1),
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Transform.translate(
+                        offset: const Offset(4, 0),
+                        child: Container(
+                          width: 4,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: pal.surface,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: pal.border, width: 1),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               Stack(
                 children: [
                   CasamaAvatar(

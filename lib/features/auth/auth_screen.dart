@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
+import '../../core/router/app_router.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../data/supabase_config.dart';
@@ -185,15 +186,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           _showResendVerification = false;
           _resendCooldownSeconds = 0;
         });
-        if (repo.hasActiveHousehold) {
-          context.go('/dashboard');
-        } else if (!repo.currentUser.hasCompletedOnboarding &&
-            (!repo.currentUser.hasConsentedTerms ||
-                repo.currentUser.birthday == null)) {
-          context.go('/profile-setup');
-        } else {
-          context.go('/household-setup');
-        }
+        context.go(resolveAuthenticatedDestination(repo.currentUser));
       }
     } catch (e) {
       if (kDebugMode) {
@@ -227,15 +220,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       await repo.signInWithDemoAccount();
       if (mounted) {
         setState(() => _isLoginLoading = false);
-        if (repo.hasActiveHousehold) {
-          context.go('/dashboard');
-        } else if (!repo.currentUser.hasCompletedOnboarding &&
-            (!repo.currentUser.hasConsentedTerms ||
-                repo.currentUser.birthday == null)) {
-          context.go('/profile-setup');
-        } else {
-          context.go('/household-setup');
-        }
+        context.go(resolveAuthenticatedDestination(repo.currentUser));
       }
     } catch (e) {
       if (mounted) {

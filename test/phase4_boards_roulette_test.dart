@@ -2,7 +2,6 @@ import 'package:casama/core/theme/app_theme.dart';
 import 'package:casama/data/mock_repository.dart';
 import 'package:casama/data/models.dart';
 import 'package:casama/data/repository_provider.dart';
-import 'package:casama/features/bills/bills_dashboard_screen.dart';
 import 'package:casama/features/chore_roulette/widgets/task_roulette_sheet.dart';
 import 'package:casama/features/dashboard/boards_screen.dart';
 import 'package:casama/features/parcels/parcels_screen.dart';
@@ -12,7 +11,6 @@ import 'package:casama/shared/widgets/casama_wave_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -74,14 +72,9 @@ void main() {
       expect(find.text('Chore & Task Roulette'), findsNothing);
       expectHeaderOrder('Household Tasks');
 
-      // Tap Bills header tab
-      await tester.tap(find.bySemanticsLabel('Bills board'));
-      await tester.pumpAndSettle();
-      expect(find.text('Bills & Payments'), findsOneWidget);
-      expect(find.text('Edit billings'), findsOneWidget);
-      expectHeaderOrder('Bills & Payments');
-
-      // Tap Items header tab
+      // Tap Items header tab (Bills tab must not exist)
+      expect(find.bySemanticsLabel('Bills board'), findsNothing);
+      expect(find.text('Bills'), findsNothing);
       await tester.tap(find.bySemanticsLabel('Items board'));
       await tester.pumpAndSettle();
       expect(find.text('Lost & Found'), findsOneWidget);
@@ -98,10 +91,18 @@ void main() {
   );
 
   testWidgets(
-    'TasksBoardView completes tasks inline and opens TaskRouletteSheet from expanded card w/ 24h cooldown',
+    'TasksBoardView shows Unspun, directly assigns via TaskRouletteSheet with zero cooldown/Accept/Reject, allows back-to-back spins on different tasks, shows +4 bonus & awards boosted points on Done',
     (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
       SharedPreferences.setMockInitialValues({});
       final repo = MockRepository()..login();
+      final housemateTask = repo.tasks.firstWhere((t) => t.id == 't2');
+      final secondTask = repo.tasks.firstWhere((t) => t.id == 't3');
 
       await tester.pumpWidget(
         ProviderScope(
@@ -118,12 +119,12 @@ void main() {
       expect(find.text('Spin Roulette'), findsNothing);
       expect(find.text('Quick Spin'), findsNothing);
       expect(find.text('Chore & Task Roulette'), findsNothing);
+      expect(find.text('Unspun'), findsNWidgets(3));
+      // Viewer is JP (created t1): ongoing points = t1(0) + t2(9) + t3(7) = 16 pts
+      expect(find.text('16 pts'), findsOneWidget);
 
-      // Expand first open task card and tap Spin -> opens TaskRouletteSheet
-      final firstTask = repo.tasks.firstWhere(
-        (t) => t.status != TaskStatus.done,
-      );
-      await tester.tap(find.text(firstTask.title));
+      // Expand t2 (Maria's task, base 9 pts) and tap Spin -> opens TaskRouletteSheet
+      await tester.tap(find.text(housemateTask.title));
       await tester.pumpAndSettle();
       expect(find.text('Spin'), findsOneWidget);
       expect(find.text('Mark as Done'), findsOneWidget);
@@ -132,49 +133,315 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Task Roulette'), findsOneWidget);
-      expect(find.text(firstTask.title), findsWidgets);
-      expect(find.text('1 spin / 24h • Ready'), findsOneWidget);
+      expect(find.text(housemateTask.title), findsWidgets);
+      expect(find.text('Eligible Housemates (3)'), findsOneWidget);
+      expect(find.textContaining('Home Housemates'), findsNothing);
+      expect(find.text('1 spin per task • +4 bonus pts'), findsNothing);
+      expect(
+        find.text('1 spin per task • Creator excluded • Chosen housemate gets +4 bonus pts'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('24h'), findsNothing);
       expect(find.byKey(const Key('task_roulette_spin_button')), findsOneWidget);
 
-      // Spin 4000ms wheel -> Accept (+2 bonus) -> saves 24h cooldown
+      // Spin 4000ms wheel -> directly assigns without Accept/Reject buttons
       await tester.tap(find.byKey(const Key('task_roulette_spin_button')));
       await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
 
-      expect(find.text('Accept (+2 bonus)'), findsOneWidget);
-      expect(find.text('Reject (-3 pts)'), findsOneWidget);
+      expect(find.text('Accept (+2 bonus)'), findsNothing);
+      expect(find.text('Reject (-3 pts)'), findsNothing);
+      expect(find.byKey(const Key('task_roulette_result_card')), findsOneWidget);
+      expect(find.textContaining('chosen!'), findsOneWidget);
+      expect(find.textContaining('+4 bonus pts'), findsWidgets);
+      expect(find.text('Done'), findsOneWidget);
 
-      await tester.ensureVisible(find.text('Accept (+2 bonus)'));
+      // Tap Done -> closes sheet
+      await tester.ensureVisible(find.text('Done'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Accept (+2 bonus)'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
 
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getInt(rouletteLastSpinPrefKey), isNotNull);
+      final record = repo.rouletteRecordForTask(housemateTask.id)!;
+      expect(record.status, 'assigned');
+      expect(record.bonusPoints, 4);
+      // Creator (Maria) can never be chosen
+      expect(record.selectedUserId, isNot(housemateTask.createdBy));
 
-      // Re-opening sheet from expanded card's Spin button reflects 24h cooldown
+      // Two side-by-side attribution pills
+      expect(
+        find.byKey(ValueKey('task_spun_by_pill_${housemateTask.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('task_chosen_pill_${housemateTask.id}')),
+        findsOneWidget,
+      );
+
+      final isJpChosen = record.selectedUserId == repo.currentUser.id;
+      final expectedT2Reward =
+          housemateTask.computedPoints + (isJpChosen ? 4 : 0);
+      expect(find.text('${16 + (isJpChosen ? 4 : 0)} pts'), findsOneWidget);
+      expect(
+        find.text('+${housemateTask.computedPoints + 4} pts (+4 bonus)'),
+        isJpChosen ? findsOneWidget : findsNothing,
+      );
+
+      // Spin button is hidden for already-spun task; Mark as Done shows viewer-specific points
+      expect(find.text('Spin'), findsNothing);
+      expect(find.text('Mark as Done'), findsOneWidget);
+      expect(find.text('+$expectedT2Reward pts'), findsOneWidget);
+
+      // Back-to-back spin on second unspun task (t3) works immediately with zero 24h cooldown
+      await tester.ensureVisible(find.text(secondTask.title));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(secondTask.title));
+      await tester.pumpAndSettle();
+      expect(find.text('Spin'), findsOneWidget);
+      await tester.ensureVisible(find.text('Spin'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Spin'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Cooldown •'), findsOneWidget);
-
-      // Close sheet and mark the expanded task as Done inline
-      await tester.tap(find.byIcon(Icons.close_rounded));
+      expect(find.textContaining('Cooldown'), findsNothing);
+      await tester.tap(find.byKey(const Key('task_roulette_spin_button')));
+      await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Done'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+
+      final secondRecord = repo.rouletteRecordForTask(secondTask.id)!;
+      expect(secondRecord.selectedUserId, isNot(secondTask.createdBy));
+      final expectedSummaryAfterTwoSpins =
+          16 +
+          (isJpChosen ? 4 : 0) +
+          (secondRecord.selectedUserId == repo.currentUser.id ? 4 : 0);
+      expect(find.text('$expectedSummaryAfterTwoSpins pts'), findsOneWidget);
+
+      // Complete spun t2 -> awards viewer-specific points and marks roulette record completed
+      await tester.ensureVisible(find.text(housemateTask.title));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(housemateTask.title));
+      await tester.pumpAndSettle();
+      final pointsBefore = repo.kasamaPoints;
       await tester.tap(find.text('Mark as Done'));
       await tester.pumpAndSettle();
       expect(
-        repo.tasks.firstWhere((t) => t.id == firstTask.id).status,
+        repo.tasks.firstWhere((t) => t.id == housemateTask.id).status,
         TaskStatus.done,
       );
+      expect(repo.rouletteRecordForTask(housemateTask.id)!.status, 'completed');
+      expect(repo.kasamaPoints, pointsBefore + expectedT2Reward);
     },
   );
 
   testWidgets(
-    'EditBillingsSheet creates a bill and BoardsScreen renders cleanly in dark mode & reduced motion',
+    'TasksBoardView substitutes You accurately in two side-by-side pills and restricts +4 bonus strictly to chosen housemate across Light & Dark themes',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      const jpId = '11111111-1111-1111-1111-111111111111';
+      const mariaId = '22222222-2222-2222-2222-222222222222';
+      const alexId = '33333333-3333-3333-3333-333333333333';
+      final repo = MockRepository()..login();
+
+      // t1 (JP's own task, base 14): JP spun -> Maria chosen
+      await repo.spinTaskRoulette('t1', mariaId);
+      // t2 (Maria's task, base 9): JP spun -> JP chosen
+      await repo.spinTaskRoulette('t2', jpId);
+
+      // 1. Viewer is JP: sees two separate pills on t1 & t2, +4 bonus only on t2, summary = 0 + 13 + 7 = 20 pts
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp(
+            theme: CasamaTheme.lightTheme,
+            darkTheme: CasamaTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: const BoardsScreen(initialTab: 1),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('20 pts'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('task_spun_by_pill_t1')),
+          matching: find.textContaining('Spun by You', findRichText: true),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('task_chosen_pill_t1')),
+          matching: find.textContaining('Chosen: Maria', findRichText: true),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('task_chosen_pill_t2')),
+          matching: find.textContaining('Chosen: You', findRichText: true),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('+18 pts (+4 bonus)'), findsNothing);
+      expect(find.text('+13 pts (+4 bonus)'), findsOneWidget);
+
+      // 2. Viewer is Maria: sees Spun by JP / Chosen: You on t1 (+18 pts (+4 bonus)),
+      // while t2 (created by Maria) hides bonus and summary = 18 + 0 + 7 = 25 pts
+      repo.setCurrentUserForTest(mariaId);
+      await tester.pumpAndSettle();
+
+      expect(find.text('25 pts'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('task_spun_by_pill_t1')),
+          matching: find.textContaining('Spun by JP', findRichText: true),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('task_chosen_pill_t1')),
+          matching: find.textContaining('Chosen: You', findRichText: true),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('+18 pts (+4 bonus)'), findsOneWidget);
+      expect(find.text('+13 pts (+4 bonus)'), findsNothing);
+
+      // 3. Viewer is Alex (neither creator nor chosen on t1/t2): sees NO +4 bonus pills,
+      // sees base +9 pts on Mark as Done for t2, and summary = 14 + 9 + 0 = 23 pts
+      repo.setCurrentUserForTest(alexId);
+      await tester.pumpAndSettle();
+
+      expect(find.text('23 pts'), findsOneWidget);
+      expect(find.text('+18 pts (+4 bonus)'), findsNothing);
+      expect(find.text('+13 pts (+4 bonus)'), findsNothing);
+      await tester.tap(find.text('Buy Drinking Water'));
+      await tester.pumpAndSettle();
+      expect(find.text('+9 pts'), findsOneWidget);
+      expect(find.text('+13 pts'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'TaskRouletteSheet excludes task creator and handles 1-eligible-member & 0-eligible-member households cleanly',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      SharedPreferences.setMockInitialValues({});
+      final repo = MockRepository()..login();
+      final t2 = repo.tasks.firstWhere((t) => t.id == 't2'); // Created by Maria
+      final t1 = repo.tasks.firstWhere((t) => t.id == 't1'); // Created by JP
+
+      // 1. In a 3-member household (Home JP + Out Alex + creator Maria),
+      // both JP and away-member Alex appear on the wheel while Maria is excluded
+      final jpMember = repo.members.firstWhere(
+        (m) => m.profile.id == repo.currentUser.id,
+      );
+      final mariaMember = repo.members.firstWhere(
+        (m) => m.profile.id == t2.createdBy,
+      );
+      final alexMember = repo.members.firstWhere(
+        (m) =>
+            m.profile.id != repo.currentUser.id &&
+            m.profile.id != t2.createdBy,
+      );
+      final awayAlex = MemberPresence(
+        profile: alexMember.profile,
+        isHome: false,
+        note: 'Out',
+        updatedAt: alexMember.updatedAt,
+      );
+      repo.setMembersForTest([jpMember, awayAlex, mariaMember]);
+      MaintenanceTask activeTask = t2;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(390, 844),
+              disableAnimations: true,
+            ),
+            child: MaterialApp(
+              theme: CasamaTheme.lightTheme,
+              home: Builder(
+                builder: (ctx) => Scaffold(
+                  body: Center(
+                    child: ElevatedButton(
+                      onPressed: () =>
+                          showTaskRouletteSheet(ctx, task: activeTask),
+                      child: const Text('Open Roulette'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open Roulette'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Eligible Housemates (2)'), findsOneWidget);
+      expect(find.textContaining('Home Housemates'), findsNothing);
+      expect(find.text('Alex'), findsOneWidget);
+      expect(find.text('Maria'), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Close Task Roulette'));
+      await tester.pumpAndSettle();
+
+      // 2. In a 2-member household (JP + creator Maria), only JP is eligible on wheel
+      repo.setMembersForTest([jpMember, mariaMember]);
+      await tester.tap(find.text('Open Roulette'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Eligible Housemates (1)'), findsOneWidget);
+      expect(find.text('Maria'), findsNothing);
+      await tester.tap(find.byKey(const Key('task_roulette_spin_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('You were chosen!'), findsOneWidget);
+      expect(
+        repo.rouletteRecordForTask(t2.id)!.selectedUserId,
+        jpMember.profile.id,
+      );
+      await tester.ensureVisible(find.text('Done'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+
+      // 3. In a solo 1-member household (only creator JP on t1), SPIN is disabled with inline guidance
+      activeTask = t1;
+      repo.setMembersForTest([jpMember]);
+      await tester.tap(find.text('Open Roulette'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Eligible Housemates (0)'), findsOneWidget);
+      expect(
+        find.text('Add another housemate to spin Task Roulette for this task.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('task_roulette_spin_button')));
+      await tester.pumpAndSettle();
+      expect(repo.rouletteRecordForTask(t1.id), isNull);
+      expect(find.byKey(const Key('task_roulette_result_card')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'BoardsScreen clamps legacy out-of-range initialTab safely to Items and renders cleanly in dark mode & reduced motion',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final repo = MockRepository()..login();
-      final initialBillCount = repo.bills.length;
 
       await tester.pumpWidget(
         ProviderScope(
@@ -188,38 +455,16 @@ void main() {
               theme: CasamaTheme.lightTheme,
               darkTheme: CasamaTheme.darkTheme,
               themeMode: ThemeMode.dark,
-              home: const BoardsScreen(initialTab: 2),
+              home: const BoardsScreen(initialTab: 3),
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Bills & Payments'), findsOneWidget);
-      expect(find.text('Edit billings'), findsOneWidget);
-
-      await tester.tap(find.text('Edit billings'));
-      await tester.pumpAndSettle();
-
-      await tester.enterText(
-        find.widgetWithText(TextField, 'e.g., PLDT Fiber, Meralco, Rent'),
-        'SkyCable Fiber',
-      );
-      await tester.enterText(
-        find.widgetWithText(TextField, '0.00'),
-        '1499',
-      );
-      await tester.ensureVisible(find.text('Save Billings'));
-      await tester.tap(find.text('Save Billings'));
-      await tester.pumpAndSettle();
-
-      expect(repo.bills.length, initialBillCount + 1);
-      expect(repo.bills.first.effectiveBillName, 'SkyCable Fiber');
-
-      // Mark the newly added bill as paid right from BillsBoardView
-      await tester.tap(find.text('Mark Paid').first);
-      await tester.pumpAndSettle();
-      expect(repo.bills.first.effectiveStatus, BillStatus.paid);
+      expect(find.text('Lost & Found'), findsOneWidget);
+      expect(find.text('Report item'), findsOneWidget);
+      expect(find.text('Bills'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -270,7 +515,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('Claimed by ${repo.currentUser.displayName} • Unsettled'),
+        find.textContaining('Claimed by ${repo.currentUser.preferredName} • Unsettled'),
         findsOneWidget,
       );
 
@@ -284,89 +529,6 @@ void main() {
       await repo.settleParcelClaim('p1');
       await tester.pumpAndSettle();
       expect(find.text('Settled'), findsNWidgets(2));
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets(
-    'BillsBoardView summary card surfaces nearest unpaid bill (overdue & upcoming) and clean all-settled state in Light & Dark themes',
-    (tester) async {
-      SharedPreferences.setMockInitialValues({});
-      final repo = MockRepository()..login();
-
-      // Mark all seeded bills paid first, then add controlled upcoming + overdue bills
-      for (final b in List<HouseholdBill>.from(repo.bills)) {
-        repo.markBillPaid(b.id);
-      }
-
-      final soonDate = DateTime.now().add(const Duration(days: 3));
-      final laterDate = DateTime.now().add(const Duration(days: 10));
-      repo.addBill(
-        category: BillCategory.water,
-        billName: 'Later Water',
-        amount: 450,
-        deadline: laterDate,
-      );
-      repo.addBill(
-        category: BillCategory.internet,
-        billName: 'Soon Fiber',
-        amount: 1499,
-        deadline: soonDate,
-      );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [repositoryProvider.overrideWith((ref) => repo)],
-          child: MaterialApp(
-            theme: CasamaTheme.lightTheme,
-            darkTheme: CasamaTheme.darkTheme,
-            themeMode: ThemeMode.light,
-            home: const Scaffold(body: BillsBoardView()),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      final soonDateStr = DateFormat('MMM d').format(soonDate);
-      expect(find.text('Soon Fiber'), findsWidgets);
-      expect(find.text('Due $soonDateStr • ₱1,499'), findsOneWidget);
-      expect(find.text('No overdue bills'), findsNothing);
-
-      // Add an overdue bill -> becomes nearest bill with Overdue prefix
-      final overdueDate = DateTime.now().subtract(const Duration(days: 2));
-      repo.addBill(
-        category: BillCategory.electricity,
-        billName: 'Overdue Meralco',
-        amount: 2100,
-        deadline: overdueDate,
-      );
-      await tester.pumpAndSettle();
-
-      final overdueDateStr = DateFormat('MMM d').format(overdueDate);
-      expect(find.text('Overdue Meralco'), findsWidgets);
-      expect(find.text('Overdue $overdueDateStr • ₱2,100'), findsOneWidget);
-
-      // Pay all unpaid bills -> shows "No upcoming" / "All bills settled" in Dark Mode
-      for (final b in List<HouseholdBill>.from(repo.bills)) {
-        if (b.effectiveStatus != BillStatus.paid) {
-          repo.markBillPaid(b.id);
-        }
-      }
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [repositoryProvider.overrideWith((ref) => repo)],
-          child: MaterialApp(
-            theme: CasamaTheme.lightTheme,
-            darkTheme: CasamaTheme.darkTheme,
-            themeMode: ThemeMode.dark,
-            home: const Scaffold(body: BillsBoardView()),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('No upcoming'), findsOneWidget);
-      expect(find.text('All bills settled'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

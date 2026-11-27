@@ -28,7 +28,10 @@ class LeaderboardScreen extends ConsumerWidget {
     final entries = [
       for (var i = 0; i < standings.length; i++)
         _LeaderboardEntry(
-          standings[i].displayName,
+          repo.resolveHousemateName(
+            standings[i].userId,
+            fallback: standings[i].displayName,
+          ),
           standings[i].handle,
           standings[i].points,
           i < medals.length ? medals[i] : '🎖️',
@@ -241,6 +244,10 @@ class LeaderboardScreen extends ConsumerWidget {
                                   const _PointRuleRow(
                                     label: 'Complete repair or personal request',
                                     points: '+10 to +14 pts',
+                                  ),
+                                  const _PointRuleRow(
+                                    label: 'Task Roulette bonus (chosen housemate)',
+                                    points: '+4 bonus pts',
                                   ),
                                   const _PointRuleRow(
                                     label:

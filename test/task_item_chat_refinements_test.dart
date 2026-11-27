@@ -47,20 +47,21 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Summary card: Open Tasks + color-only urgency counts (no words) + total ongoing points
+      // Summary card: Open Tasks + color-only urgency counts (no words) + viewer-specific ongoing points (0 + 9 + 7 = 16 pts)
       expect(find.text('3 Open Tasks'), findsOneWidget);
-      expect(find.text('30 pts'), findsOneWidget);
-      expect(find.text('Across ongoing requests'), findsOneWidget);
+      expect(find.text('16 pts'), findsOneWidget);
+      expect(find.text('Across ongoing tasks'), findsOneWidget);
       expect(
         find.bySemanticsLabel('1 low, 1 medium, 1 urgent'),
         findsOneWidget,
       );
       expect(find.text('Completed log'), findsNothing);
       expect(find.textContaining('urgent •'), findsNothing);
+      expect(find.text('Unspun'), findsNWidgets(repo.tasks.length));
 
       // Subtabs exist and forbidden labels are absent
-      expect(find.text('Ongoing Requests'), findsOneWidget);
-      expect(find.text('Completed Requests'), findsOneWidget);
+      expect(find.text('Ongoing Tasks'), findsOneWidget);
+      expect(find.text('Completed Tasks'), findsOneWidget);
       expect(find.textContaining('Unassigned'), findsNothing);
       expect(find.textContaining('Assigned'), findsNothing);
       expect(find.text('Quick Spin'), findsNothing);
@@ -83,16 +84,16 @@ void main() {
       expect(find.text('Mark as Done'), findsOneWidget);
       expect(find.text('+${housemateTask.computedPoints} pts'), findsOneWidget);
 
-      // Completing housemate task awards +9 pts, moves it out of Ongoing Requests, and updates summary (30 -> 21 pts)
+      // Completing housemate task awards +9 pts, moves it out of Ongoing Tasks, and updates summary (16 -> 7 pts)
       await tester.tap(find.text('Mark as Done'));
       await tester.pumpAndSettle();
       expect(find.text('Mark as Done'), findsNothing);
       expect(find.text(housemateTask.title), findsNothing);
       expect(repo.kasamaPoints, initialPoints + housemateTask.computedPoints);
       expect(find.text('2 Open Tasks'), findsOneWidget);
-      expect(find.text('21 pts'), findsOneWidget);
+      expect(find.text('7 pts'), findsOneWidget);
 
-      // Completing own task awards 0 pts, moves it out of Ongoing Requests, and updates summary (21 -> 7 pts)
+      // Completing own task awards 0 pts, moves it out of Ongoing Tasks, and keeps summary at 7 pts
       await tester.tap(find.text(ownTask.title));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Mark as Done'));
@@ -102,13 +103,13 @@ void main() {
       expect(find.text('1 Open Tasks'), findsOneWidget);
       expect(find.text('7 pts'), findsOneWidget);
 
-      // Switch to Completed Requests -> shows completed tasks, Done badge, NO chevron, NO Mark Undone
-      await tester.tap(find.text('Completed Requests'));
+      // Switch to Completed Tasks -> shows completed tasks, Done badge, NO chevron, NO Mark Undone
+      await tester.tap(find.text('Completed Tasks'));
       await tester.pumpAndSettle();
       expect(find.text(housemateTask.title), findsOneWidget);
       expect(find.text(ownTask.title), findsOneWidget);
       expect(
-        find.textContaining('Completed by ${repo.currentUser.displayName}'),
+        find.textContaining('Completed by ${repo.currentUser.preferredName}'),
         findsNWidgets(2),
       );
       expect(find.text('Done'), findsNWidgets(2));
@@ -120,8 +121,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Mark Undone'), findsNothing);
 
-      // Switch back to Ongoing Requests and open Task Roulette from remaining task (t3)
-      await tester.tap(find.text('Ongoing Requests'));
+      // Switch back to Ongoing Tasks and open Task Roulette from remaining task (t3)
+      await tester.tap(find.text('Ongoing Tasks'));
       await tester.pumpAndSettle();
       await tester.tap(find.text(thirdTask.title));
       await tester.pumpAndSettle();
@@ -362,7 +363,7 @@ void main() {
       expect(find.textContaining("That's Mine"), findsOneWidget);
       expect(find.text('+2 pts to Maria'), findsOneWidget);
 
-      // Verify Light Mode rendering & My Activity Bills-style filter pills
+      // Verify Light Mode rendering & My Activity filter pills
       await tester.pumpWidget(
         ProviderScope(
           overrides: [repositoryProvider.overrideWith((ref) => repo)],

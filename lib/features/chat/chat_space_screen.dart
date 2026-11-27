@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
@@ -60,18 +59,9 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
   }
 
   void _scrollToBottom() {
-    final reduced = CasamaMotion.reduceMotion(context);
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (!_scrollController.hasClients) return;
-      final maxExtent = _scrollController.position.maxScrollExtent;
-      if (reduced) {
-        _scrollController.jumpTo(maxExtent);
-      } else {
-        _scrollController.animateTo(
-          maxExtent,
-          duration: CasamaMotion.sheet,
-          curve: CasamaMotion.easeOut,
-        );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        scrollChatListToBottom(context, _scrollController);
       }
     });
   }
@@ -146,7 +136,8 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
       context,
       icon: Icons.forum_rounded,
       title: '${space.iconEmoji} ${space.name}',
-      subtitle: 'Created by ${space.creatorName}',
+      subtitle:
+          'Created by ${repo.resolveHousemateName(space.creatorId, fallback: space.creatorName)}',
       builder: (ctx) {
         final pal = ctx.palette;
         final theme = Theme.of(ctx);
@@ -203,7 +194,7 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
               spacing: 8,
               runSpacing: 6,
               children: allHouseholdMembers.map((member) {
-                final name = member.profile.displayName;
+                final name = member.preferredName;
                 return Container(
                   padding: const EdgeInsets.only(
                     left: 5,
@@ -310,63 +301,52 @@ class _ChatSpaceScreenState extends ConsumerState<ChatSpaceScreen> {
               ],
             ),
             Expanded(
-              child: visibleMessages.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(CasamaSpacing.lg),
-                        child: CasamaCard(
-                          padding: const EdgeInsets.all(CasamaSpacing.lg),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                space.iconEmoji,
-                                style: const TextStyle(fontSize: 44),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Welcome to ${space.name}!',
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: pal.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Share updates and photos with your household',
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: pal.textSecondary,
-                                ),
-                              ),
-                            ],
+              child: CasamaChatMessageList(
+                controller: _scrollController,
+                messages: visibleMessages,
+                senderNameBuilder: (m) => repo.resolveHousemateName(
+                  m.senderId,
+                  fallback: m.senderName,
+                ),
+                onRetryBuilder: (msg) =>
+                    msg.deliveryStatus == MessageDeliveryStatus.failed
+                        ? () => repo.retrySpaceMessage(widget.spaceId, msg.id)
+                        : null,
+                emptyState: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(CasamaSpacing.lg),
+                    child: CasamaCard(
+                      padding: const EdgeInsets.all(CasamaSpacing.lg),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            space.iconEmoji,
+                            style: const TextStyle(fontSize: 44),
                           ),
-                        ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Welcome to ${space.name}!',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: pal.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Share updates and photos with your household',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: pal.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: CasamaSpacing.md,
-                        vertical: CasamaSpacing.md,
-                      ),
-                      itemCount: visibleMessages.length,
-                      itemBuilder: (context, index) {
-                        final msg = visibleMessages[index];
-                        return CasamaMessageBubble(
-                          message: msg,
-                          timeLabel: DateFormat('h:mm a').format(msg.createdAt),
-                          onRetry: msg.deliveryStatus ==
-                                  MessageDeliveryStatus.failed
-                              ? () => repo.retrySpaceMessage(
-                                    widget.spaceId,
-                                    msg.id,
-                                  )
-                              : null,
-                        );
-                      },
                     ),
+                  ),
+                ),
+              ),
             ),
             SafeArea(
               top: false,

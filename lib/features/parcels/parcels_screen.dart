@@ -12,6 +12,7 @@ import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
+import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../../shared/widgets/status_chip.dart';
 import 'widgets/add_parcel_sheet.dart';
@@ -31,7 +32,9 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
     super.initState();
     if (widget.initialOpenAddModal) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) showAddParcelSheet(context);
+        if (mounted && ref.read(repositoryProvider).hasActiveHousehold) {
+          showAddParcelSheet(context);
+        }
       });
     }
   }
@@ -48,19 +51,21 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
           children: [
             CasamaWaveHeader(
               title: 'Parcels & Deliveries',
-              subtitle:
-                  '${repo.currentHousehold.name} • Coordinate arrivals & COD',
+              subtitle: repo.hasActiveHousehold
+                  ? '${repo.currentHousehold.name} • Coordinate arrivals & COD'
+                  : 'No household yet • Coordinate arrivals & COD',
               titleMascotPose: CasPose.deliveries,
               extendedWave: true,
               compact: true,
               onBackTap: () =>
                   context.canPop() ? context.pop() : context.go('/boards'),
               rightActions: [
-                CasamaHeaderActionPill(
-                  icon: Icons.add_box_outlined,
-                  label: 'Add parcel',
-                  onTap: () => showAddParcelSheet(context),
-                ),
+                if (repo.hasActiveHousehold)
+                  CasamaHeaderActionPill(
+                    icon: Icons.add_box_outlined,
+                    label: 'Add parcel',
+                    onTap: () => showAddParcelSheet(context),
+                  ),
               ],
             ),
             const Expanded(
@@ -92,6 +97,22 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
     final pal = context.palette;
     final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
+    if (!repo.hasActiveHousehold) {
+      return SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          CasamaSpacing.md,
+          CasamaSpacing.md,
+          CasamaSpacing.md,
+          widget.bottomPadding,
+        ),
+        child: const CasamaNoHouseholdPrompt(
+          title: 'Join a household',
+          subtitle:
+              'Coordinate parcel arrivals and COD handoffs once you join or create a household.',
+          mascotPose: CasPose.deliveries,
+        ),
+      );
+    }
     final currentUserId = repo.currentUser.id;
 
     final unsettledParcels = repo.parcels
@@ -108,7 +129,14 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
         return a.expectedArrival.compareTo(b.expectedArrival);
       });
 
-    final upcomingParcels = unsettledParcels;
+    final upcomingParcels = [
+      ...unsettledParcels.where(
+        (p) => p.status == ParcelStatus.arrived && !p.isClaimed,
+      ),
+      ...unsettledParcels.where(
+        (p) => !(p.status == ParcelStatus.arrived && !p.isClaimed),
+      ),
+    ];
     final historyParcels = repo.parcels.where((p) => p.isSettled).toList();
     final expectedUnclaimed = upcomingParcels.where((p) => !p.isClaimed).toList();
 
@@ -118,6 +146,7 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
           p.paymentType == ParcelPaymentType.cod ? sum + (p.codAmount ?? 0) : sum,
     );
     final arrivingToday = expectedUnclaimed.where((p) {
+      if (p.status == ParcelStatus.arrived) return true;
       final now = DateTime.now();
       return p.expectedArrival.year == now.year &&
           p.expectedArrival.month == now.month &&
@@ -249,6 +278,15 @@ class _ParcelCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pal = context.palette;
     final theme = Theme.of(context);
+    final repo = ref.watch(repositoryProvider);
+    final buyerName = repo.resolveHousemateName(
+      parcel.buyerId,
+      fallback: parcel.buyerName,
+    );
+    final claimerName = repo.resolveHousemateName(
+      parcel.claimedById,
+      fallback: parcel.claimedByName ?? 'Housemate',
+    );
     final (
       Color courierBg,
       Color courierColor,
@@ -258,6 +296,9 @@ class _ParcelCard extends ConsumerWidget {
     final now = DateTime.now();
     final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
     final isArrivingTodayOrPast = !parcel.expectedArrival.isAfter(endOfToday);
+    final isArrivedNow =
+        parcel.status == ParcelStatus.arrived && !parcel.isClaimed;
+    final canClaim = isArrivedNow || isArrivingTodayOrPast;
 
     final isCod = parcel.paymentType == ParcelPaymentType.cod;
     final paymentText = isCod
@@ -306,13 +347,22 @@ class _ParcelCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'For ${parcel.buyerName} • ${_formatArrival(parcel.expectedArrival)}',
+                      'For $buyerName • ${_formatArrival(parcel.expectedArrival)}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: pal.textSecondary,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
+                    if (isArrivedNow) ...[
+                      const SizedBox(height: 6),
+                      StatusChip(
+                        key: ValueKey('parcel_arriving_now_${parcel.id}'),
+                        label: ParcelStatus.arrived.label,
+                        icon: Icons.local_shipping_rounded,
+                        variant: ChipVariant.unclaimed,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -339,7 +389,7 @@ class _ParcelCard extends ConsumerWidget {
               parcel.isUnsettledClaim) ...[
             const SizedBox(height: 8),
             Text(
-              'Claimed by ${parcel.claimedByName ?? 'Housemate'}${parcel.claimedAt != null ? ' • ${DateFormat('MMM d, h:mm a').format(parcel.claimedAt!)}' : ''}',
+              'Claimed by $claimerName${parcel.claimedAt != null ? ' • ${DateFormat('MMM d, h:mm a').format(parcel.claimedAt!)}' : ''}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: pal.forestTeal,
                 fontWeight: FontWeight.w600,
@@ -349,7 +399,7 @@ class _ParcelCard extends ConsumerWidget {
           ] else if (tabMode == _ParcelTabMode.history) ...[
             const SizedBox(height: 8),
             Text(
-              'Claimed by ${parcel.claimedByName ?? 'Housemate'}${parcel.claimedAt != null ? ' (${DateFormat('MMM d').format(parcel.claimedAt!)})' : ''} • Settled${parcel.settledAt != null ? ' ${DateFormat('MMM d').format(parcel.settledAt!)}' : ''}',
+              'Claimed by $claimerName${parcel.claimedAt != null ? ' (${DateFormat('MMM d').format(parcel.claimedAt!)})' : ''} • Settled${parcel.settledAt != null ? ' ${DateFormat('MMM d').format(parcel.settledAt!)}' : ''}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: pal.textSecondary,
                 fontWeight: FontWeight.w600,
@@ -455,7 +505,7 @@ class _ParcelCard extends ConsumerWidget {
                         ),
                       ),
                       child: Text(
-                        'Claimed by ${parcel.claimedByName ?? 'Housemate'} • Unsettled',
+                        'Claimed by $claimerName • Unsettled',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
@@ -466,7 +516,7 @@ class _ParcelCard extends ConsumerWidget {
                       ),
                     ),
                   )
-              else if (isArrivingTodayOrPast)
+              else if (canClaim)
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: pal.primaryCoral,

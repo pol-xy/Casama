@@ -192,6 +192,8 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
     String? nextBirthdayError;
     if (birthDate == null) {
       nextBirthdayError = 'Please select your complete birthday';
+    } else if (birthDate.isBefore(DateTime(1900, 1, 1))) {
+      nextBirthdayError = 'Please select a valid birthday';
     } else if (_isFutureDate(birthDate)) {
       nextBirthdayError = 'Birthday cannot be in the future';
     }
@@ -263,8 +265,8 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
                       CasamaAvatar(
                         avatarUrl: _selectedAvatar,
                         radius: 44,
-                        name: _fullNameController.text.isNotEmpty
-                            ? _fullNameController.text
+                        name: _fullNameController.text.trim().isNotEmpty
+                            ? _fullNameController.text.trim()
                             : 'Casama',
                         showEditBadge: true,
                         onTap: _openCameraCapture,
@@ -393,7 +395,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
             CasamaTextField(
               controller: _fullNameController,
               label: 'Full Name',
-              hint: 'Enter your full name',
+              hint: 'e.g., Jon Paul Berana',
               prefixIcon: Icons.badge_outlined,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.next,

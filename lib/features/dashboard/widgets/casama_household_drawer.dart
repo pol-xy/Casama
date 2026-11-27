@@ -234,10 +234,11 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
     final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
     final household = repo.currentHousehold;
+    final hasHousehold = repo.hasActiveHousehold;
     final memberCount = repo.members.length;
     final households = repo.userHouseholds.isNotEmpty
         ? repo.userHouseholds
-        : [household];
+        : (hasHousehold ? [household] : const <Household>[]);
     final topPad = MediaQuery.paddingOf(context).top;
     final bottomPad = MediaQuery.paddingOf(context).bottom;
     final drawerWidth = math.min(
@@ -303,14 +304,18 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
                                     width: 7,
                                     height: 7,
                                     decoration: BoxDecoration(
-                                      color: statusDotColor,
+                                      color: hasHousehold
+                                          ? statusDotColor
+                                          : Colors.white54,
                                       shape: BoxShape.circle,
                                     ),
                                   ),
                                   const SizedBox(width: 7),
                                   Flexible(
                                     child: Text(
-                                      '${household.displaySubtitle} • $memberCount ${memberCount == 1 ? 'member' : 'members'}',
+                                      hasHousehold
+                                          ? '${household.displaySubtitle} • $memberCount ${memberCount == 1 ? 'member' : 'members'}'
+                                          : 'No household yet',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: theme.textTheme.bodySmall?.copyWith(
@@ -367,7 +372,9 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
                         Semantics(
                           button: true,
                           toggled: _isSwitcherExpanded,
-                          label: 'Switch household, ${household.name}',
+                          label: hasHousehold
+                              ? 'Switch household, ${household.name}'
+                              : 'No Household Yet',
                           child: CasamaPressable(
                             key: const Key('drawer_household_switcher_trigger'),
                             enableHaptic: true,
@@ -382,7 +389,9 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
                                 children: [
                                   Flexible(
                                     child: Text(
-                                      household.name,
+                                      hasHousehold
+                                          ? household.name
+                                          : 'No Household Yet',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: theme.textTheme.headlineLarge
@@ -419,132 +428,143 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
                         // Bottom Row Inside Teal Header: Invite Code Pill | Circular Mascot Badge
                         Row(
                           children: [
-                            Expanded(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Semantics(
-                                  button: true,
-                                  container: true,
-                                  excludeSemantics: true,
-                                  label:
-                                      'Copy household invite code ${household.inviteCode}',
-                                  child: CasamaPressable(
-                                    key: const Key(
-                                      'drawer_copy_invite_code_pill',
-                                    ),
-                                    enableHaptic: true,
-                                    onTap: () =>
-                                        _copyInviteCode(household.inviteCode),
-                                    child: Container(
-                                      constraints: const BoxConstraints(
-                                        minHeight: 40,
+                            if (hasHousehold)
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Semantics(
+                                    button: true,
+                                    container: true,
+                                    excludeSemantics: true,
+                                    label:
+                                        'Copy household invite code ${household.inviteCode}',
+                                    child: CasamaPressable(
+                                      key: const Key(
+                                        'drawer_copy_invite_code_pill',
                                       ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 8,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.14,
+                                      enableHaptic: true,
+                                      onTap: () =>
+                                          _copyInviteCode(household.inviteCode),
+                                      child: Container(
+                                        constraints: const BoxConstraints(
+                                          minHeight: 40,
                                         ),
-                                        borderRadius:
-                                            CasamaSpacing.roundedPill,
-                                        border: Border.all(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
                                           color: Colors.white.withValues(
-                                            alpha: 0.18,
+                                            alpha: 0.14,
                                           ),
-                                          width: 1,
+                                          borderRadius:
+                                              CasamaSpacing.roundedPill,
+                                          border: Border.all(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.18,
+                                            ),
+                                            width: 1,
+                                          ),
                                         ),
-                                      ),
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              'INVITE CODE: ',
-                                              style: theme.textTheme.labelSmall
-                                                  ?.copyWith(
-                                                    color: Colors.white
-                                                        .withValues(alpha: 0.82),
-                                                    fontSize: 10.5,
-                                                    fontWeight: FontWeight.w600,
-                                                    letterSpacing: 0.4,
-                                                  ),
-                                            ),
-                                            Text(
-                                              household.inviteCode,
-                                              style: theme
-                                                  .textTheme
-                                                  .labelMedium
-                                                  ?.tabular
-                                                  .copyWith(
-                                                    color: Colors.white,
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w800,
-                                                    letterSpacing: 0.9,
-                                                  ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            AnimatedSwitcher(
-                                              duration: CasamaMotion.resolve(
-                                                context,
-                                                CasamaMotion.press,
-                                              ),
-                                              child: _copiedInviteCode
-                                                  ? Row(
-                                                      key: const ValueKey(
-                                                        'copied_state',
-                                                      ),
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Icon(
-                                                          Icons
-                                                              .check_circle_rounded,
-                                                          size: 14,
-                                                          color: statusDotColor,
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 3,
-                                                        ),
-                                                        Text(
-                                                          'Copied',
-                                                          style: theme
-                                                              .textTheme
-                                                              .labelSmall
-                                                              ?.copyWith(
-                                                                color:
-                                                                    statusDotColor,
-                                                                fontSize: 10.5,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w700,
-                                                              ),
-                                                        ),
-                                                      ],
-                                                    )
-                                                  : Icon(
-                                                      Icons.copy_rounded,
-                                                      key: const ValueKey(
-                                                        'copy_state',
-                                                      ),
-                                                      size: 14,
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                'INVITE CODE: ',
+                                                style: theme
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
                                                       color: Colors.white
                                                           .withValues(
-                                                            alpha: 0.88,
+                                                            alpha: 0.82,
                                                           ),
+                                                      fontSize: 10.5,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      letterSpacing: 0.4,
                                                     ),
-                                            ),
-                                          ],
+                                              ),
+                                              Text(
+                                                household.inviteCode,
+                                                style: theme
+                                                    .textTheme
+                                                    .labelMedium
+                                                    ?.tabular
+                                                    .copyWith(
+                                                      color: Colors.white,
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      letterSpacing: 0.9,
+                                                    ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              AnimatedSwitcher(
+                                                duration: CasamaMotion.resolve(
+                                                  context,
+                                                  CasamaMotion.press,
+                                                ),
+                                                child: _copiedInviteCode
+                                                    ? Row(
+                                                        key: const ValueKey(
+                                                          'copied_state',
+                                                        ),
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .check_circle_rounded,
+                                                            size: 14,
+                                                            color:
+                                                                statusDotColor,
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 3,
+                                                          ),
+                                                          Text(
+                                                            'Copied',
+                                                            style: theme
+                                                                .textTheme
+                                                                .labelSmall
+                                                                ?.copyWith(
+                                                                  color:
+                                                                      statusDotColor,
+                                                                  fontSize:
+                                                                      10.5,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w700,
+                                                                ),
+                                                          ),
+                                                        ],
+                                                      )
+                                                    : Icon(
+                                                        Icons.copy_rounded,
+                                                        key: const ValueKey(
+                                                          'copy_state',
+                                                        ),
+                                                        size: 14,
+                                                        color: Colors.white
+                                                            .withValues(
+                                                              alpha: 0.88,
+                                                            ),
+                                                      ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ),
+                              )
+                            else
+                              const Spacer(),
                             const SizedBox(width: 10),
                             Container(
                               width: 44,
@@ -636,6 +656,65 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
                                 : const SizedBox.shrink(),
                           ),
 
+                        if (!hasHousehold) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              left: 4,
+                              bottom: 10,
+                            ),
+                            child: Text(
+                              'GET STARTED',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: pal.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: context.isDark
+                                  ? pal.card
+                                  : CasamaColors.authCream,
+                              borderRadius: CasamaSpacing.roundedCard,
+                              border: Border.all(color: pal.border, width: 1),
+                            ),
+                            child: Column(
+                              children: [
+                                _SwitcherActionRow(
+                                  key: const Key(
+                                    'drawer_join_household_action',
+                                  ),
+                                  icon: Icons.vpn_key_outlined,
+                                  iconBg: pal.softSage,
+                                  iconColor: pal.forestTeal,
+                                  label: 'Join with Invite Code',
+                                  labelColor: pal.textPrimary,
+                                  onTap: _openJoinHouseholdSheet,
+                                ),
+                                Divider(
+                                  height: 1,
+                                  indent: 56,
+                                  color: pal.divider,
+                                ),
+                                _SwitcherActionRow(
+                                  key: const Key(
+                                    'drawer_create_household_action',
+                                  ),
+                                  icon: Icons.add_rounded,
+                                  iconBg: pal.softBlush,
+                                  iconColor: pal.primaryCoral,
+                                  label: 'Create New Household',
+                                  labelColor: pal.primaryCoral,
+                                  onTap: _openCreateHouseholdSheet,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: CasamaSpacing.md),
+                        ],
+
                         // Micro-header
                         Padding(
                           padding: const EdgeInsets.only(left: 4, bottom: 10),
@@ -651,14 +730,15 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
                         ),
 
                         // Casama Leaderboard Navigation Item
-                        _DrawerHighlightNavCard(
-                          icon: Icons.emoji_events_rounded,
-                          iconBg: pal.amberBg,
-                          iconColor: pal.amberFg,
-                          title: 'Casama Leaderboard',
-                          subtitle: 'Household standings & point rules',
-                          onTap: _openLeaderboard,
-                        ),
+                        if (hasHousehold)
+                          _DrawerHighlightNavCard(
+                            icon: Icons.emoji_events_rounded,
+                            iconBg: pal.amberBg,
+                            iconColor: pal.amberFg,
+                            title: 'Casama Leaderboard',
+                            subtitle: 'Household standings & point rules',
+                            onTap: _openLeaderboard,
+                          ),
                       ],
                     ),
                   ),

@@ -6,22 +6,24 @@ import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
-import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_text_field.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 
-/// Standalone route view (`/create-meetup`) complementing [showCreateMeetupSheet].
-class CreateMeetupScreen extends ConsumerStatefulWidget {
-  const CreateMeetupScreen({super.key});
+/// Standalone route view (`/plan-agenda`) complementing
+/// [showPlanHousematesAgendaSheet].
+class PlanHousematesAgendaScreen extends ConsumerStatefulWidget {
+  const PlanHousematesAgendaScreen({super.key});
 
   @override
-  ConsumerState<CreateMeetupScreen> createState() => _CreateMeetupScreenState();
+  ConsumerState<PlanHousematesAgendaScreen> createState() =>
+      _PlanHousematesAgendaScreenState();
 }
 
-class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
-  final _activityController = TextEditingController(text: 'Study Session 🎓');
-  final _locationController = TextEditingController(text: 'Dorm Common Area');
+class _PlanHousematesAgendaScreenState
+    extends ConsumerState<PlanHousematesAgendaScreen> {
+  final _activityController = TextEditingController(text: 'Study Session');
+  final _locationController = TextEditingController(text: 'Online / Discord');
   final _timeController = TextEditingController(text: 'Today • 7:00 PM');
 
   @override
@@ -32,11 +34,19 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
     super.dispose();
   }
 
-  void _sendInvitation() {
+  void _sendAgenda() {
     final activity = _activityController.text.trim();
     final location = _locationController.text.trim();
+    if (activity.isEmpty || location.isEmpty) {
+      showCasamaToast(
+        context,
+        'Please enter an activity and location or link.',
+        icon: Icons.info_outline_rounded,
+      );
+      return;
+    }
 
-    ref.read(repositoryProvider).createMeetUp(
+    ref.read(repositoryProvider).createHousematesAgendaInvitation(
       activity: activity,
       location: location,
       scheduledTime: DateTime.now().add(const Duration(hours: 3)),
@@ -46,7 +56,7 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
     }
     showCasamaToast(
       context,
-      'Meet-up invitation sent to housemates!',
+      'Housemates agenda sent to household!',
       icon: Icons.check_circle_outline_rounded,
     );
   }
@@ -70,8 +80,9 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               CasamaWaveHeader(
-                title: 'Create Meet-up',
-                subtitle: 'Suggest a time & spot for ${repo.currentHousehold.name}',
+                title: 'Plan Housemates Agenda',
+                subtitle:
+                    'Suggest an activity, link, or spot for ${repo.currentHousehold.name}',
                 compact: true,
                 onBackTap: () {
                   if (Navigator.canPop(context)) {
@@ -89,7 +100,6 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Transparent PNG Mascot Split Hero
                         Transform.translate(
                           offset: const Offset(0, -14),
                           child: Row(
@@ -115,7 +125,7 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'HOUSEHOLD HANGOUT',
+                                          'HOUSEMATES AGENDA',
                                           style: theme.textTheme.labelSmall
                                               ?.copyWith(
                                                 color: pal.textSecondary,
@@ -147,6 +157,7 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
                               CasamaTextField(
                                 controller: _activityController,
                                 label: 'Activity',
+                                hint: "What's the agenda?",
                                 prefixIcon: Icons.calendar_today_outlined,
                                 textCapitalization:
                                     TextCapitalization.sentences,
@@ -154,7 +165,9 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
                               const SizedBox(height: CasamaSpacing.md),
                               CasamaTextField(
                                 controller: _locationController,
-                                label: 'Location',
+                                label: 'Location / Link',
+                                hint:
+                                    'Where or what link? (e.g. Discord, Kitchen)',
                                 prefixIcon: Icons.location_on_outlined,
                                 textCapitalization: TextCapitalization.words,
                               ),
@@ -164,61 +177,15 @@ class _CreateMeetupScreenState extends ConsumerState<CreateMeetupScreen> {
                                 label: 'Time',
                                 prefixIcon: Icons.access_time_rounded,
                               ),
-                              const SizedBox(height: CasamaSpacing.md),
-                              Text(
-                                'INVITEES (${repo.members.length})',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: pal.textSecondary,
-                                  letterSpacing: 0.6,
-                                ),
-                              ),
-                              const SizedBox(height: CasamaSpacing.xs),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: repo.members.map((m) {
-                                  return Container(
-                                    padding: const EdgeInsets.only(
-                                      left: 4,
-                                      right: 10,
-                                      top: 4,
-                                      bottom: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: pal.track,
-                                      borderRadius: CasamaSpacing.roundedPill,
-                                      border: Border.all(color: pal.border),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        CasamaAvatar(
-                                          radius: 13,
-                                          avatarUrl: m.profile.avatarUrl,
-                                          name: m.profile.displayName,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          m.profile.displayName,
-                                          style: theme.textTheme.labelMedium
-                                              ?.copyWith(
-                                                color: pal.textPrimary,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
                             ],
                           ),
                         ),
                         const SizedBox(height: CasamaSpacing.lg),
 
                         CasamaButton(
-                          label: 'Send Invitation',
+                          label: 'Send Agenda',
                           icon: Icons.send_rounded,
-                          onPressed: _sendInvitation,
+                          onPressed: _sendAgenda,
                           height: 52,
                         ),
                       ],

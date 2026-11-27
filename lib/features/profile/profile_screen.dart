@@ -43,7 +43,11 @@ class ProfileScreen extends ConsumerWidget {
         ? CasamaBreakpoints.maxContentWidth
         : double.infinity;
 
-    final displayName = user.fullName ?? user.displayName;
+    final primaryName = user.preferredName;
+    final displayName =
+        (user.fullName != null && user.fullName!.trim().isNotEmpty)
+        ? user.fullName!.trim()
+        : user.preferredName;
     final nicknameText =
         user.nickname != null && user.nickname!.trim().isNotEmpty
         ? user.nickname!.trim()
@@ -63,7 +67,9 @@ class ProfileScreen extends ConsumerWidget {
               // 1. Stepped Forest Teal Wave Header
               CasamaWaveHeader(
                 title: 'Profile',
-                subtitle: '${repo.currentHousehold.name} • Member',
+                subtitle: repo.hasActiveHousehold
+                    ? '${repo.currentHousehold.name} • Member'
+                    : 'No household yet',
                 showNotificationBell: true,
                 onMenuTap: () => _openDrawer(context),
               ),
@@ -123,7 +129,7 @@ class ProfileScreen extends ConsumerWidget {
                                           child: CasamaAvatar(
                                             avatarUrl: user.avatarUrl,
                                             radius: 42,
-                                            name: displayName,
+                                            name: primaryName,
                                           ),
                                         ),
                                       ),
@@ -158,7 +164,7 @@ class ProfileScreen extends ConsumerWidget {
                             const SizedBox(height: 12),
 
                             Text(
-                              displayName,
+                              primaryName,
                               textAlign: TextAlign.center,
                               style: theme.textTheme.headlineMedium?.copyWith(
                                 fontSize: 22,
@@ -168,10 +174,9 @@ class ProfileScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              user.nickname != null &&
-                                      user.nickname!.trim().isNotEmpty
-                                  ? '"${user.nickname!.trim()}" • ${user.handle} • ${repo.currentHousehold.name}'
-                                  : '${user.handle} • ${repo.currentHousehold.name}',
+                              displayName != primaryName
+                                  ? '$displayName • ${user.handle} • ${repo.hasActiveHousehold ? repo.currentHousehold.name : 'No household yet'}'
+                                  : '${user.handle} • ${repo.hasActiveHousehold ? repo.currentHousehold.name : 'No household yet'}',
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodySmall?.copyWith(
                                 fontSize: 13.5,
@@ -248,7 +253,9 @@ class ProfileScreen extends ConsumerWidget {
                                           runSpacing: 4,
                                           children: [
                                             Text(
-                                              '${repo.kasamaPoints} pts',
+                                              repo.hasActiveHousehold
+                                                  ? '${repo.kasamaPoints} pts'
+                                                  : '0 pts',
                                               style: theme
                                                   .textTheme
                                                   .titleLarge
@@ -266,17 +273,22 @@ class ProfileScreen extends ConsumerWidget {
                                                     vertical: 3,
                                                   ),
                                               decoration: BoxDecoration(
-                                                color: pal.amberBg,
+                                                color: repo.hasActiveHousehold
+                                                    ? pal.amberBg
+                                                    : pal.track,
                                                 borderRadius:
                                                     CasamaSpacing.roundedPill,
                                                 border: Border.all(
-                                                  color: pal.amberFg.withValues(
-                                                    alpha: 0.35,
-                                                  ),
+                                                  color: (repo.hasActiveHousehold
+                                                          ? pal.amberFg
+                                                          : pal.textMuted)
+                                                      .withValues(alpha: 0.35),
                                                 ),
                                               ),
                                               child: Text(
-                                                'Gold Tier',
+                                                repo.hasActiveHousehold
+                                                    ? 'Gold Tier'
+                                                    : 'No household yet',
                                                 style: theme
                                                     .textTheme
                                                     .labelSmall
@@ -284,7 +296,9 @@ class ProfileScreen extends ConsumerWidget {
                                                       fontSize: 10.5,
                                                       fontWeight:
                                                           FontWeight.w700,
-                                                      color: pal.amberFg,
+                                                      color: repo.hasActiveHousehold
+                                                          ? pal.amberFg
+                                                          : pal.textSecondary,
                                                     ),
                                               ),
                                             ),
@@ -292,7 +306,9 @@ class ProfileScreen extends ConsumerWidget {
                                         ),
                                         const SizedBox(height: 3),
                                         Text(
-                                          'View leaderboard & points history',
+                                          repo.hasActiveHousehold
+                                              ? 'View leaderboard & points history'
+                                              : 'Join or create a household to earn points',
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(
                                                 fontSize: 12,
@@ -303,7 +319,8 @@ class ProfileScreen extends ConsumerWidget {
                                       ],
                                     ),
                                   ),
-                                  IconButton(
+                                  if (repo.hasActiveHousehold)
+                                    IconButton(
                                     tooltip: 'Casama Leaderboard',
                                     icon: Icon(
                                       Icons.chevron_right_rounded,

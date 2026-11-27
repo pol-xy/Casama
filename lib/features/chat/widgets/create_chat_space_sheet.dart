@@ -72,7 +72,7 @@ class _CreateChatSpaceBodyState extends ConsumerState<_CreateChatSpaceBody> {
       name: name,
       description: desc.isNotEmpty ? desc : 'Household Chat Space',
       iconEmoji: _selectedEmoji,
-      initialMembers: repo.members.map((m) => m.profile.displayName).toList(),
+      initialMembers: repo.members.map((m) => m.preferredName).toList(),
     );
 
     Navigator.of(context).pop();

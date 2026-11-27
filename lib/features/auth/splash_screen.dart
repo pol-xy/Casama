@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../core/router/app_router.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
@@ -159,9 +160,9 @@ class SplashScreen extends ConsumerWidget {
                                 icon: Icons.arrow_forward_rounded,
                                 iconAfterLabel: true,
                                 onPressed: () => context.go(
-                                  repo.hasActiveHousehold
-                                      ? '/dashboard'
-                                      : '/household-setup',
+                                  resolveAuthenticatedDestination(
+                                    repo.currentUser,
+                                  ),
                                 ),
                                 height: 52,
                               ),

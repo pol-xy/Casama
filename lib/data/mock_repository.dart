@@ -33,8 +33,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   bool _isAuthenticated = false;
   bool get isAuthenticated => _isAuthenticated;
   bool get hasActiveHousehold => _currentHousehold.id.isNotEmpty;
-  DateTime? _lastRouletteSpinAt;
-  DateTime? get lastRouletteSpinAt => _lastRouletteSpinAt;
   RepositoryActionError? consumePendingError() => null;
 
   Future<void> restoreSession() async {}
@@ -83,14 +81,15 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       kasamaPoints: _kasamaPoints,
       groupChatUnreadCount: _groupChatUnreadCount,
       notifications: List<HouseholdNotificationItem>.from(_notifications),
-      lastRouletteSpinAt: _lastRouletteSpinAt,
       members: List<MemberPresence>.from(_members),
       parcels: List<ParcelItem>.from(_parcels),
       items: List<LostFoundItem>.from(_items),
       tasks: List<MaintenanceTask>.from(_tasks),
-      bills: List<HouseholdBill>.from(_bills),
-      meetUpInvitations: List<MeetUpInvitation>.from(_meetUpInvitations),
-      activeMeetUp: _activeMeetUp,
+      rouletteRecords: List<ChoreRouletteRecord>.from(_rouletteRecords),
+      housematesAgendaInvitations: List<HousematesAgendaInvitation>.from(
+        _housematesAgendaInvitations,
+      ),
+      activeHousematesAgenda: _activeHousematesAgenda,
       groupMessages: List<ChatMessage>.from(_groupMessages),
       chatSpaces: List<ChatSpace>.from(_chatSpaces),
       directMessages: {
@@ -111,7 +110,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _notifications
       ..clear()
       ..addAll(ws.notifications);
-    _lastRouletteSpinAt = ws.lastRouletteSpinAt;
     _members
       ..clear()
       ..addAll(ws.members);
@@ -124,13 +122,13 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _tasks
       ..clear()
       ..addAll(ws.tasks);
-    _bills
+    _rouletteRecords
       ..clear()
-      ..addAll(ws.bills);
-    _meetUpInvitations
+      ..addAll(ws.rouletteRecords);
+    _housematesAgendaInvitations
       ..clear()
-      ..addAll(ws.meetUpInvitations);
-    _activeMeetUp = ws.activeMeetUp;
+      ..addAll(ws.housematesAgendaInvitations);
+    _activeHousematesAgenda = ws.activeHousematesAgenda;
     _groupMessages
       ..clear()
       ..addAll(ws.groupMessages);
@@ -232,7 +230,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _kasamaPoints = 0;
     _groupChatUnreadCount = 0;
     _notifications.clear();
-    _lastRouletteSpinAt = null;
     _members
       ..clear()
       ..add(
@@ -245,9 +242,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _parcels.clear();
     _items.clear();
     _tasks.clear();
-    _bills.clear();
-    _meetUpInvitations.clear();
-    _activeMeetUp = MeetUpInvitation(
+    _rouletteRecords.clear();
+    _housematesAgendaInvitations.clear();
+    _activeHousematesAgenda = HousematesAgendaInvitation(
       id: 'placeholder_$newId',
       activity: '',
       location: '',
@@ -305,7 +302,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _kasamaPoints = 0;
     _groupChatUnreadCount = 0;
     _notifications.clear();
-    _lastRouletteSpinAt = null;
     _members
       ..clear()
       ..add(
@@ -318,9 +314,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _parcels.clear();
     _items.clear();
     _tasks.clear();
-    _bills.clear();
-    _meetUpInvitations.clear();
-    _activeMeetUp = MeetUpInvitation(
+    _rouletteRecords.clear();
+    _housematesAgendaInvitations.clear();
+    _activeHousematesAgenda = HousematesAgendaInvitation(
       id: 'placeholder_$newId',
       activity: '',
       location: '',
@@ -347,7 +343,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       return [
         LeaderboardStanding(
           userId: _currentUser.id,
-          displayName: _currentUser.fullName ?? _currentUser.displayName,
+          displayName: _currentUser.preferredName,
           handle: _currentUser.handle,
           avatarUrl: _currentUser.avatarUrl,
           points: _kasamaPoints,
@@ -381,9 +377,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       final isMe = m.profile.id == _currentUser.id;
       return LeaderboardStanding(
         userId: m.profile.id,
-        displayName: isMe
-            ? (_currentUser.fullName ?? _currentUser.displayName)
-            : (m.profile.fullName ?? m.profile.displayName),
+        displayName: isMe ? _currentUser.preferredName : m.preferredName,
         handle: m.profile.handle,
         avatarUrl: m.profile.avatarUrl,
         points: isMe ? _kasamaPoints : (_memberBonusPoints[m.profile.id] ?? 0),
@@ -474,8 +468,65 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     }
   }
 
-  List<HouseholdNotificationItem> get notifications =>
-      List.unmodifiable(_notifications);
+  List<HouseholdNotificationItem> get notifications => List.unmodifiable(
+    _notifications.where((n) => n.isSupportedNotification),
+  );
+
+  void _pushNotification({
+    required String type,
+    required String title,
+    required String subtitle,
+    Map<String, dynamic> payload = const {},
+  }) {
+    final now = DateTime.now();
+    _notifications.insert(
+      0,
+      HouseholdNotificationItem(
+        id: 'notif_${now.microsecondsSinceEpoch}_${++_nextIdSeq}',
+        type: type,
+        title: title,
+        subtitle: subtitle,
+        createdAt: now,
+        isRead: false,
+        payload: {
+          'title': title,
+          'message': subtitle,
+          'actor_id': _currentUser.id,
+          'actor_name': _currentUser.displayName,
+          ...payload,
+        },
+      ),
+    );
+  }
+
+  void _purgeNotificationsForEntity({
+    required String entityType,
+    required String entityId,
+  }) {
+    _notifications.removeWhere(
+      (n) => n.matchesEntity(entityType: entityType, entityId: entityId),
+    );
+  }
+
+  void deleteParcelForTest(String parcelId) {
+    _parcels.removeWhere((p) => p.id == parcelId);
+    _purgeNotificationsForEntity(entityType: 'parcel', entityId: parcelId);
+    notifyListeners();
+  }
+
+  void deleteTaskForTest(String taskId) {
+    _tasks.removeWhere((t) => t.id == taskId);
+    _rouletteRecords.removeWhere((r) => r.taskId == taskId);
+    _purgeNotificationsForEntity(entityType: 'task', entityId: taskId);
+    notifyListeners();
+  }
+
+  void deleteItemForTest(String itemId) {
+    _items.removeWhere((i) => i.id == itemId);
+    _purgeNotificationsForEntity(entityType: 'lost_item', entityId: itemId);
+    _purgeNotificationsForEntity(entityType: 'found_item', entityId: itemId);
+    notifyListeners();
+  }
 
   void setNotificationsForTest(List<HouseholdNotificationItem> items) {
     _notifications
@@ -516,34 +567,40 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   final List<ParcelItem> _parcels = [];
   final List<LostFoundItem> _items = [];
   final List<MaintenanceTask> _tasks = [];
-  final List<HouseholdBill> _bills = [];
-  final List<MeetUpInvitation> _meetUpInvitations = [];
-  MeetUpInvitation _activeMeetUp = MeetUpInvitation(
-    id: 'placeholder_m',
-    activity: '',
-    location: '',
-    scheduledTime: DateTime.now().add(const Duration(days: 30)),
-    goingCount: 0,
-    maybeCount: 0,
-    cantMakeCount: 0,
-  );
+  final List<ChoreRouletteRecord> _rouletteRecords = [];
+  final List<HousematesAgendaInvitation> _housematesAgendaInvitations = [];
+  HousematesAgendaInvitation _activeHousematesAgenda =
+      HousematesAgendaInvitation(
+        id: 'placeholder_m',
+        activity: '',
+        location: '',
+        scheduledTime: DateTime.now().add(const Duration(days: 30)),
+        goingCount: 0,
+        maybeCount: 0,
+        cantMakeCount: 0,
+      );
 
-  void _recomputeActiveMeetUp() {
-    final active = _meetUpInvitations
+  void _recomputeActiveHousematesAgenda() {
+    final active = _housematesAgendaInvitations
         .where((m) => m.hasValidData && m.isActive)
         .toList()
-      ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
+      ..sort((a, b) {
+        if (a.isOngoing != b.isOngoing) return a.isOngoing ? -1 : 1;
+        return a.scheduledTime.compareTo(b.scheduledTime);
+      });
     if (active.isNotEmpty) {
-      _activeMeetUp = active.first;
+      _activeHousematesAgenda = active.first;
       return;
     }
-    final valid = _meetUpInvitations.where((m) => m.hasValidData).toList()
+    final valid = _housematesAgendaInvitations
+        .where((m) => m.hasValidData)
+        .toList()
       ..sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
     if (valid.isNotEmpty) {
-      _activeMeetUp = valid.first;
+      _activeHousematesAgenda = valid.first;
       return;
     }
-    _activeMeetUp = MeetUpInvitation(
+    _activeHousematesAgenda = HousematesAgendaInvitation(
       id: 'placeholder_m',
       activity: '',
       location: '',
@@ -731,8 +788,8 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       ),
     ]);
 
-    // Meet-up Invitation
-    final seededMeetup = MeetUpInvitation(
+    // Housemates Agenda Invitation
+    final seededAgenda = HousematesAgendaInvitation(
       id: 'm1',
       creatorId: _currentUser.id,
       activity: 'Study Session 🎓',
@@ -744,7 +801,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       currentUserResponse: 'going',
       responders: [
         for (var i = 0; i < _members.length && i < 4; i++)
-          MeetUpResponder(
+          HousematesAgendaResponse(
             userId: _members[i].profile.id,
             displayName: _members[i].profile.displayName,
             avatarUrl: _members[i].profile.avatarUrl,
@@ -752,10 +809,10 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
           ),
       ],
     );
-    _meetUpInvitations
+    _housematesAgendaInvitations
       ..clear()
-      ..add(seededMeetup);
-    _activeMeetUp = seededMeetup;
+      ..add(seededAgenda);
+    _activeHousematesAgenda = seededAgenda;
 
     // Group Messages
     _groupMessages.addAll([
@@ -880,73 +937,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       ],
     });
 
-    // Household bills
-    _bills.addAll([
-      HouseholdBill(
-        id: 'bill_1',
-        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        creatorId: '11111111-1111-1111-1111-111111111111',
-        creatorName: 'Jon Paul',
-        category: BillCategory.electricity,
-        billName: 'Meralco Bill',
-        amount: 2500.00,
-        deadline: DateTime.now().add(const Duration(days: 5)),
-        reminderEnabled: true,
-        reminderTiming: ReminderTiming.oneDayBefore,
-        recipientType: BillRecipientType.allMembers,
-        responsibleMember: 'Jon Paul',
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      ),
-      HouseholdBill(
-        id: 'bill_2',
-        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        creatorId: '22222222-2222-2222-2222-222222222222',
-        creatorName: 'Maria',
-        category: BillCategory.water,
-        billName: 'MWSS Water Bill',
-        amount: 850.00,
-        deadline: DateTime.now().add(const Duration(days: 12)),
-        reminderEnabled: true,
-        reminderTiming: ReminderTiming.threeDaysBefore,
-        recipientType: BillRecipientType.allMembers,
-        responsibleMember: 'Maria',
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      ),
-      HouseholdBill(
-        id: 'bill_3',
-        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        creatorId: '11111111-1111-1111-1111-111111111111',
-        creatorName: 'Jon Paul',
-        category: BillCategory.internet,
-        billName: 'PLDT Wi-Fi',
-        amount: 1299.00,
-        deadline: DateTime.now().subtract(const Duration(days: 3)),
-        reminderEnabled: false,
-        reminderTiming: ReminderTiming.oneDayBefore,
-        recipientType: BillRecipientType.allMembers,
-        responsibleMember: 'Alex',
-        createdAt: DateTime.now().subtract(const Duration(days: 10)),
-      ),
-      HouseholdBill(
-        id: 'bill_4',
-        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        creatorId: '33333333-3333-3333-3333-333333333333',
-        creatorName: 'Alex',
-        category: BillCategory.rent,
-        billName: 'Monthly Rent',
-        amount: 15000.00,
-        deadline: DateTime.now().add(const Duration(days: 20)),
-        reminderEnabled: true,
-        reminderTiming: ReminderTiming.oneWeekBefore,
-        recipientType: BillRecipientType.allMembers,
-        responsibleMember: 'Jon Paul',
-        createdAt: DateTime.now().subtract(const Duration(days: 5)),
-        status: BillStatus.paid,
-        paidAt: DateTime.now().subtract(const Duration(days: 1)),
-        paidByName: 'Jon Paul',
-      ),
-    ]);
-
     // Household invitations
     _invitations.addAll([
       HouseholdInvitation(
@@ -1041,25 +1031,18 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   List<ParcelItem> get parcels => List.unmodifiable(_parcels);
   List<LostFoundItem> get items => List.unmodifiable(_items);
   List<MaintenanceTask> get tasks => List.unmodifiable(_tasks);
-  MeetUpInvitation get activeMeetUp => _activeMeetUp;
-  List<MeetUpInvitation> get meetUpInvitations =>
-      List.unmodifiable(_meetUpInvitations);
-
-  /// Bills getter — auto-detects overdue on read
-  List<HouseholdBill> get bills {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    return List.unmodifiable(
-      _bills.map((b) {
-        if (b.status == BillStatus.paid) return b;
-        final dl = DateTime(b.deadline.year, b.deadline.month, b.deadline.day);
-        if (dl.isBefore(today)) {
-          return b.copyWith(status: BillStatus.overdue);
-        }
-        return b;
-      }).toList(),
-    );
+  List<ChoreRouletteRecord> get rouletteRecords =>
+      List.unmodifiable(_rouletteRecords);
+  ChoreRouletteRecord? rouletteRecordForTask(String taskId) {
+    for (final r in _rouletteRecords) {
+      if (r.taskId == taskId) return r;
+    }
+    return null;
   }
+  HousematesAgendaInvitation get activeHousematesAgenda =>
+      _activeHousematesAgenda;
+  List<HousematesAgendaInvitation> get housematesAgendaInvitations =>
+      List.unmodifiable(_housematesAgendaInvitations);
 
   List<ChatMessage> get groupMessages => List.unmodifiable(_groupMessages);
   List<ChatMessage> getDirectMessages(String contactKey) =>
@@ -1069,7 +1052,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   List<ChatSpace> get chatSpaces => List.unmodifiable(_chatSpaces);
   int get groupChatUnreadCount => _groupChatUnreadCount;
   int get unreadNotificationCount =>
-      _notifications.where((n) => n.isUnread).length;
+      _notifications.where((n) => n.isSupportedNotification && n.isUnread).length;
   int get totalUnreadChatCount =>
       _groupChatUnreadCount +
       _chatSpaces.fold<int>(0, (sum, s) => sum + s.unreadCount) +
@@ -1156,10 +1139,17 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _isAuthenticated = true;
     if (email != null && email.contains('@') && !email.startsWith('jp@')) {
       final name = email.split('@').first;
+      final userId = 'usr_${email.hashCode}';
       _currentUser = UserProfile(
-        id: 'usr_${email.hashCode}',
+        id: userId,
         displayName: name,
-        handle: '@$name',
+        handle: UserProfile.buildFallbackHandle(
+          preferred: name,
+          userId: userId,
+        ),
+        fullName: name,
+        nickname: name,
+        birthday: DateTime(2000, 1, 1),
         hasConsentedTerms: true,
         hasCompletedOnboarding: true,
       );
@@ -1174,12 +1164,12 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       _parcels.clear();
       _items.clear();
       _tasks.clear();
-      _bills.clear();
+      _rouletteRecords.clear();
       _chatSpaces.clear();
       _directMessages.clear();
       _groupMessages.clear();
-      _meetUpInvitations.clear();
-      _activeMeetUp = MeetUpInvitation(
+      _housematesAgendaInvitations.clear();
+      _activeHousematesAgenda = HousematesAgendaInvitation(
         id: 'placeholder_m',
         activity: '',
         location: '',
@@ -1206,9 +1196,13 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   void register({required String email, required String password}) {
     _isAuthenticated = true;
     final name = email.split('@').first;
-    final handle = '@$name';
+    final userId = 'usr_${DateTime.now().millisecondsSinceEpoch}';
+    final handle = UserProfile.buildFallbackHandle(
+      preferred: name,
+      userId: userId,
+    );
     _currentUser = UserProfile(
-      id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
+      id: userId,
       displayName: name,
       handle: handle,
       fullName: null,
@@ -1218,18 +1212,14 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       hasConsentedTerms: false,
       hasCompletedOnboarding: false,
     );
+    _currentHousehold = const Household(id: '', name: '', inviteCode: '');
+    _workspaces.clear();
+    _householdOrder.clear();
     _members.clear();
-    _members.add(
-      MemberPresence(
-        profile: _currentUser,
-        isHome: true,
-        updatedAt: DateTime.now(),
-      ),
-    );
     _parcels.clear();
     _items.clear();
     _tasks.clear();
-    _bills.clear();
+    _rouletteRecords.clear();
     _chatSpaces.clear();
     _directMessages.clear();
     _directUnreadCounts.clear();
@@ -1240,8 +1230,8 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _kasamaPoints = 0;
     _groupChatUnreadCount = 0;
     _notifications.clear();
-    _meetUpInvitations.clear();
-    _activeMeetUp = MeetUpInvitation(
+    _housematesAgendaInvitations.clear();
+    _activeHousematesAgenda = HousematesAgendaInvitation(
       id: 'placeholder_m',
       activity: '',
       location: '',
@@ -1250,7 +1240,38 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       maybeCount: 0,
       cantMakeCount: 0,
     );
-    _ensureCurrentWorkspaceRegistered();
+    notifyListeners();
+  }
+
+  void clearActiveHouseholdForTest() {
+    _currentHousehold = const Household(id: '', name: '', inviteCode: '');
+    _workspaces.clear();
+    _householdOrder.clear();
+    _members.clear();
+    _parcels.clear();
+    _items.clear();
+    _tasks.clear();
+    _rouletteRecords.clear();
+    _chatSpaces.clear();
+    _directMessages.clear();
+    _directUnreadCounts.clear();
+    _groupMessages.clear();
+    _invitations.clear();
+    _pointHistory.clear();
+    _quickSnaps.clear();
+    _kasamaPoints = 0;
+    _groupChatUnreadCount = 0;
+    _notifications.clear();
+    _housematesAgendaInvitations.clear();
+    _activeHousematesAgenda = HousematesAgendaInvitation(
+      id: 'placeholder_m',
+      activity: '',
+      location: '',
+      scheduledTime: DateTime.now().add(const Duration(days: 30)),
+      goingCount: 0,
+      maybeCount: 0,
+      cantMakeCount: 0,
+    );
     notifyListeners();
   }
 
@@ -1282,10 +1303,22 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
             ? fullName.trim()
             : _currentUser.displayName);
 
+    final trimmedExplicitHandle = handle?.trim();
+    final existingHandle = _currentUser.handle.trim();
+    final effectiveHandle =
+        (trimmedExplicitHandle != null && trimmedExplicitHandle.isNotEmpty)
+            ? trimmedExplicitHandle
+            : (!UserProfile.isPlaceholderHandle(existingHandle)
+                ? existingHandle
+                : UserProfile.buildFallbackHandle(
+                    preferred: nickname ?? displayName ?? effectiveFullName,
+                    userId: _currentUser.id,
+                  ));
+
     _currentUser = UserProfile(
       id: _currentUser.id,
       displayName: effectiveDisplayName,
-      handle: handle ?? _currentUser.handle,
+      handle: effectiveHandle,
       fullName: effectiveFullName,
       nickname: clearNickname ? null : (nickname ?? _currentUser.nickname),
       birthday: clearBirthday ? null : (normalizedBirthday ?? _currentUser.birthday),
@@ -1359,7 +1392,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       _members[index] = MemberPresence(
         profile: _members[index].profile,
         isHome: isHome,
-        note: note ?? _members[index].note,
+        note: note,
         updatedAt: DateTime.now(),
       );
       notifyListeners();
@@ -1407,6 +1440,22 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
           ),
         );
       }
+      _pushNotification(
+        type: 'parcel_claimed',
+        title: '${_currentUser.displayName} received ${p.courier} parcel',
+        subtitle: isSelfClaim
+            ? 'Marked your ${p.courier} delivery as received.'
+            : 'Earned +5 pts claiming ${p.buyerName}\'s ${p.courier} delivery.',
+        payload: {
+          'entity_type': 'parcel',
+          'entity_id': p.id,
+          'parcel_id': p.id,
+          'courier': p.courier,
+          'receiver_id': _currentUser.id,
+          'receiver_name': _currentUser.displayName,
+          if (!isSelfClaim) 'points': 5,
+        },
+      );
       notifyListeners();
     }
   }
@@ -1418,10 +1467,11 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     double? codAmount,
     String? notes,
   }) {
+    final parcelId = 'p_${DateTime.now().millisecondsSinceEpoch}_${++_nextIdSeq}';
     _parcels.insert(
       0,
       ParcelItem(
-        id: 'p_${DateTime.now().millisecondsSinceEpoch}',
+        id: parcelId,
         householdId: _currentHousehold.id,
         buyerId: _currentUser.id,
         buyerName: _currentUser.displayName,
@@ -1434,6 +1484,20 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         availableMemberNames: [_currentUser.displayName],
       ),
     );
+    _pushNotification(
+      type: 'parcel_posted',
+      title: 'New $courier parcel for ${_currentUser.displayName}',
+      subtitle: paymentType == ParcelPaymentType.cod && codAmount != null
+          ? 'COD ₱${codAmount.toStringAsFixed(0)} — check if you can receive it.'
+          : 'Prepaid delivery — tap to mark availability.',
+      payload: {
+        'entity_type': 'parcel',
+        'entity_id': parcelId,
+        'parcel_id': parcelId,
+        'courier': courier,
+        'cod_amount': codAmount,
+      },
+    );
     notifyListeners();
   }
 
@@ -1444,28 +1508,54 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       if (t.status == TaskStatus.done) {
         return; // Prevent duplicate rewards and updates
       }
+      final now = DateTime.now();
       _tasks[index] = t.copyWith(
         status: TaskStatus.done,
         completedById: _currentUser.id,
         completedByName: _currentUser.displayName,
-        completedAt: DateTime.now(),
+        completedAt: now,
       );
+      final rouletteRecord = rouletteRecordForTask(taskId);
+      if (rouletteRecord != null) {
+        final rIdx = _rouletteRecords.indexWhere(
+          (r) => r.id == rouletteRecord.id,
+        );
+        if (rIdx != -1) {
+          _rouletteRecords[rIdx] = _rouletteRecords[rIdx].copyWith(
+            status: 'completed',
+            completedAt: now,
+          );
+        }
+      }
       final isSelfCreated =
           t.createdBy.isNotEmpty && t.createdBy == _currentUser.id;
-      if (!isSelfCreated) {
-        final pts = t.computedPoints;
-        _kasamaPoints += pts;
-        _pointHistory.insert(
-          0,
-          PointAuditEntry(
-            id: 'pa_${DateTime.now().millisecondsSinceEpoch}',
-            title: 'Completed chore: ${t.title}',
-            points: pts,
-            timestamp: DateTime.now(),
-            category: 'task',
-          ),
+      final pts = t.rewardPointsForUser(
+        _currentUser.id,
+        rouletteRecord: rouletteRecord,
+      );
+      if (pts > 0) {
+        _awardPointsToUser(
+          userId: _currentUser.id,
+          points: pts,
+          title: 'Completed task: ${t.title}',
+          category: 'task',
         );
       }
+      _pushNotification(
+        type: 'task_completed',
+        title: '${_currentUser.displayName} completed "${t.title}"',
+        subtitle: isSelfCreated
+            ? 'Task marked as done.'
+            : 'Earned +$pts pts for the household!',
+        payload: {
+          'entity_type': 'task',
+          'entity_id': t.id,
+          'task_id': t.id,
+          'task_title': t.title,
+          'is_self_created': isSelfCreated,
+          'points': pts,
+        },
+      );
       notifyListeners();
     }
   }
@@ -1483,6 +1573,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     if (index == -1) return;
     final p = _parcels[index];
     final nextPay = paymentType ?? p.paymentType;
+    final nextStatus = status ?? p.status;
     _parcels[index] = ParcelItem(
       id: p.id,
       householdId: p.householdId,
@@ -1494,12 +1585,41 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       codAmount: nextPay == ParcelPaymentType.cod
           ? (codAmount ?? p.codAmount)
           : null,
-      status: status ?? p.status,
+      status: nextStatus,
       notes: notes ?? p.notes,
       availableMemberNames: p.availableMemberNames,
       isAllUnavailable: p.isAllUnavailable,
       codSettled: p.codSettled,
+      claimedById: p.claimedById,
+      claimedByName: p.claimedByName,
+      claimedAt: p.claimedAt,
+      settledAt: p.settledAt,
     );
+    if (nextStatus == ParcelStatus.cancelled && p.status != ParcelStatus.cancelled) {
+      _pushNotification(
+        type: 'parcel_cancelled',
+        title: '${p.courier} parcel cancelled',
+        subtitle: '${p.buyerName} cancelled this delivery.',
+        payload: {
+          'entity_type': 'parcel',
+          'entity_id': p.id,
+          'parcel_id': p.id,
+          'courier': p.courier,
+        },
+      );
+    } else if (nextStatus == ParcelStatus.arrived && p.status != ParcelStatus.arrived) {
+      _pushNotification(
+        type: 'parcel_arrived',
+        title: '📦 ${p.courier} parcel is arriving now!',
+        subtitle: 'Delivery for ${p.buyerName} is expected now.',
+        payload: {
+          'entity_type': 'parcel',
+          'entity_id': p.id,
+          'parcel_id': p.id,
+          'courier': p.courier,
+        },
+      );
+    }
     notifyListeners();
   }
 
@@ -1529,6 +1649,17 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       claimedAt: p.claimedAt,
       settledAt: DateTime.now(),
     );
+    _pushNotification(
+      type: 'parcel_settled',
+      title: '${p.courier} parcel settled',
+      subtitle: 'COD handoff completed cleanly.',
+      payload: {
+        'entity_type': 'parcel',
+        'entity_id': p.id,
+        'parcel_id': p.id,
+        'courier': p.courier,
+      },
+    );
     notifyListeners();
   }
 
@@ -1551,10 +1682,11 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     String? description,
     DateTime? dueDate,
   }) {
+    final taskId = 't_${DateTime.now().millisecondsSinceEpoch}_${++_nextIdSeq}';
     _tasks.insert(
       0,
       MaintenanceTask(
-        id: 't_${DateTime.now().millisecondsSinceEpoch}',
+        id: taskId,
         householdId: _currentHousehold.id,
         title: title,
         description: description,
@@ -1567,30 +1699,117 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         dueDate: dueDate,
       ),
     );
+    _pushNotification(
+      type: 'task_created',
+      title: 'New task: $title',
+      subtitle: '${_currentUser.displayName} posted a ${urgency.label.toLowerCase()} ${category.label.toLowerCase()} task.',
+      payload: {
+        'entity_type': 'task',
+        'entity_id': taskId,
+        'task_id': taskId,
+        'task_title': title,
+      },
+    );
     notifyListeners();
   }
 
-  Future<String?> recordRouletteSpin({
-    String? taskId,
-    required String taskTitle,
-    required String selectedUserId,
-  }) async {
-    _lastRouletteSpinAt = DateTime.now();
-    notifyListeners();
-    return 'spin_${DateTime.now().millisecondsSinceEpoch}';
-  }
-
-  Future<void> respondToRouletteSpin({
-    required String spinId,
-    String? taskId,
-    required bool accepted,
-  }) async {
-    if (accepted) {
-      _kasamaPoints += 2;
-    } else {
-      _kasamaPoints -= 3;
+  String _resolveMockMemberName(String userId) {
+    if (userId == _currentUser.id) {
+      final nick = _currentUser.nickname?.trim();
+      if (nick != null && nick.isNotEmpty) return nick;
+      return _currentUser.displayName;
     }
+    if (userId == _seededPrimaryUserId) {
+      return 'Jon Paul Berana';
+    }
+    for (final m in _members) {
+      if (m.profile.id == userId) {
+        final raw = m.profile.displayName.trim();
+        if (raw.isNotEmpty && raw != 'You') return raw;
+      }
+    }
+    return 'Housemate';
+  }
+
+  Future<ChoreRouletteRecord> spinTaskRoulette(
+    String taskId,
+    String selectedUserId,
+  ) async {
+    final taskIndex = _tasks.indexWhere((t) => t.id == taskId);
+    if (taskIndex == -1) {
+      throw StateError('Task not found.');
+    }
+    final task = _tasks[taskIndex];
+    if (task.status == TaskStatus.done) {
+      throw StateError('Cannot spin a completed task.');
+    }
+    if (_rouletteRecords.any((r) => r.taskId == taskId)) {
+      throw StateError('This task has already been spun.');
+    }
+    if (task.createdBy.isNotEmpty && selectedUserId == task.createdBy) {
+      throw StateError('The task creator cannot be chosen by Task Roulette.');
+    }
+
+    final now = DateTime.now();
+    final spinnerName = _resolveMockMemberName(_currentUser.id);
+    final chosenName = _resolveMockMemberName(selectedUserId);
+    const bonusPts = 4;
+    final basePts = task.computedPoints;
+    final totalPts = basePts + bonusPts;
+
+    final record = ChoreRouletteRecord(
+      id: 'spin_${now.microsecondsSinceEpoch}_${++_nextIdSeq}',
+      householdId: _currentHousehold.id,
+      taskId: taskId,
+      choreTitle: task.title,
+      selectedUserId: selectedUserId,
+      selectedUserName: chosenName,
+      spunByUserId: _currentUser.id,
+      spunByName: spinnerName,
+      status: 'assigned',
+      bonusPoints: bonusPts,
+      createdAt: now,
+    );
+
+    _rouletteRecords.insert(0, record);
+
+    final isChosenCreator =
+        task.createdBy.isNotEmpty && selectedUserId == task.createdBy;
+    final notifTitle = '🎡 You were chosen for "${task.title}"!';
+    final notifMessage = isChosenCreator
+        ? '$spinnerName spun the wheel and picked you for "${task.title}"!'
+        : '$spinnerName spun the wheel and picked you — earn +$bonusPts bonus pts ($totalPts pts total)!';
+
+    _notifications.insert(
+      0,
+      HouseholdNotificationItem(
+        id: 'notif_roulette_${now.microsecondsSinceEpoch}_${++_nextIdSeq}',
+        type: 'roulette_chosen',
+        title: notifTitle,
+        subtitle: notifMessage,
+        createdAt: now,
+        isRead: false,
+        payload: {
+          'entity_type': 'task',
+          'entity_id': task.id,
+          'actor_id': _currentUser.id,
+          'roulette_id': record.id,
+          'task_id': task.id,
+          'task_title': task.title,
+          'spinner_id': _currentUser.id,
+          'spinner_name': spinnerName,
+          'selected_user_id': selectedUserId,
+          'base_points': basePts,
+          'bonus_points': bonusPts,
+          'total_points': totalPts,
+          'title': notifTitle,
+          'message': notifMessage,
+        },
+      ),
+    );
+
     notifyListeners();
+    return record;
   }
 
   void postItem({
@@ -1601,10 +1820,11 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     String? imageUrl,
     Uint8List? imageBytes,
   }) {
+    final itemId = 'i_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}';
     _items.insert(
       0,
       LostFoundItem(
-        id: 'i_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}',
+        id: itemId,
         householdId: _currentHousehold.id,
         type: type,
         title: title,
@@ -1616,6 +1836,20 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         reportedByName: _currentUser.displayName,
         createdAt: DateTime.now(),
       ),
+    );
+    final isLost = type == ItemType.lost;
+    _pushNotification(
+      type: isLost ? 'lost_item_posted' : 'found_item_posted',
+      title: isLost ? 'Lost item: $title' : 'Found item: $title',
+      subtitle: isLost
+          ? '${_currentUser.displayName} reported a missing item${location != null && location.isNotEmpty ? ' ($location)' : ''}.'
+          : '${_currentUser.displayName} found an item${location != null && location.isNotEmpty ? ' at $location' : ''}.',
+      payload: {
+        'entity_type': isLost ? 'lost_item' : 'found_item',
+        'entity_id': itemId,
+        if (isLost) 'lost_item_id': itemId else 'found_item_id': itemId,
+        'item_title': title,
+      },
     );
     notifyListeners();
   }
@@ -1655,15 +1889,15 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     notifyListeners();
   }
 
-  Future<void> createMeetUp({
+  Future<void> createHousematesAgendaInvitation({
     required String activity,
     required String location,
     required DateTime scheduledTime,
     String? announcementText,
   }) async {
     if (activity.trim().isEmpty && location.trim().isEmpty) {
-      _meetUpInvitations.clear();
-      _recomputeActiveMeetUp();
+      _housematesAgendaInvitations.clear();
+      _recomputeActiveHousematesAgenda();
       notifyListeners();
       return;
     }
@@ -1671,15 +1905,15 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     final otherMembers = _members
         .where((m) => m.profile.id != _currentUser.id)
         .toList();
-    final seededResponders = <MeetUpResponder>[
-      MeetUpResponder(
+    final seededResponders = <HousematesAgendaResponse>[
+      HousematesAgendaResponse(
         userId: _currentUser.id,
         displayName: _currentUser.displayName,
         avatarUrl: _currentUser.avatarUrl,
         response: 'going',
       ),
       for (final m in otherMembers)
-        MeetUpResponder(
+        HousematesAgendaResponse(
           userId: m.profile.id,
           displayName: m.profile.displayName,
           avatarUrl: m.profile.avatarUrl,
@@ -1687,13 +1921,13 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         ),
     ];
 
-    final created = MeetUpInvitation(
-      id: 'mu_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}',
+    final created = HousematesAgendaInvitation(
+      id: 'ha_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}',
       creatorId: _currentUser.id,
       activity: activity,
       location: location,
       scheduledTime: scheduledTime.toLocal(),
-      status: 'active',
+      status: 'upcoming',
       reminderSent: false,
       arrivalHandled: false,
       goingCount: 1,
@@ -1702,30 +1936,80 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       currentUserResponse: 'going',
       responders: seededResponders,
     );
-    _meetUpInvitations.add(created);
-    _meetUpInvitations.sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
-    _recomputeActiveMeetUp();
+    _housematesAgendaInvitations.add(created);
+    _housematesAgendaInvitations.sort(
+      (a, b) => a.scheduledTime.compareTo(b.scheduledTime),
+    );
+    _pushNotification(
+      type: 'housemates_agenda_created',
+      title: 'New Housemates Agenda: $activity',
+      subtitle: '$location — tap to RSVP!',
+      payload: {
+        'entity_type': 'housemates_agenda',
+        'entity_id': created.id,
+        'invitation_id': created.id,
+        'creator_id': _currentUser.id,
+        'location': location,
+      },
+    );
+    _recomputeActiveHousematesAgenda();
     notifyListeners();
   }
 
-  Future<void> deleteMeetUpInvitation(String invitationId) async {
-    _meetUpInvitations.removeWhere((m) => m.id == invitationId);
-    _recomputeActiveMeetUp();
+  Future<void> updateHousematesAgendaStatus(
+    String invitationId,
+    String status,
+  ) async {
+    if (status != 'done' && status != 'missed') {
+      throw ArgumentError.value(status, 'status', "Must be 'done' or 'missed'");
+    }
+    final idx = _housematesAgendaInvitations.indexWhere(
+      (m) => m.id == invitationId,
+    );
+    if (idx != -1) {
+      final inv = _housematesAgendaInvitations[idx];
+      _housematesAgendaInvitations[idx] = inv.copyWith(status: status);
+      _pushNotification(
+        type: 'housemates_agenda_resolved',
+        title: '${inv.activity} marked ${status == 'done' ? 'Done' : 'Missed'}',
+        subtitle: '${inv.location} • Updated by ${_currentUser.displayName}.',
+        payload: {
+          'entity_type': 'housemates_agenda',
+          'entity_id': inv.id,
+          'invitation_id': inv.id,
+          'creator_id': inv.creatorId,
+          'location': inv.location,
+        },
+      );
+      _recomputeActiveHousematesAgenda();
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteHousematesAgendaInvitation(String invitationId) async {
+    _housematesAgendaInvitations.removeWhere((m) => m.id == invitationId);
+    _purgeNotificationsForEntity(
+      entityType: 'housemates_agenda',
+      entityId: invitationId,
+    );
+    _recomputeActiveHousematesAgenda();
     notifyListeners();
   }
 
-  void setActiveMeetUpForTest(MeetUpInvitation meetup) {
-    _meetUpInvitations
+  void setActiveHousematesAgendaForTest(HousematesAgendaInvitation agenda) {
+    _housematesAgendaInvitations
       ..clear()
-      ..addAll([if (meetup.hasValidData) meetup]);
-    _activeMeetUp = meetup;
+      ..addAll([if (agenda.hasValidData) agenda]);
+    _activeHousematesAgenda = agenda;
     notifyListeners();
   }
 
-  void addMeetUpForTest(MeetUpInvitation meetup) {
-    _meetUpInvitations.add(meetup);
-    _meetUpInvitations.sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
-    _recomputeActiveMeetUp();
+  void addHousematesAgendaForTest(HousematesAgendaInvitation agenda) {
+    _housematesAgendaInvitations.add(agenda);
+    _housematesAgendaInvitations.sort(
+      (a, b) => a.scheduledTime.compareTo(b.scheduledTime),
+    );
+    _recomputeActiveHousematesAgenda();
     notifyListeners();
   }
 
@@ -1735,6 +2019,20 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       _groupChatUnreadCount++;
     }
     notifyListeners();
+  }
+
+  void addSpaceMessageForTest(String spaceId, ChatMessage message) {
+    final idx = _chatSpaces.indexWhere((s) => s.id == spaceId);
+    if (idx != -1) {
+      final space = _chatSpaces[idx];
+      _chatSpaces[idx] = space.copyWith(
+        messages: [...space.messages, message],
+        unreadCount: message.isCurrentUser
+            ? space.unreadCount
+            : space.unreadCount + 1,
+      );
+      notifyListeners();
+    }
   }
 
   void markNotificationAsRead(String notificationId) {
@@ -1985,11 +2283,17 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     notifyListeners();
   }
 
-  void respondMeetUp(String response, {String? invitationId}) {
-    final targetId = invitationId ?? _activeMeetUp.id;
-    final idx = _meetUpInvitations.indexWhere((m) => m.id == targetId);
-    final target = idx != -1 ? _meetUpInvitations[idx] : _activeMeetUp;
-    if (!target.hasValidData || !target.isActive) return;
+  void respondToHousematesAgendaInvitation(
+    String response, {
+    String? invitationId,
+  }) {
+    final targetId = invitationId ?? _activeHousematesAgenda.id;
+    final idx = _housematesAgendaInvitations.indexWhere(
+      (m) => m.id == targetId,
+    );
+    final target =
+        idx != -1 ? _housematesAgendaInvitations[idx] : _activeHousematesAgenda;
+    if (!target.hasValidData || !target.isUpcoming) return;
 
     int g = target.goingCount;
     int m = target.maybeCount;
@@ -2005,7 +2309,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
 
     final updatedResponders = [
       ...target.responders.where((r) => r.userId != _currentUser.id),
-      MeetUpResponder(
+      HousematesAgendaResponse(
         userId: _currentUser.id,
         displayName: _currentUser.displayName,
         avatarUrl: _currentUser.avatarUrl,
@@ -2021,9 +2325,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       responders: updatedResponders,
     );
     if (idx != -1) {
-      _meetUpInvitations[idx] = updated;
+      _housematesAgendaInvitations[idx] = updated;
     }
-    _recomputeActiveMeetUp();
+    _recomputeActiveHousematesAgenda();
     notifyListeners();
   }
 
@@ -2061,6 +2365,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       Future.delayed(const Duration(milliseconds: 1100), () {
         final housemate = _members.firstWhere(
           (m) =>
+              m.profile.preferredName.toLowerCase().contains(key) ||
+              (m.profile.nickname?.toLowerCase().contains(key) ?? false) ||
+              (m.profile.fullName?.toLowerCase().contains(key) ?? false) ||
               m.profile.displayName.toLowerCase().contains(key) ||
               m.profile.handle.toLowerCase().contains(key),
           orElse: () => _members.first,
@@ -2130,10 +2437,11 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       return 'You already have a pending find awaiting review.';
     }
 
+    final foundId = 'fi_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}';
     _items.insert(
       0,
       LostFoundItem(
-        id: 'fi_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}',
+        id: foundId,
         householdId: _currentHousehold.id,
         type: ItemType.found,
         title: lostItem.title,
@@ -2146,6 +2454,18 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         lostItemId: lostItem.id,
         createdAt: DateTime.now(),
       ),
+    );
+    _pushNotification(
+      type: 'lost_item_find_submitted',
+      title: '${_currentUser.displayName} may have found "${lostItem.title}"!',
+      subtitle: 'Tap to review and confirm match.',
+      payload: {
+        'entity_type': 'lost_item',
+        'entity_id': lostItem.id,
+        'lost_item_id': lostItem.id,
+        'found_item_id': foundId,
+        'item_title': lostItem.title,
+      },
     );
     notifyListeners();
     return null;
@@ -2207,6 +2527,19 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       title: "Found & returned: ${lost.title}",
       category: 'lost_found',
     );
+    _pushNotification(
+      type: 'lost_item_find_accepted',
+      title: 'Match confirmed for "${lost.title}"!',
+      subtitle: '${found.reportedByName} earned +5 pts for returning it.',
+      payload: {
+        'entity_type': 'lost_item',
+        'entity_id': lost.id,
+        'lost_item_id': lost.id,
+        'found_item_id': found.id,
+        'item_title': lost.title,
+        'points': 5,
+      },
+    );
     notifyListeners();
     return null;
   }
@@ -2230,6 +2563,18 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _items[foundIdx] = found.copyWith(
       status: ItemStatus.rejected,
       rejectedAt: DateTime.now(),
+    );
+    _pushNotification(
+      type: 'lost_item_find_rejected',
+      title: 'Not a match for "${_items[lostIdx].title}"',
+      subtitle: '${_currentUser.displayName} is still looking for this item.',
+      payload: {
+        'entity_type': 'lost_item',
+        'entity_id': _items[lostIdx].id,
+        'lost_item_id': _items[lostIdx].id,
+        'found_item_id': found.id,
+        'item_title': _items[lostIdx].title,
+      },
     );
     notifyListeners();
     return null;
@@ -2264,6 +2609,17 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         );
       }
     }
+    _pushNotification(
+      type: 'lost_item_self_resolved',
+      title: '"${lost.title}" was found!',
+      subtitle: '${_currentUser.displayName} marked it resolved.',
+      payload: {
+        'entity_type': 'lost_item',
+        'entity_id': lost.id,
+        'lost_item_id': lost.id,
+        'item_title': lost.title,
+      },
+    );
     notifyListeners();
     return null;
   }
@@ -2295,6 +2651,18 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       points: 2,
       title: 'Found item claimed: ${item.title}',
       category: 'lost_found',
+    );
+    _pushNotification(
+      type: 'found_item_claimed',
+      title: '${_currentUser.displayName} claimed "${item.title}"',
+      subtitle: '${item.reportedByName} earned +2 pts!',
+      payload: {
+        'entity_type': 'found_item',
+        'entity_id': item.id,
+        'found_item_id': item.id,
+        'item_title': item.title,
+        'points': 2,
+      },
     );
     notifyListeners();
     return null;
@@ -2346,6 +2714,8 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     return _allCasamaUsers.where((u) {
       final matchesHandle = u.handle.toLowerCase().contains(q);
       final matchesName =
+          u.preferredName.toLowerCase().contains(q) ||
+          (u.nickname != null && u.nickname!.toLowerCase().contains(q)) ||
           u.displayName.toLowerCase().contains(q) ||
           (u.fullName != null && u.fullName!.toLowerCase().contains(q));
       final alreadyMember = _members.any((m) => m.profile.id == u.id);
@@ -2472,165 +2842,24 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   bool isHousemateAuthorized(String contactKey) {
     final key = contactKey.toLowerCase().replaceAll('@', '').trim();
     return _members.any((m) {
+      final mPref = m.preferredName.toLowerCase().trim();
+      final mNick = (m.profile.nickname ?? '').toLowerCase().trim();
+      final mFull = (m.profile.fullName ?? '').toLowerCase().trim();
       final mName = m.profile.displayName.toLowerCase().trim();
       final mHandle = m.profile.handle.toLowerCase().replaceAll('@', '').trim();
       final mId = m.profile.id.toLowerCase().trim();
-      return mName == key || mHandle == key || mId == key;
+      return mPref == key ||
+          mNick == key ||
+          mFull == key ||
+          mName == key ||
+          mHandle == key ||
+          mId == key;
     });
   }
 
   void resetMembersForNewUserTest() {
     _members.retainWhere((m) => m.profile.id == _currentUser.id);
     _ensureCurrentWorkspaceRegistered();
-    notifyListeners();
-  }
-
-  // ==========================================
-  // BILLS & PAYMENTS
-  // ==========================================
-
-  void addBill({
-    required BillCategory category,
-    String? customCategoryLabel,
-    String? billName,
-    double? amount,
-    required DateTime deadline,
-    String? notes,
-    bool reminderEnabled = true,
-    ReminderTiming reminderTiming = ReminderTiming.oneDayBefore,
-    BillRecipientType recipientType = BillRecipientType.allMembers,
-    List<String> selectedRecipientNames = const [],
-    String? responsibleMember,
-  }) {
-    _bills.insert(
-      0,
-      HouseholdBill(
-        id: 'bill_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}',
-        householdId: _currentHousehold.id,
-        creatorId: _currentUser.id,
-        creatorName: _currentUser.displayName,
-        category: category,
-        customCategoryLabel: customCategoryLabel,
-        billName: billName,
-        amount: amount,
-        deadline: deadline,
-        notes: notes,
-        reminderEnabled: reminderEnabled,
-        reminderTiming: reminderTiming,
-        recipientType: recipientType,
-        selectedRecipientNames: selectedRecipientNames,
-        responsibleMember: responsibleMember ?? _currentUser.displayName,
-        createdAt: DateTime.now(),
-      ),
-    );
-    // Trigger in-app reminder notification for newly added bill
-    if (reminderEnabled) {
-      _notifications.insert(
-        0,
-        HouseholdNotificationItem(
-          id: 'notif_bill_${DateTime.now().microsecondsSinceEpoch}_${++_nextIdSeq}',
-          type: 'bill_reminder',
-          title: 'Upcoming bill reminder',
-          subtitle: '${billName?.trim().isNotEmpty == true ? billName!.trim() : category.label} due soon',
-          createdAt: DateTime.now(),
-          isRead: false,
-        ),
-      );
-    }
-    notifyListeners();
-  }
-
-  void updateBill({
-    required String billId,
-    BillCategory? category,
-    String? customCategoryLabel,
-    String? billName,
-    double? amount,
-    DateTime? deadline,
-    String? notes,
-    bool? reminderEnabled,
-    ReminderTiming? reminderTiming,
-    BillRecipientType? recipientType,
-    List<String>? selectedRecipientNames,
-    String? responsibleMember,
-  }) {
-    final idx = _bills.indexWhere((b) => b.id == billId);
-    if (idx == -1) return;
-    // Only creator can edit
-    if (_bills[idx].creatorId != _currentUser.id) return;
-    _bills[idx] = _bills[idx].copyWith(
-      category: category,
-      customCategoryLabel: customCategoryLabel,
-      billName: billName,
-      amount: amount,
-      deadline: deadline,
-      notes: notes,
-      reminderEnabled: reminderEnabled,
-      reminderTiming: reminderTiming,
-      recipientType: recipientType,
-      selectedRecipientNames: selectedRecipientNames,
-      responsibleMember: responsibleMember,
-    );
-    notifyListeners();
-  }
-
-  /// Any household member can mark a bill as paid. Awards +5 Kasama Points.
-  void markBillPaid(String billId) {
-    final idx = _bills.indexWhere((b) => b.id == billId);
-    if (idx == -1) return;
-    final bill = _bills[idx];
-    if (bill.status == BillStatus.paid) return; // prevent duplicate rewards
-    _bills[idx] = bill.copyWith(
-      status: BillStatus.paid,
-      paidAt: DateTime.now(),
-      paidByName: _currentUser.displayName,
-    );
-    _kasamaPoints += 5;
-    _pointHistory.insert(
-      0,
-      PointAuditEntry(
-        id: 'pa_${DateTime.now().millisecondsSinceEpoch}',
-        title: 'Paid bill: ${bill.effectiveBillName}',
-        points: 5,
-        timestamp: DateTime.now(),
-        category: 'bill',
-      ),
-    );
-    notifyListeners();
-  }
-
-  /// Reopen a mistakenly paid bill (reverts to unpaid). Creator only.
-  void reopenBill(String billId) {
-    final idx = _bills.indexWhere((b) => b.id == billId);
-    if (idx == -1) return;
-    _bills[idx] = HouseholdBill(
-      id: _bills[idx].id,
-      householdId: _bills[idx].householdId,
-      creatorId: _bills[idx].creatorId,
-      creatorName: _bills[idx].creatorName,
-      category: _bills[idx].category,
-      customCategoryLabel: _bills[idx].customCategoryLabel,
-      billName: _bills[idx].billName,
-      amount: _bills[idx].amount,
-      deadline: _bills[idx].deadline,
-      notes: _bills[idx].notes,
-      status: BillStatus.unpaid,
-      reminderEnabled: _bills[idx].reminderEnabled,
-      reminderTiming: _bills[idx].reminderTiming,
-      recipientType: _bills[idx].recipientType,
-      selectedRecipientNames: _bills[idx].selectedRecipientNames,
-      responsibleMember: _bills[idx].responsibleMember,
-      createdAt: _bills[idx].createdAt,
-    );
-    notifyListeners();
-  }
-
-  /// Delete a bill. Only creator can delete.
-  void deleteBill(String billId) {
-    final idx = _bills.indexWhere((b) => b.id == billId);
-    if (idx == -1) return;
-    if (_bills[idx].creatorId != _currentUser.id) return;
-    _bills.removeAt(idx);
     notifyListeners();
   }
 
@@ -2808,14 +3037,13 @@ class _MockHouseholdWorkspace {
   final int kasamaPoints;
   final int groupChatUnreadCount;
   final List<HouseholdNotificationItem> notifications;
-  final DateTime? lastRouletteSpinAt;
   final List<MemberPresence> members;
   final List<ParcelItem> parcels;
   final List<LostFoundItem> items;
   final List<MaintenanceTask> tasks;
-  final List<HouseholdBill> bills;
-  final List<MeetUpInvitation> meetUpInvitations;
-  final MeetUpInvitation activeMeetUp;
+  final List<ChoreRouletteRecord> rouletteRecords;
+  final List<HousematesAgendaInvitation> housematesAgendaInvitations;
+  final HousematesAgendaInvitation activeHousematesAgenda;
   final List<ChatMessage> groupMessages;
   final List<ChatSpace> chatSpaces;
   final Map<String, List<ChatMessage>> directMessages;
@@ -2829,14 +3057,13 @@ class _MockHouseholdWorkspace {
     required this.kasamaPoints,
     required this.groupChatUnreadCount,
     required this.notifications,
-    required this.lastRouletteSpinAt,
     required this.members,
     required this.parcels,
     required this.items,
     required this.tasks,
-    required this.bills,
-    required this.meetUpInvitations,
-    required this.activeMeetUp,
+    this.rouletteRecords = const [],
+    required this.housematesAgendaInvitations,
+    required this.activeHousematesAgenda,
     required this.groupMessages,
     required this.chatSpaces,
     required this.directMessages,

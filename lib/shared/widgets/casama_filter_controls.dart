@@ -8,11 +8,15 @@ class CasamaFilterOption<T> {
   final T value;
   final String label;
   final bool isUrgent;
+  final Color? dotColor;
+  final Key? dotKey;
 
   const CasamaFilterOption({
     required this.value,
     required this.label,
     this.isUrgent = false,
+    this.dotColor,
+    this.dotKey,
   });
 }
 
@@ -88,13 +92,34 @@ class CasamaPillFilterRail<T> extends StatelessWidget {
                     borderRadius: CasamaSpacing.roundedPill,
                     border: Border.all(color: borderColor, width: 1),
                   ),
-                  child: Text(
-                    opt.label,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: fg,
-                      fontSize: 12,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        opt.label,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: fg,
+                          fontSize: 12,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.w500,
+                        ),
+                      ),
+                      if (opt.dotColor != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          key: opt.dotKey,
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: opt.dotColor,
+                            shape: BoxShape.circle,
+                            border: selected
+                                ? Border.all(color: Colors.white, width: 1.2)
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),

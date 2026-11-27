@@ -117,6 +117,8 @@ void main() {
       expect(find.text('+7 to +11 pts'), findsOneWidget);
       expect(find.text('Complete repair or personal request'), findsOneWidget);
       expect(find.text('+10 to +14 pts'), findsOneWidget);
+      expect(find.text('Task Roulette bonus (chosen housemate)'), findsOneWidget);
+      expect(find.text('+4 bonus pts'), findsOneWidget);
       expect(find.text("Find & return a housemate's lost item"), findsOneWidget);
       expect(find.text('+5 pts'), findsNWidgets(2));
       expect(find.text('Post a found item claimed by a housemate'), findsOneWidget);
@@ -152,7 +154,12 @@ void main() {
       expect(find.text('Settings'), findsOneWidget);
       await tester.tap(find.text('Dark'));
       await tester.pumpAndSettle();
-      expect(find.byType(Switch), findsNWidgets(5));
+      expect(find.byType(Switch), findsOneWidget);
+      expect(find.text('Notification Settings'), findsNothing);
+      expect(find.text('Household Updates'), findsNothing);
+      expect(find.text('Parcel & Delivery Alerts'), findsNothing);
+      expect(find.text('Task & Chore Reminders'), findsNothing);
+      expect(find.text('Chat & Agenda Notifications'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );

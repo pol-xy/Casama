@@ -271,7 +271,7 @@ class CasamaCircleIconButton extends StatelessWidget {
 }
 
 /// Compact pill button used inside `CasamaWaveHeader.rightActions` (e.g.,
-/// `Spin Roulette`, `Setup Billing`) with minimum `44dp` height and press feedback.
+/// `Add Housemate`, `Plan Agenda`) with minimum `44dp` height and press feedback.
 class CasamaHeaderActionPill extends StatelessWidget {
   final IconData? icon;
   final Widget? iconWidget;

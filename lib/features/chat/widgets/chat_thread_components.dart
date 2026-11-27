@@ -14,13 +14,65 @@ import '../../../data/models.dart';
 import '../../../shared/widgets/casama_avatar.dart';
 import '../../../shared/widgets/casama_wave_header.dart';
 
-class _InlineMeetupCard extends StatelessWidget {
-  final MeetUpInvitation meetup;
+class CasamaAgendaStatusBadge extends StatelessWidget {
+  final String status;
+
+  const CasamaAgendaStatusBadge({super.key, required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final normalized = status.trim().toLowerCase();
+
+    final (String label, Color fg, Color bg, bool showDot) =
+        switch (normalized) {
+          'ongoing' => ('Ongoing', pal.successFg, pal.successBg, true),
+          'done' => ('Done', pal.forestTeal, pal.softSage, false),
+          'missed' => ('Missed', pal.dangerFg, pal.dangerBg, false),
+          _ => ('Upcoming', pal.infoFg, pal.infoBg, false),
+        };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: CasamaSpacing.roundedPill,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showDot) ...[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 5),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: fg,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CasamaHousematesAgendaCard extends StatelessWidget {
+  final HousematesAgendaInvitation agenda;
   final bool isMe;
   final ValueChanged<String>? onRespond;
 
-  const _InlineMeetupCard({
-    required this.meetup,
+  const CasamaHousematesAgendaCard({
+    super.key,
+    required this.agenda,
     required this.isMe,
     this.onRespond,
   });
@@ -29,17 +81,42 @@ class _InlineMeetupCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final pal = context.palette;
     final theme = Theme.of(context);
-    final isCompleted = !meetup.isActive;
+    final canRespond = agenda.isUpcoming && onRespond != null;
     final textPrimary = isMe ? Colors.white : pal.textPrimary;
     final textSecondary =
         isMe ? Colors.white.withValues(alpha: 0.8) : pal.textSecondary;
     final timeStr =
-        DateFormat('EEE, MMM d • h:mm a').format(meetup.scheduledTime);
+        DateFormat('EEE, MMM d • h:mm a').format(agenda.scheduledTime);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: isMe
+                    ? Colors.white.withValues(alpha: 0.18)
+                    : pal.softSage,
+                borderRadius: CasamaSpacing.roundedPill,
+              ),
+              child: Text(
+                'HOUSEMATES AGENDA',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: isMe ? Colors.white : pal.forestTeal,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            const Spacer(),
+            CasamaAgendaStatusBadge(status: agenda.status),
+          ],
+        ),
+        const SizedBox(height: 6),
         Row(
           children: [
             Icon(
@@ -50,7 +127,7 @@ class _InlineMeetupCard extends StatelessWidget {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                meetup.activity,
+                agenda.activity,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleSmall?.copyWith(
@@ -59,31 +136,11 @@ class _InlineMeetupCard extends StatelessWidget {
                 ),
               ),
             ),
-            if (isCompleted) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isMe
-                      ? Colors.white.withValues(alpha: 0.2)
-                      : pal.neutralBg,
-                  borderRadius: CasamaSpacing.roundedPill,
-                ),
-                child: Text(
-                  'Completed',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: isMe ? Colors.white : pal.neutralFg,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 10.5,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
         const SizedBox(height: 4),
         Text(
-          '$timeStr • ${meetup.location}',
+          '$timeStr • ${agenda.location}',
           style: theme.textTheme.bodySmall?.copyWith(
             color: textSecondary,
             fontSize: 12,
@@ -93,30 +150,24 @@ class _InlineMeetupCard extends StatelessWidget {
         Row(
           children: [
             _InlineRsvpButton(
-              label: 'Going (${meetup.goingCount})',
-              selected: meetup.currentUserResponse == 'going',
-              disabled: isCompleted || onRespond == null,
-              onTap: (isCompleted || onRespond == null)
-                  ? null
-                  : () => onRespond!('going'),
+              label: 'Going (${agenda.goingCount})',
+              selected: agenda.currentUserResponse == 'going',
+              disabled: !canRespond,
+              onTap: !canRespond ? null : () => onRespond!('going'),
             ),
             const SizedBox(width: 6),
             _InlineRsvpButton(
-              label: 'Maybe (${meetup.maybeCount})',
-              selected: meetup.currentUserResponse == 'maybe',
-              disabled: isCompleted || onRespond == null,
-              onTap: (isCompleted || onRespond == null)
-                  ? null
-                  : () => onRespond!('maybe'),
+              label: 'Maybe (${agenda.maybeCount})',
+              selected: agenda.currentUserResponse == 'maybe',
+              disabled: !canRespond,
+              onTap: !canRespond ? null : () => onRespond!('maybe'),
             ),
             const SizedBox(width: 6),
             _InlineRsvpButton(
-              label: "Can't (${meetup.cantMakeCount})",
-              selected: meetup.currentUserResponse == 'cant_make_it',
-              disabled: isCompleted || onRespond == null,
-              onTap: (isCompleted || onRespond == null)
-                  ? null
-                  : () => onRespond!('cant_make_it'),
+              label: "Can't (${agenda.cantMakeCount})",
+              selected: agenda.currentUserResponse == 'cant_make_it',
+              disabled: !canRespond,
+              onTap: !canRespond ? null : () => onRespond!('cant_make_it'),
             ),
           ],
         ),
@@ -343,7 +394,7 @@ class _ThreadHeaderPainter extends CustomPainter {
       oldDelegate.ornament != ornament;
 }
 
-/// Centered pill date divider (`Today`) inside chat threads.
+/// Centered pill date divider (`Today`, `Yesterday`, or formatted date) inside chat threads.
 class CasamaChatDatePill extends StatelessWidget {
   final String label;
 
@@ -354,7 +405,7 @@ class CasamaChatDatePill extends StatelessWidget {
     final pal = context.palette;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: CasamaSpacing.sm),
+      padding: const EdgeInsets.symmetric(vertical: CasamaSpacing.sm),
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -376,26 +427,268 @@ class CasamaChatDatePill extends StatelessWidget {
   }
 }
 
+/// Formats a message timestamp into a calendar day divider label.
+String formatChatDateDivider(DateTime dateTime, {DateTime? now}) {
+  final local = dateTime.toLocal();
+  final ref = (now ?? DateTime.now()).toLocal();
+  final targetDay = DateTime(local.year, local.month, local.day);
+  final today = DateTime(ref.year, ref.month, ref.day);
+  final yesterday = today.subtract(const Duration(days: 1));
+
+  if (targetDay == today) return 'Today';
+  if (targetDay == yesterday) return 'Yesterday';
+  if (local.year == ref.year) {
+    return DateFormat('EEE, MMM d').format(local);
+  }
+  return DateFormat('MMM d, yyyy').format(local);
+}
+
+/// Union item representing either a date divider or a message in a chat timeline.
+sealed class CasamaChatTimelineItem {
+  const CasamaChatTimelineItem();
+}
+
+class CasamaChatDateDividerItem extends CasamaChatTimelineItem {
+  final String label;
+  final DateTime day;
+
+  const CasamaChatDateDividerItem({required this.label, required this.day});
+}
+
+class CasamaChatMessageItem extends CasamaChatTimelineItem {
+  final ChatMessage message;
+
+  const CasamaChatMessageItem(this.message);
+}
+
+/// Computes date dividers in chronological order (`oldest -> newest`) and
+/// returns the reversed list so `ListView.builder(reverse: true)` places the
+/// newest message at `scrollOffset == 0.0` while keeping every date divider
+/// visually above its corresponding day's messages.
+List<CasamaChatTimelineItem> buildReversedChatTimeline(
+  List<ChatMessage> chronologicalMessages, {
+  DateTime? now,
+}) {
+  if (chronologicalMessages.isEmpty) return const [];
+
+  final items = <CasamaChatTimelineItem>[];
+  DateTime? lastDay;
+  for (final msg in chronologicalMessages) {
+    final local = msg.createdAt.toLocal();
+    final day = DateTime(local.year, local.month, local.day);
+    if (lastDay != day) {
+      items.add(
+        CasamaChatDateDividerItem(
+          label: formatChatDateDivider(local, now: now),
+          day: day,
+        ),
+      );
+      lastDay = day;
+    }
+    items.add(CasamaChatMessageItem(msg));
+  }
+  return items.reversed.toList(growable: false);
+}
+
+/// Scrolls a `reverse: true` chat list back to the newest message (`0.0`).
+void scrollChatListToBottom(BuildContext context, ScrollController controller) {
+  if (!controller.hasClients) return;
+  if (MediaQuery.disableAnimationsOf(context)) {
+    controller.jumpTo(0.0);
+  } else {
+    controller.animateTo(
+      0.0,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+  }
+}
+
+/// Shared bottom-anchored (`reverse: true`) chat message list with chronological
+/// date dividers and smart auto-scroll for sent and incoming Realtime messages.
+class CasamaChatMessageList extends StatefulWidget {
+  final List<ChatMessage> messages;
+  final ScrollController? controller;
+  final bool showSenderName;
+  final String Function(ChatMessage message)? senderNameBuilder;
+  final String? fallbackAvatarUrl;
+  final bool showReadCheck;
+  final bool showTodayPillWhenEmpty;
+  final Widget? emptyState;
+  final String Function(ChatMessage message)? timeLabelBuilder;
+  final VoidCallback? Function(ChatMessage message)? onRetryBuilder;
+  final ValueChanged<String>? onRespondHousematesAgenda;
+  final EdgeInsetsGeometry padding;
+  final DateTime? referenceNow;
+
+  const CasamaChatMessageList({
+    super.key,
+    required this.messages,
+    this.controller,
+    this.showSenderName = true,
+    this.senderNameBuilder,
+    this.fallbackAvatarUrl,
+    this.showReadCheck = true,
+    this.showTodayPillWhenEmpty = false,
+    this.emptyState,
+    this.timeLabelBuilder,
+    this.onRetryBuilder,
+    this.onRespondHousematesAgenda,
+    this.padding = const EdgeInsets.symmetric(
+      horizontal: CasamaSpacing.md,
+      vertical: CasamaSpacing.md,
+    ),
+    this.referenceNow,
+  });
+
+  @override
+  State<CasamaChatMessageList> createState() => _CasamaChatMessageListState();
+}
+
+class _CasamaChatMessageListState extends State<CasamaChatMessageList> {
+  ScrollController? _internalController;
+
+  ScrollController get _effectiveController =>
+      widget.controller ?? (_internalController ??= ScrollController());
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.controller == null) {
+      _internalController = ScrollController();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant CasamaChatMessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      if (widget.controller != null) {
+        _internalController?.dispose();
+        _internalController = null;
+      } else {
+        _internalController ??= ScrollController();
+      }
+    }
+
+    final oldLast =
+        oldWidget.messages.isNotEmpty ? oldWidget.messages.last : null;
+    final newLast = widget.messages.isNotEmpty ? widget.messages.last : null;
+    final sameClientId =
+        oldLast != null &&
+        newLast != null &&
+        oldLast.clientMessageId != null &&
+        oldLast.clientMessageId == newLast.clientMessageId;
+    final hasNewBottomMessage =
+        newLast != null &&
+        !sameClientId &&
+        (oldLast == null ||
+            (newLast.id != oldLast.id &&
+                (widget.messages.length > oldWidget.messages.length ||
+                    !newLast.createdAt.isBefore(oldLast.createdAt))));
+
+    if (hasNewBottomMessage) {
+      final controller = _effectiveController;
+      final isNearBottom = !controller.hasClients || controller.offset <= 120.0;
+      if (newLast.isCurrentUser || isNearBottom) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            scrollChatListToBottom(context, controller);
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _internalController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.messages.isEmpty) {
+      if (widget.emptyState != null) {
+        return widget.emptyState!;
+      }
+      if (widget.showTodayPillWhenEmpty) {
+        return ListView(
+          controller: _effectiveController,
+          reverse: true,
+          padding: widget.padding,
+          children: const [CasamaChatDatePill(label: 'Today')],
+        );
+      }
+      return ListView(
+        controller: _effectiveController,
+        reverse: true,
+        padding: widget.padding,
+      );
+    }
+
+    final items = buildReversedChatTimeline(
+      widget.messages,
+      now: widget.referenceNow,
+    );
+
+    return ListView.builder(
+      controller: _effectiveController,
+      reverse: true,
+      padding: widget.padding,
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        switch (item) {
+          case CasamaChatDateDividerItem():
+            return CasamaChatDatePill(
+              key: ValueKey('chat_date_${item.day.toIso8601String()}'),
+              label: item.label,
+            );
+          case CasamaChatMessageItem():
+            final msg = item.message;
+            final timeLabel =
+                widget.timeLabelBuilder?.call(msg) ??
+                DateFormat('h:mm a').format(msg.createdAt.toLocal());
+            return CasamaMessageBubble(
+              key: ValueKey('chat_msg_${msg.id}'),
+              message: msg,
+              timeLabel: timeLabel,
+              showSenderName: widget.showSenderName,
+              senderNameOverride: widget.senderNameBuilder?.call(msg),
+              fallbackAvatarUrl: widget.fallbackAvatarUrl,
+              showReadCheck: widget.showReadCheck,
+              onRetry: widget.onRetryBuilder?.call(msg),
+              onRespondHousematesAgenda: widget.onRespondHousematesAgenda,
+            );
+        }
+      },
+    );
+  }
+}
+
 /// Organic asymmetrical message bubble supporting text, media images, and
 /// shareable invite code cards across Group, Space, and Direct chat threads.
 class CasamaMessageBubble extends StatelessWidget {
   final ChatMessage message;
   final String timeLabel;
   final bool showSenderName;
+  final String? senderNameOverride;
   final String? fallbackAvatarUrl;
   final bool showReadCheck;
   final VoidCallback? onRetry;
-  final ValueChanged<String>? onRespondMeetUp;
+  final ValueChanged<String>? onRespondHousematesAgenda;
 
   const CasamaMessageBubble({
     super.key,
     required this.message,
     required this.timeLabel,
     this.showSenderName = true,
+    this.senderNameOverride,
     this.fallbackAvatarUrl,
     this.showReadCheck = true,
     this.onRetry,
-    this.onRespondMeetUp,
+    this.onRespondHousematesAgenda,
   });
 
   @override
@@ -404,6 +697,7 @@ class CasamaMessageBubble extends StatelessWidget {
     final theme = Theme.of(context);
     final isMe = message.isCurrentUser;
     final avatarUrl = message.senderAvatar ?? fallbackAvatarUrl;
+    final resolvedSenderName = senderNameOverride ?? message.senderName;
 
     final bubbleColor = isMe ? pal.outgoingBubble : pal.card;
     final bodyTextColor = isMe ? Colors.white : pal.textPrimary;
@@ -422,7 +716,7 @@ class CasamaMessageBubble extends StatelessWidget {
             CasamaAvatar(
               avatarUrl: avatarUrl,
               radius: 17,
-              name: message.senderName,
+              name: resolvedSenderName,
             ),
             const SizedBox(width: CasamaSpacing.xs),
           ],
@@ -454,7 +748,7 @@ class CasamaMessageBubble extends StatelessWidget {
                   children: [
                     if (!isMe && showSenderName) ...[
                       Text(
-                        message.senderName,
+                        resolvedSenderName,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: pal.forestTeal,
                           fontWeight: FontWeight.w700,
@@ -478,11 +772,11 @@ class CasamaMessageBubble extends StatelessWidget {
                         spaceName: message.inviteSpaceName ?? 'Invite Code',
                         isMe: isMe,
                       )
-                    else if (message.meetUpInvitation != null)
-                      _InlineMeetupCard(
-                        meetup: message.meetUpInvitation!,
+                    else if (message.housematesAgendaInvitation != null)
+                      CasamaHousematesAgendaCard(
+                        agenda: message.housematesAgendaInvitation!,
                         isMe: isMe,
-                        onRespond: onRespondMeetUp,
+                        onRespond: onRespondHousematesAgenda,
                       )
                     else if (message.content.trim().isNotEmpty)
                       Text(
@@ -558,21 +852,31 @@ class CasamaMessageBubble extends StatelessWidget {
     );
   }
 
+  static const double _attachmentWidth = 230;
+  static const double _attachmentHeight = 170;
+
   Widget _buildAttachmentWidget(BuildContext context, CasamaPalette pal) {
     final isSending = message.deliveryStatus == MessageDeliveryStatus.sending;
     final canOpenLightbox =
         message.deliveryStatus == MessageDeliveryStatus.delivered;
     final reduced = CasamaMotion.reduceMotion(context);
 
-    final Widget image = _buildRawAttachmentImage(pal);
+    final Widget image = SizedBox(
+      width: _attachmentWidth,
+      height: _attachmentHeight,
+      child: ColoredBox(
+        color: pal.track,
+        child: _buildRawAttachmentImage(pal),
+      ),
+    );
     final Widget framed = Stack(
       alignment: Alignment.center,
       children: [
         image,
         if (isSending)
           Container(
-            width: 230,
-            height: 170,
+            width: _attachmentWidth,
+            height: _attachmentHeight,
             color: Colors.black.withValues(alpha: 0.35),
             alignment: Alignment.center,
             child: reduced
@@ -606,8 +910,8 @@ class CasamaMessageBubble extends StatelessWidget {
   }
 
   Widget _buildRawAttachmentImage(CasamaPalette pal) {
-    const double w = 230;
-    const double h = 170;
+    const double w = _attachmentWidth;
+    const double h = _attachmentHeight;
 
     final localPath = message.localAttachmentPath;
     if (localPath != null && localPath.isNotEmpty) {
@@ -617,6 +921,7 @@ class CasamaMessageBubble extends StatelessWidget {
           width: w,
           height: h,
           fit: BoxFit.cover,
+          gaplessPlayback: true,
           errorBuilder: (_, _, _) => _brokenAttachmentBox(pal, w, h),
         );
       }
@@ -626,6 +931,7 @@ class CasamaMessageBubble extends StatelessWidget {
           width: w,
           height: h,
           fit: BoxFit.cover,
+          gaplessPlayback: true,
           errorBuilder: (_, _, _) => _brokenAttachmentBox(pal, w, h),
         );
       }
@@ -638,6 +944,7 @@ class CasamaMessageBubble extends StatelessWidget {
         width: w,
         height: h,
         fit: BoxFit.cover,
+        gaplessPlayback: true,
         errorBuilder: (_, _, _) => _brokenAttachmentBox(pal, w, h),
       );
     }
@@ -648,6 +955,7 @@ class CasamaMessageBubble extends StatelessWidget {
         width: w,
         height: h,
         fit: BoxFit.cover,
+        gaplessPlayback: true,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Container(
@@ -668,6 +976,7 @@ class CasamaMessageBubble extends StatelessWidget {
         width: w,
         height: h,
         fit: BoxFit.cover,
+        gaplessPlayback: true,
         errorBuilder: (_, _, _) => _brokenAttachmentBox(pal, w, h),
       );
     }

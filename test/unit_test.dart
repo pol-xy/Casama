@@ -37,7 +37,7 @@ void main() {
 
       expect(repo.isAuthenticated, true);
       expect(repo.currentUser.displayName, 'newuser');
-      expect(repo.currentUser.handle, '@newuser');
+      expect(repo.currentUser.handle, startsWith('@newuser_'));
       expect(repo.currentUser.hasConsentedTerms, false);
       expect(repo.currentUser.hasCompletedOnboarding, false);
       expect(repo.currentUser.effectiveGreetingName, 'newuser');
@@ -193,7 +193,6 @@ void main() {
     });
 
     test('MaintenanceTask.computePoints and completeTask enforce dynamic scoring and self-completion guard', () {
-      // All 8 category x urgency combinations (plus legacy diy/landlord aliases)
       expect(MaintenanceTask.computePoints(TaskCategory.cleaning, TaskUrgency.low), 7);
       expect(MaintenanceTask.computePoints(TaskCategory.cleaning, TaskUrgency.medium), 9);
       expect(MaintenanceTask.computePoints(TaskCategory.cleaning, TaskUrgency.urgent), 11);
@@ -207,7 +206,41 @@ void main() {
       expect(MaintenanceTask.computePoints(TaskCategory.personalRequest, TaskUrgency.medium), 12);
       expect(MaintenanceTask.computePoints(TaskCategory.personalRequest, TaskUrgency.urgent), 14);
 
-      // Own task (t1) awards 0 points
+      // Spun tasks stack +4 bonus pts on top of Category + Urgency (11, 13, 15, 14, 16, 18)
+      final bonus4 = ChoreRouletteRecord(
+        id: 'r_bonus',
+        householdId: 'h1',
+        choreTitle: 'Sample',
+        selectedUserId: 'u2',
+        selectedUserName: 'Maria',
+        spunByUserId: 'u1',
+        spunByName: 'JP',
+        bonusPoints: 4,
+        createdAt: DateTime(2026, 11, 27),
+      );
+      for (final (cat, urg, expectedSpunPts) in [
+        (TaskCategory.cleaning, TaskUrgency.low, 11),
+        (TaskCategory.cleaning, TaskUrgency.medium, 13),
+        (TaskCategory.cleaning, TaskUrgency.urgent, 15),
+        (TaskCategory.repairMaintenance, TaskUrgency.low, 14),
+        (TaskCategory.repairMaintenance, TaskUrgency.medium, 16),
+        (TaskCategory.repairMaintenance, TaskUrgency.urgent, 18),
+      ]) {
+        final t = MaintenanceTask(
+          id: 't_sample',
+          householdId: 'h1',
+          title: 'Sample',
+          category: cat,
+          urgency: urg,
+          status: TaskStatus.open,
+          createdBy: 'u1',
+          createdByName: 'JP',
+          createdAt: DateTime(2026, 11, 27),
+        );
+        expect(t.totalRewardPoints(rouletteRecord: bonus4), expectedSpunPts);
+      }
+
+      // Own unspun task (t1) awards 0 points
       final ownTask = repo.tasks.firstWhere((t) => t.id == 't1');
       expect(ownTask.createdBy, repo.currentUser.id);
       expect(ownTask.computedPoints, 14);
@@ -241,6 +274,82 @@ void main() {
       final pointsBeforeClean = repo.kasamaPoints;
       repo.completeTask(cleanTask.id);
       expect(repo.kasamaPoints, pointsBeforeClean + 7);
+    });
+
+    test('spinTaskRoulette enforces 1 irreversible spin per task, excludes creator, awards +4 bonus strictly to chosen housemate, and keeps creator at 0 pts', () async {
+      const mariaId = '22222222-2222-2222-2222-222222222222';
+      const alexId = '33333333-3333-3333-3333-333333333333';
+      const jpId = '11111111-1111-1111-1111-111111111111';
+      final initialNotifs = repo.notifications.length;
+
+      // Creator cannot be chosen by Task Roulette (t1 is created by JP)
+      await expectLater(
+        () => repo.spinTaskRoulette('t1', jpId),
+        throwsStateError,
+      );
+
+      // Spin t3 (created by Alex, base 7 pts -> 11 pts for chosen) for Maria
+      final record = await repo.spinTaskRoulette('t3', mariaId);
+      expect(record.taskId, 't3');
+      expect(record.selectedUserId, mariaId);
+      expect(record.spunByUserId, repo.currentUser.id);
+      expect(record.status, 'assigned');
+      expect(record.bonusPoints, 4);
+
+      // Engaging roulette_chosen notification created with +4 bonus pts
+      expect(repo.notifications.length, initialNotifs + 1);
+      final notif = repo.notifications.first;
+      expect(notif.type, 'roulette_chosen');
+      expect(notif.payload['task_id'], 't3');
+      expect(notif.payload['bonus_points'], 4);
+      expect(notif.payload['total_points'], 11);
+      expect(notif.payload['spinner_id'], repo.currentUser.id);
+
+      // Duplicate spin for already-spun task throws StateError
+      await expectLater(
+        () => repo.spinTaskRoulette('t3', mariaId),
+        throwsStateError,
+      );
+
+      // Zero 24h cooldown: same user can immediately spin t2 (created by Maria, base 9 -> 13 pts for chosen) for Alex
+      final secondRecord = await repo.spinTaskRoulette('t2', alexId);
+      expect(secondRecord.taskId, 't2');
+      expect(secondRecord.bonusPoints, 4);
+
+      // Non-chosen spinner (JP) completing t2 (chosen: Alex) earns base 9 pts ONLY (NO +4 bonus)
+      final jpBefore = repo.kasamaPoints;
+      repo.completeTask('t2');
+      expect(repo.kasamaPoints, jpBefore + 9);
+      expect(repo.rouletteRecordForTask('t2')!.status, 'completed');
+
+      // Chosen housemate (Maria) completing t3 earns base 7 + 4 = 11 pts
+      repo.setCurrentUserForTest(mariaId);
+      final mariaBefore = repo.pointsForUser(mariaId);
+      repo.completeTask('t3');
+      expect(repo.pointsForUser(mariaId), mariaBefore + 11);
+      expect(repo.rouletteRecordForTask('t3')!.status, 'completed');
+
+      // Non-chosen housemate (Alex) completing spun t1 (created by JP, chosen: Maria) earns base 14 pts ONLY
+      await repo.spinTaskRoulette('t1', mariaId);
+      repo.setCurrentUserForTest(alexId);
+      final alexBefore = repo.pointsForUser(alexId);
+      repo.completeTask('t1');
+      expect(repo.pointsForUser(alexId), alexBefore + 14);
+      expect(repo.rouletteRecordForTask('t1')!.status, 'completed');
+
+      // Creator completing their own task always earns 0 pts while still marking linked roulette completed
+      repo.setCurrentUserForTest(jpId);
+      repo.addTask(
+        title: 'Own Spun Task',
+        category: TaskCategory.cleaning,
+        urgency: TaskUrgency.low,
+      );
+      final ownTask = repo.tasks.firstWhere((t) => t.title == 'Own Spun Task');
+      await repo.spinTaskRoulette(ownTask.id, mariaId);
+      final jpBeforeOwn = repo.kasamaPoints;
+      repo.completeTask(ownTask.id);
+      expect(repo.kasamaPoints, jpBeforeOwn);
+      expect(repo.rouletteRecordForTask(ownTask.id)!.status, 'completed');
     });
 
     test('Lost & Found verification workflow: linked reject -> resubmit -> confirm (+5 pts), owner self-resolve (0 pts), and standalone claim (+2 pts)', () async {
@@ -388,28 +497,28 @@ void main() {
       expect(updated.last.isCurrentUser, true);
     });
 
-    test('respondMeetUp correctly transitions Going, Maybe, and Cant make it counts', () {
-      final initialGoing = repo.activeMeetUp.goingCount;
-      expect(repo.activeMeetUp.currentUserResponse, 'going');
+    test('respondToHousematesAgendaInvitation correctly transitions Going, Maybe, and Cant make it counts', () {
+      final initialGoing = repo.activeHousematesAgenda.goingCount;
+      expect(repo.activeHousematesAgenda.currentUserResponse, 'going');
 
-      repo.respondMeetUp('maybe');
-      expect(repo.activeMeetUp.currentUserResponse, 'maybe');
-      expect(repo.activeMeetUp.goingCount, initialGoing - 1);
-      expect(repo.activeMeetUp.maybeCount, 2);
+      repo.respondToHousematesAgendaInvitation('maybe');
+      expect(repo.activeHousematesAgenda.currentUserResponse, 'maybe');
+      expect(repo.activeHousematesAgenda.goingCount, initialGoing - 1);
+      expect(repo.activeHousematesAgenda.maybeCount, 2);
 
-      repo.respondMeetUp('cant_make_it');
-      expect(repo.activeMeetUp.currentUserResponse, 'cant_make_it');
-      expect(repo.activeMeetUp.maybeCount, 1);
-      expect(repo.activeMeetUp.cantMakeCount, 1);
+      repo.respondToHousematesAgendaInvitation('cant_make_it');
+      expect(repo.activeHousematesAgenda.currentUserResponse, 'cant_make_it');
+      expect(repo.activeHousematesAgenda.maybeCount, 1);
+      expect(repo.activeHousematesAgenda.cantMakeCount, 1);
 
-      // Completed ('done') meetups block further RSVP changes
-      repo.setActiveMeetUpForTest(
-        repo.activeMeetUp.copyWith(status: 'done'),
+      // Completed ('done') agendas block further RSVP changes
+      repo.setActiveHousematesAgendaForTest(
+        repo.activeHousematesAgenda.copyWith(status: 'done'),
       );
-      expect(repo.activeMeetUp.isActive, isFalse);
-      repo.respondMeetUp('going');
-      expect(repo.activeMeetUp.currentUserResponse, 'cant_make_it');
-      expect(repo.activeMeetUp.cantMakeCount, 1);
+      expect(repo.activeHousematesAgenda.isActive, isFalse);
+      repo.respondToHousematesAgendaInvitation('going');
+      expect(repo.activeHousematesAgenda.currentUserResponse, 'cant_make_it');
+      expect(repo.activeHousematesAgenda.cantMakeCount, 1);
     });
 
     test('Personalized greeting hierarchy accurately resolves nickname, first name, and fallback', () {
@@ -791,94 +900,6 @@ void main() {
     );
   });
 
-  group('Bills & Payments Feature Tests', () {
-    test('addBill stores a new bill and increments unread notifications if reminder enabled', () {
-      final repo = MockRepository();
-      final initialCount = repo.bills.length;
-      final initialUnread = repo.unreadNotificationCount;
-
-      repo.addBill(
-        category: BillCategory.electricity,
-        billName: 'Test Electric Bill',
-        amount: 1500.0,
-        deadline: DateTime.now().add(const Duration(days: 4)),
-        reminderEnabled: true,
-        reminderTiming: ReminderTiming.oneDayBefore,
-      );
-
-      expect(repo.bills.length, initialCount + 1);
-      final newBill = repo.bills.first;
-      expect(newBill.billName, 'Test Electric Bill');
-      expect(newBill.effectiveBillName, 'Test Electric Bill');
-      expect(newBill.effectiveCategoryLabel, 'Electricity');
-      expect(newBill.amount, 1500.0);
-      expect(newBill.status, BillStatus.unpaid);
-      expect(repo.unreadNotificationCount, initialUnread + 1);
-    });
-
-    test('markBillPaid awards +5 points and updates bill status', () {
-      final repo = MockRepository();
-      final initialPoints = repo.kasamaPoints;
-
-      // Find an unpaid bill
-      final unpaidBill = repo.bills.firstWhere(
-        (b) => b.status == BillStatus.unpaid,
-      );
-      repo.markBillPaid(unpaidBill.id);
-
-      expect(repo.kasamaPoints, initialPoints + 5);
-      final paidBill = repo.bills.firstWhere((b) => b.id == unpaidBill.id);
-      expect(paidBill.status, BillStatus.paid);
-      expect(paidBill.paidByName, repo.currentUser.displayName);
-      expect(paidBill.paidAt, isNotNull);
-
-      // Duplicate payment does not award double points
-      repo.markBillPaid(unpaidBill.id);
-      expect(repo.kasamaPoints, initialPoints + 5);
-    });
-
-    test('reopenBill reverts paid status to unpaid', () {
-      final repo = MockRepository();
-      final paidBill = repo.bills.firstWhere(
-        (b) => b.status == BillStatus.paid,
-      );
-      repo.reopenBill(paidBill.id);
-
-      final reopened = repo.bills.firstWhere((b) => b.id == paidBill.id);
-      expect(reopened.status, BillStatus.unpaid);
-    });
-
-    test('deleteBill removes the bill when requested by creator', () {
-      final repo = MockRepository();
-      final createdBill = repo.bills.firstWhere(
-        (b) => b.creatorId == repo.currentUser.id,
-      );
-      final countBefore = repo.bills.length;
-
-      repo.deleteBill(createdBill.id);
-      expect(repo.bills.length, countBefore - 1);
-      expect(repo.bills.any((b) => b.id == createdBill.id), isFalse);
-    });
-
-    test(
-      'overdue bills are auto-detected when deadline has passed and unpaid',
-      () {
-        final bill = HouseholdBill(
-          id: 'overdue_test',
-          householdId: 'h1',
-          creatorId: 'c1',
-          creatorName: 'JP',
-          category: BillCategory.internet,
-          deadline: DateTime.now().subtract(const Duration(days: 2)),
-          status: BillStatus.unpaid,
-          createdAt: DateTime.now().subtract(const Duration(days: 5)),
-        );
-
-        expect(bill.effectiveStatus, BillStatus.overdue);
-      },
-    );
-  });
-
   group('QuickSnap (Locket-style) Feature Tests', () {
     test(
       'sendQuickSnap adds new snap to repository and broadcasts to chat',
@@ -900,12 +921,15 @@ void main() {
         // Verify creator profile resolution (present avatar -> cleared avatar fallback)
         final resolvedWithAvatar = resolveSnapCreatorProfile(repo, newSnap);
         expect(resolvedWithAvatar.avatarUrl, repo.currentUser.effectiveAvatarUrl);
-        expect(resolvedWithAvatar.displayName, repo.currentUser.displayName);
+        expect(resolvedWithAvatar.preferredName, repo.currentUser.preferredName);
 
         repo.updateProfile(clearAvatar: true);
         final resolvedWithoutAvatar = resolveSnapCreatorProfile(repo, newSnap);
         expect(resolvedWithoutAvatar.avatarUrl, isNull);
-        expect(resolvedWithoutAvatar.displayName, repo.currentUser.displayName);
+        expect(
+          resolvedWithoutAvatar.preferredName,
+          repo.currentUser.preferredName,
+        );
 
         // Verify broadcast to household chat
         expect(repo.groupMessages.length, initialMessages + 1);

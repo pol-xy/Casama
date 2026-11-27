@@ -15,21 +15,21 @@ abstract class CasamaRepository extends ChangeNotifier {
   List<Household> get userHouseholds;
   int get kasamaPoints;
   String get effectiveGreetingName;
-  DateTime? get lastRouletteSpinAt;
 
   // Data lists & counts
   List<MemberPresence> get members;
   List<ParcelItem> get parcels;
   List<LostFoundItem> get items;
   List<MaintenanceTask> get tasks;
-  List<HouseholdBill> get bills;
+  List<ChoreRouletteRecord> get rouletteRecords;
+  ChoreRouletteRecord? rouletteRecordForTask(String taskId);
   List<ChatMessage> get groupMessages;
   List<ChatSpace> get chatSpaces;
   int get groupChatUnreadCount;
   int get unreadNotificationCount;
   int get totalUnreadChatCount;
-  MeetUpInvitation get activeMeetUp;
-  List<MeetUpInvitation> get meetUpInvitations;
+  HousematesAgendaInvitation get activeHousematesAgenda;
+  List<HousematesAgendaInvitation> get housematesAgendaInvitations;
   List<PointAuditEntry> get pointHistory;
   List<LeaderboardStanding> get leaderboardStandings;
   List<HouseholdNotificationItem> get notifications;
@@ -130,16 +130,10 @@ abstract class CasamaRepository extends ChangeNotifier {
   });
 
   // Task Roulette
-  Future<String?> recordRouletteSpin({
-    String? taskId,
-    required String taskTitle,
-    required String selectedUserId,
-  });
-  Future<void> respondToRouletteSpin({
-    required String spinId,
-    String? taskId,
-    required bool accepted,
-  });
+  Future<ChoreRouletteRecord> spinTaskRoulette(
+    String taskId,
+    String selectedUserId,
+  );
 
   // Lost & Found
   void postItem({
@@ -213,14 +207,18 @@ abstract class CasamaRepository extends ChangeNotifier {
   void retryGroupMessage(String messageId);
   void retrySpaceMessage(String spaceId, String messageId);
   void retryDirectMessage(String contactKey, String messageId);
-  Future<void> createMeetUp({
+  Future<void> createHousematesAgendaInvitation({
     required String activity,
     required String location,
     required DateTime scheduledTime,
     String? announcementText,
   });
-  void respondMeetUp(String response, {String? invitationId});
-  Future<void> deleteMeetUpInvitation(String invitationId);
+  void respondToHousematesAgendaInvitation(
+    String response, {
+    String? invitationId,
+  });
+  Future<void> updateHousematesAgendaStatus(String invitationId, String status);
+  Future<void> deleteHousematesAgendaInvitation(String invitationId);
 
   // Household Invitations
   bool sendInvitation({
@@ -230,38 +228,6 @@ abstract class CasamaRepository extends ChangeNotifier {
   bool acceptInvitation(String invitationId);
   bool declineInvitation(String invitationId);
   void resetMembersForNewUserTest();
-
-  // Bills & Payments
-  void addBill({
-    required BillCategory category,
-    String? customCategoryLabel,
-    String? billName,
-    double? amount,
-    required DateTime deadline,
-    String? notes,
-    bool reminderEnabled = true,
-    ReminderTiming reminderTiming = ReminderTiming.oneDayBefore,
-    BillRecipientType recipientType = BillRecipientType.allMembers,
-    List<String> selectedRecipientNames = const [],
-    String? responsibleMember,
-  });
-  void updateBill({
-    required String billId,
-    BillCategory? category,
-    String? customCategoryLabel,
-    String? billName,
-    double? amount,
-    DateTime? deadline,
-    String? notes,
-    bool? reminderEnabled,
-    ReminderTiming? reminderTiming,
-    BillRecipientType? recipientType,
-    List<String>? selectedRecipientNames,
-    String? responsibleMember,
-  });
-  void markBillPaid(String billId);
-  void reopenBill(String billId);
-  void deleteBill(String billId);
 
   // QuickSnap Locket
   void sendQuickSnap({
@@ -274,4 +240,35 @@ abstract class CasamaRepository extends ChangeNotifier {
   void reactToQuickSnap(String snapId, String emoji);
   void commentOnQuickSnap(String snapId, String text);
   void deleteQuickSnap(String snapId);
+}
+
+extension CasamaRepositoryNameX on CasamaRepository {
+  /// Resolves a housemate's live canonical UI name (`nickname` -> `fullName`
+  /// -> `displayName`) by [userId] from [currentUser] and active [members].
+  /// Falls back to [fallback] (or `'Housemate'`) only if not found.
+  String resolveHousemateName(
+    String? userId, {
+    String? fallback,
+    bool useYouForCurrentUser = false,
+  }) {
+    final cleanId = userId?.trim() ?? '';
+    if (cleanId.isNotEmpty) {
+      if (cleanId == currentUser.id) {
+        if (useYouForCurrentUser) return 'You';
+        final me = currentUser.preferredName;
+        if (me != 'You') return me;
+      }
+      for (final member in members) {
+        if (member.profile.id == cleanId) {
+          final name = member.profile.preferredName;
+          if (name != 'You') return name;
+        }
+      }
+    }
+    final fb = fallback?.trim();
+    if (fb != null && fb.isNotEmpty && fb != 'You') {
+      return fb;
+    }
+    return 'Housemate';
+  }
 }

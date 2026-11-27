@@ -124,7 +124,7 @@ class _CasamaPressableState extends State<CasamaPressable> {
 }
 
 /// Directional horizontal slide + fade switcher (`250ms`, `Curves.easeOut`) for
-/// tab changes across `Boards` views (`Parcels` -> `Tasks` -> `Bills` -> `Items`).
+/// tab changes across `Boards` views (`Parcels` -> `Tasks` -> `Items`).
 class CasamaDirectionalSwitcher extends StatelessWidget {
   final int index;
   final int previousIndex;
@@ -227,47 +227,51 @@ class CasamaMorphingFab extends StatelessWidget {
                     child: Container(
                       height: 56,
                       padding: const EdgeInsets.only(left: 16, right: 20),
-                      child: AnimatedSize(
-                        duration: reduced
-                            ? Duration.zero
-                            : CasamaMotion.press,
-                        curve: CasamaMotion.easeOut,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AnimatedSwitcher(
-                              duration: reduced
-                                  ? Duration.zero
-                                  : CasamaMotion.press,
-                              child: iconWidget != null
-                                  ? KeyedSubtree(
-                                      key: ValueKey('fab_icon_$label'),
-                                      child: iconWidget!,
-                                    )
-                                  : Icon(
-                                      icon!,
-                                      key: ValueKey(icon!.codePoint),
-                                      color: Colors.white,
-                                      size: 22,
-                                    ),
-                            ),
-                            const SizedBox(width: 8),
-                            AnimatedSwitcher(
-                              duration: reduced
-                                  ? Duration.zero
-                                  : CasamaMotion.press,
-                              child: Text(
-                                label,
-                                key: ValueKey(label),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
+                      child: Builder(
+                        builder: (_) {
+                          final content = Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSwitcher(
+                                duration: reduced
+                                    ? Duration.zero
+                                    : CasamaMotion.press,
+                                child: iconWidget != null
+                                    ? KeyedSubtree(
+                                        key: ValueKey('fab_icon_$label'),
+                                        child: iconWidget!,
+                                      )
+                                    : Icon(
+                                        icon!,
+                                        key: ValueKey(icon!.codePoint),
+                                        color: Colors.white,
+                                        size: 22,
+                                      ),
+                              ),
+                              const SizedBox(width: 8),
+                              AnimatedSwitcher(
+                                duration: reduced
+                                    ? Duration.zero
+                                    : CasamaMotion.press,
+                                child: Text(
+                                  label,
+                                  key: ValueKey(label),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          );
+                          if (reduced) return content;
+                          return AnimatedSize(
+                            duration: CasamaMotion.press,
+                            curve: CasamaMotion.easeOut,
+                            child: content,
+                          );
+                        },
                       ),
                     ),
                   ),

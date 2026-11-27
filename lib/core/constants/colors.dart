@@ -103,10 +103,6 @@ class CasamaColors {
   static const Color darkTileLostFound = Color(0xFF1B3633);
   static const Color darkTileChat = Color(0xFF202A3D);
 
-  // Bills & Payments
-  static const Color tileBills = Color(0xFFFFF3E0);
-  static const Color tileBillsIcon = Color(0xFFB54708);
-  static const Color darkTileBills = Color(0xFF3B2B17);
   static const Color tileChoreRoulette = Color(0xFFFFF0ED);
   static const Color darkTileChoreRoulette = Color(0xFF3A2220);
 }
@@ -458,8 +454,6 @@ extension CasamaThemeContext on BuildContext {
       isDark ? CasamaColors.darkTileLostFound : CasamaColors.tileLostFound;
   Color get tileChatColor =>
       isDark ? CasamaColors.darkTileChat : CasamaColors.tileChat;
-  Color get tileBillsColor =>
-      isDark ? CasamaColors.darkTileBills : CasamaColors.tileBills;
   Color get tileRouletteColor =>
       isDark ? CasamaColors.darkTileChoreRoulette : CasamaColors.tileChoreRoulette;
 }

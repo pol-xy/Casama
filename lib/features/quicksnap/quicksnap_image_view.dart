@@ -5,34 +5,28 @@ import 'package:flutter/material.dart';
 import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 
-/// Dynamically resolves a user's live [avatarUrl] and [displayName] from
+/// Dynamically resolves a user's live [avatarUrl] and [preferredName] from
 /// the active household members or current signed-in user profile.
-({String? avatarUrl, String displayName}) resolveProfileByUserId(
+({String? avatarUrl, String preferredName}) resolveProfileByUserId(
   CasamaRepository repo,
   String userId,
   String fallbackName,
 ) {
+  final preferred = repo.resolveHousemateName(userId, fallback: fallbackName);
   if (userId == repo.currentUser.id) {
-    final name = repo.currentUser.displayName.trim().isNotEmpty
-        ? repo.currentUser.displayName
-        : fallbackName;
-    return (avatarUrl: repo.currentUser.avatarUrl, displayName: name);
+    return (avatarUrl: repo.currentUser.avatarUrl, preferredName: preferred);
   }
   for (final member in repo.members) {
     if (member.profile.id == userId) {
-      final rawName = member.profile.displayName.trim();
-      final name = rawName.isNotEmpty && rawName != 'You'
-          ? rawName
-          : fallbackName;
-      return (avatarUrl: member.profile.avatarUrl, displayName: name);
+      return (avatarUrl: member.profile.avatarUrl, preferredName: preferred);
     }
   }
-  return (avatarUrl: null, displayName: fallbackName);
+  return (avatarUrl: null, preferredName: preferred);
 }
 
-/// Dynamically resolves the creator's live [avatarUrl] and [displayName] from
+/// Dynamically resolves the creator's live [avatarUrl] and [preferredName] from
 /// the active household members or current signed-in user profile.
-({String? avatarUrl, String displayName}) resolveSnapCreatorProfile(
+({String? avatarUrl, String preferredName}) resolveSnapCreatorProfile(
   CasamaRepository repo,
   QuickSnap snap,
 ) {

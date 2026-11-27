@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/colors.dart';
@@ -18,7 +17,21 @@ import '../../shared/widgets/casama_wave_header.dart';
 import '../chore_roulette/widgets/task_roulette_sheet.dart';
 import '../household/add_housemate_dialog.dart';
 import 'widgets/chat_thread_components.dart';
-import 'widgets/create_meetup_sheet.dart';
+import 'widgets/plan_housemates_agenda_sheet.dart';
+
+String formatGroupChatWheelSpinMessage({
+  required String question,
+  required String winnerName,
+  required bool landedOnSelf,
+}) {
+  final trimmedQuestion = question.trim();
+  final outcomeLine = landedOnSelf
+      ? '👉 Landed on: me! 😂'
+      : '👉 Landed on: $winnerName! 🎉';
+  return '🎡 Just spun the wheel!\n\n'
+      '"$trimmedQuestion"\n'
+      '$outcomeLine';
+}
 
 class GroupChatScreen extends ConsumerStatefulWidget {
   const GroupChatScreen({super.key});
@@ -64,18 +77,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
   }
 
   void _scrollToBottom() {
-    final reduced = CasamaMotion.reduceMotion(context);
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (!_scrollController.hasClients) return;
-      final maxExtent = _scrollController.position.maxScrollExtent;
-      if (reduced) {
-        _scrollController.jumpTo(maxExtent);
-      } else {
-        _scrollController.animateTo(
-          maxExtent,
-          duration: CasamaMotion.sheet,
-          curve: CasamaMotion.easeOut,
-        );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        scrollChatListToBottom(context, _scrollController);
       }
     });
   }
@@ -149,25 +153,20 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
               ],
             ),
             Expanded(
-              child: ListView(
+              child: CasamaChatMessageList(
                 controller: _scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: CasamaSpacing.md,
-                  vertical: CasamaSpacing.md,
+                messages: messages,
+                showTodayPillWhenEmpty: true,
+                senderNameBuilder: (m) => repo.resolveHousemateName(
+                  m.senderId,
+                  fallback: m.senderName,
                 ),
-                children: [
-                  const CasamaChatDatePill(label: 'Today'),
-                  ...messages.map(
-                    (m) => CasamaMessageBubble(
-                      message: m,
-                      timeLabel: DateFormat('h:mm a').format(m.createdAt),
-                      onRetry: m.deliveryStatus == MessageDeliveryStatus.failed
-                          ? () => repo.retryGroupMessage(m.id)
-                          : null,
-                      onRespondMeetUp: repo.respondMeetUp,
-                    ),
-                  ),
-                ],
+                onRetryBuilder: (m) =>
+                    m.deliveryStatus == MessageDeliveryStatus.failed
+                        ? () => repo.retryGroupMessage(m.id)
+                        : null,
+                onRespondHousematesAgenda:
+                    repo.respondToHousematesAgendaInvitation,
               ),
             ),
             SafeArea(
@@ -175,7 +174,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
               child: CasamaChatComposer(
                 controller: _msgController,
                 hintText: 'Message ${repo.currentHousehold.name}...',
-                attachIcon: Icons.attach_file_rounded,
+                attachIcon: Icons.add_rounded,
                 attachTooltip: 'Attach or propose activity',
                 onAttach: () => _showAttachmentModal(context),
                 onSend: _send,
@@ -191,20 +190,14 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
     );
   }
 
-  String _resolveRouletteName(UserProfile p) {
-    final nick = p.nickname?.trim();
-    if (nick != null && nick.isNotEmpty) return nick;
-    final full = p.fullName?.trim();
-    if (full != null && full.isNotEmpty) return full;
-    return p.displayName.trim();
-  }
+  String _resolveRouletteName(UserProfile p) => p.preferredName;
 
   void _showAttachmentModal(BuildContext context) {
     final pal = context.palette;
 
     showCasamaSheet<void>(
       context,
-      icon: Icons.attach_file_rounded,
+      icon: Icons.add_rounded,
       title: 'Share in Chat',
       subtitle: 'Attach photos, codes, or coordinate a household plan',
       builder: (ctx) => Column(
@@ -256,17 +249,17 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
             icon: Icons.celebration_outlined,
             iconColor: pal.primaryCoral,
             iconBg: pal.softBlush,
-            title: 'Propose Meet-up Activity',
+            title: 'Plan Housemates Agenda',
             onTap: () {
               Navigator.pop(ctx);
-              showCreateMeetupSheet(context);
+              showPlanHousematesAgendaSheet(context);
             },
           ),
           CasamaSheetActionRow(
             icon: Icons.casino_outlined,
             iconColor: pal.forestTeal,
             iconBg: pal.softSage,
-            title: 'Spin Chore Roulette',
+            title: 'Ask the Wheel',
             onTap: () {
               Navigator.pop(ctx);
               showTaskRouletteSheet(
@@ -274,11 +267,11 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                 mode: TaskRouletteMode.chatQuestion,
                 onChatSpinSubmitted: (question, winner) async {
                   final repo = ref.read(repositoryProvider);
-                  final askerName = _resolveRouletteName(repo.currentUser);
-                  final chosenOneName = _resolveRouletteName(winner.profile);
-                  final trimmedQuestion = question.trim();
-                  final messageText =
-                      '$askerName asked the wheel "$trimmedQuestion", and the wheel replied:\n"$chosenOneName"';
+                  final messageText = formatGroupChatWheelSpinMessage(
+                    question: question,
+                    winnerName: _resolveRouletteName(winner.profile),
+                    landedOnSelf: winner.profile.id == repo.currentUser.id,
+                  );
                   repo.sendChatMessage(
                     messageText,
                     clientMessageId: const Uuid().v4(),
@@ -318,7 +311,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                     CasamaAvatar(
                       radius: 20,
                       avatarUrl: m.profile.avatarUrl,
-                      name: m.profile.displayName,
+                      name: m.preferredName,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -329,7 +322,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                             children: [
                               Flexible(
                                 child: Text(
-                                  m.profile.displayName,
+                                  m.preferredName,
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w700,
                                     color: pal.textPrimary,
@@ -373,14 +366,14 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                     if (!isMe)
                       Semantics(
                         button: true,
-                        label: 'Direct message ${m.profile.displayName}',
+                        label: 'Direct message ${m.preferredName}',
                         child: CasamaPressable(
                           onTap: () {
                             Navigator.pop(ctx);
                             final contactKey =
                                 m.profile.displayName.toLowerCase();
                             GoRouter.maybeOf(context)?.push(
-                              '/direct-chat?contact=$contactKey&name=${Uri.encodeComponent(m.profile.displayName)}',
+                              '/direct-chat?contact=$contactKey&name=${Uri.encodeComponent(m.preferredName)}',
                             );
                           },
                           child: Container(

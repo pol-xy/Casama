@@ -31,8 +31,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     CasamaFilterOption(value: 'All', label: 'All'),
     CasamaFilterOption(value: 'Parcels', label: 'Parcels'),
     CasamaFilterOption(value: 'Tasks', label: 'Tasks'),
-    CasamaFilterOption(value: 'Bills', label: 'Bills'),
-    CasamaFilterOption(value: 'Meetups', label: 'Meetups'),
+    CasamaFilterOption(value: 'Agenda', label: 'Agenda'),
   ];
 
   @override
@@ -74,8 +73,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
         'All' => true,
         'Parcels' => e.type == _CalendarEventType.parcel,
         'Tasks' => e.type == _CalendarEventType.task,
-        'Bills' => e.type == _CalendarEventType.bill,
-        'Meetups' => e.type == _CalendarEventType.meetup,
+        'Agenda' => e.type == _CalendarEventType.agenda,
         _ => true,
       };
     }).toList();
@@ -252,7 +250,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
           ),
           const SizedBox(height: CasamaSpacing.xs),
 
-          // Unified Pill Filter Rail (All, Parcels, Tasks, Bills, Meetups)
+          // Unified Pill Filter Rail (All, Parcels, Tasks, Agenda)
           CasamaPillFilterRail<String>(
             padding: EdgeInsets.zero,
             options: _filterOptions,
@@ -454,17 +452,11 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
         icon = Icons.checklist_rounded;
         badgeText = 'Task';
         onTap = () => _navigateBoardOrRoute(context, 1, '/maintenance');
-      case _CalendarEventType.bill:
-        iconBg = pal.amberBg;
-        iconColor = pal.amberFg;
-        icon = Icons.receipt_long_outlined;
-        badgeText = 'Bill';
-        onTap = () => _navigateBoardOrRoute(context, 2, '/bills');
-      case _CalendarEventType.meetup:
+      case _CalendarEventType.agenda:
         iconBg = pal.infoBg;
         iconColor = pal.infoFg;
         icon = Icons.people_outline_rounded;
-        badgeText = 'Meet-up';
+        badgeText = 'Agenda';
         onTap = () {
           if (GoRouter.maybeOf(context) != null) {
             context.push('/group-chat');
@@ -635,9 +627,13 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
 
     for (final p in repo.parcels) {
       if (_isSameDay(p.expectedArrival, date)) {
+        final buyer = repo.resolveHousemateName(
+          p.buyerId,
+          fallback: p.buyerName,
+        );
         list.add(
           _CalendarEventItem(
-            title: "${p.buyerName}'s ${p.courier} Package",
+            title: "$buyer's ${p.courier} Package",
             subtitle:
                 p.paymentType == ParcelPaymentType.cod && p.codAmount != null
                 ? 'COD: ₱${p.codAmount!.toStringAsFixed(2)} • ${p.status.label}'
@@ -649,25 +645,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
       }
     }
 
-    for (final b in repo.bills) {
-      if (_isSameDay(b.deadline, date)) {
-        final statusLabel = b.effectiveStatus == BillStatus.paid
-            ? 'Paid'
-            : (b.effectiveStatus == BillStatus.overdue ? 'Overdue' : 'Due');
-        list.add(
-          _CalendarEventItem(
-            title: '${b.effectiveBillName} ($statusLabel)',
-            subtitle: b.amount != null
-                ? '₱${b.amount!.toStringAsFixed(2)} • ${b.responsibleMember ?? b.creatorName}'
-                : 'Assigned to ${b.responsibleMember ?? b.creatorName}',
-            timeLabel: statusLabel,
-            type: _CalendarEventType.bill,
-          ),
-        );
-      }
-    }
-
-    for (final m in repo.meetUpInvitations) {
+    for (final m in repo.housematesAgendaInvitations) {
       if (m.hasValidData && m.isActive && _isSameDay(m.scheduledTime, date)) {
         list.add(
           _CalendarEventItem(
@@ -675,7 +653,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
             subtitle: '${m.location} • ${m.goingCount} housemates going',
             timeLabel:
                 '${m.scheduledTime.hour}:${m.scheduledTime.minute.toString().padLeft(2, '0')}',
-            type: _CalendarEventType.meetup,
+            type: _CalendarEventType.agenda,
           ),
         );
       }
@@ -684,11 +662,15 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     for (final t in repo.tasks) {
       final taskDate = t.dueDate ?? t.createdAt;
       if (_isSameDay(taskDate, date)) {
+        final creator = repo.resolveHousemateName(
+          t.createdBy,
+          fallback: t.createdByName,
+        );
         list.add(
           _CalendarEventItem(
             title: t.title,
             subtitle:
-                '${t.category.label} • By ${t.createdByName} • ${t.urgency.label}',
+                '${t.category.label} • By $creator • ${t.urgency.label}',
             timeLabel: t.status == TaskStatus.done ? 'Completed' : 'Due Today',
             type: _CalendarEventType.task,
           ),
@@ -718,7 +700,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
   }
 }
 
-enum _CalendarEventType { parcel, task, bill, meetup }
+enum _CalendarEventType { parcel, task, agenda }
 
 class _CalendarEventItem {
   final String title;

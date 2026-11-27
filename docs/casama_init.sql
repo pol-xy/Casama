@@ -9,9 +9,9 @@ CREATE TABLE public.profiles (
   created_at timestamp with time zone DEFAULT now(),
   full_name text,
   nickname text,
-  age integer CHECK (age IS NULL OR age >= 10 AND age <= 120),
   has_consented_terms boolean DEFAULT false,
   has_completed_onboarding boolean DEFAULT false,
+  birthday date CHECK (birthday IS NULL OR birthday >= '1900-01-01'::date AND birthday <= CURRENT_DATE),
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
@@ -57,6 +57,8 @@ CREATE TABLE public.parcels (
   status text NOT NULL DEFAULT 'expected'::text CHECK (status = ANY (ARRAY['expected'::text, 'arrived'::text, 'received'::text, 'cancelled'::text])),
   notes text,
   created_at timestamp with time zone DEFAULT now(),
+  reminder_sent boolean NOT NULL DEFAULT false,
+  arrival_handled boolean NOT NULL DEFAULT false,
   CONSTRAINT parcels_pkey PRIMARY KEY (id),
   CONSTRAINT parcels_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
   CONSTRAINT parcels_buyer_id_fkey FOREIGN KEY (buyer_id) REFERENCES public.profiles(id)
@@ -95,18 +97,18 @@ CREATE TABLE public.maintenance_tasks (
   category text NOT NULL CHECK (category = ANY (ARRAY['cleaning'::text, 'repair_maintenance'::text, 'restock'::text, 'personal_request'::text])),
   urgency text NOT NULL CHECK (urgency = ANY (ARRAY['low'::text, 'medium'::text, 'urgent'::text])),
   status text NOT NULL DEFAULT 'open'::text CHECK (status = ANY (ARRAY['open'::text, 'in_progress'::text, 'done'::text])),
-  assignee_id uuid,
   created_by uuid NOT NULL,
   completed_by uuid,
   completed_at timestamp with time zone,
   created_at timestamp with time zone DEFAULT now(),
   description text,
   due_date timestamp with time zone,
+  due_reminder_sent boolean NOT NULL DEFAULT false,
+  overdue_notified boolean NOT NULL DEFAULT false,
   CONSTRAINT maintenance_tasks_pkey PRIMARY KEY (id),
   CONSTRAINT maintenance_tasks_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
   CONSTRAINT maintenance_tasks_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id),
-  CONSTRAINT maintenance_tasks_completed_by_fkey FOREIGN KEY (completed_by) REFERENCES public.profiles(id),
-  CONSTRAINT maintenance_tasks_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES public.profiles(id)
+  CONSTRAINT maintenance_tasks_completed_by_fkey FOREIGN KEY (completed_by) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.points_ledger (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -146,13 +148,14 @@ CREATE TABLE public.messages (
   conversation_id uuid NOT NULL,
   sender_id uuid NOT NULL,
   content text NOT NULL,
-  client_message_id text NOT NULL,
+  client_message_id text NOT NULL UNIQUE,
   created_at timestamp with time zone DEFAULT now(),
+  attachment_url text,
   CONSTRAINT messages_pkey PRIMARY KEY (id),
   CONSTRAINT messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id),
   CONSTRAINT messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id)
 );
-CREATE TABLE public.meet_up_invitations (
+CREATE TABLE public.housemates_agenda_invitations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   conversation_id uuid NOT NULL,
   creator_id uuid NOT NULL,
@@ -160,18 +163,21 @@ CREATE TABLE public.meet_up_invitations (
   location text NOT NULL,
   scheduled_time timestamp with time zone NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT meet_up_invitations_pkey PRIMARY KEY (id),
+  status text NOT NULL DEFAULT 'upcoming'::text CHECK (status = ANY (ARRAY['upcoming'::text, 'ongoing'::text, 'done'::text, 'missed'::text])),
+  reminder_sent boolean NOT NULL DEFAULT false,
+  arrival_handled boolean NOT NULL DEFAULT false,
+  CONSTRAINT housemates_agenda_invitations_pkey PRIMARY KEY (id),
   CONSTRAINT meet_up_invitations_creator_id_fkey FOREIGN KEY (creator_id) REFERENCES public.profiles(id),
   CONSTRAINT meet_up_invitations_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id)
 );
-CREATE TABLE public.meet_up_responses (
+CREATE TABLE public.housemates_agenda_responses (
   invitation_id uuid NOT NULL,
   user_id uuid NOT NULL,
   response text NOT NULL CHECK (response = ANY (ARRAY['going'::text, 'maybe'::text, 'cant_make_it'::text])),
   updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT meet_up_responses_pkey PRIMARY KEY (invitation_id, user_id),
+  CONSTRAINT housemates_agenda_responses_pkey PRIMARY KEY (invitation_id, user_id),
   CONSTRAINT meet_up_responses_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
-  CONSTRAINT meet_up_responses_invitation_id_fkey FOREIGN KEY (invitation_id) REFERENCES public.meet_up_invitations(id)
+  CONSTRAINT housemates_agenda_responses_invitation_id_fkey FOREIGN KEY (invitation_id) REFERENCES public.housemates_agenda_invitations(id)
 );
 CREATE TABLE public.notifications (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -216,22 +222,12 @@ CREATE TABLE public.quick_snaps (
   household_id uuid NOT NULL,
   creator_id uuid NOT NULL,
   creator_name text NOT NULL,
-  creator_avatar text,
   image_url text NOT NULL,
   caption text,
-  recipient_type text NOT NULL DEFAULT 'everyone'::text CHECK (recipient_type = ANY (ARRAY['everyone'::text, 'selected_friends'::text])),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
-  expires_at timestamp with time zone,
   CONSTRAINT quick_snaps_pkey PRIMARY KEY (id),
   CONSTRAINT quick_snaps_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
   CONSTRAINT quick_snaps_creator_id_fkey FOREIGN KEY (creator_id) REFERENCES public.profiles(id)
-);
-CREATE TABLE public.quick_snap_recipients (
-  snap_id uuid NOT NULL,
-  user_id uuid NOT NULL,
-  CONSTRAINT quick_snap_recipients_pkey PRIMARY KEY (snap_id, user_id),
-  CONSTRAINT quick_snap_recipients_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
-  CONSTRAINT quick_snap_recipients_snap_id_fkey FOREIGN KEY (snap_id) REFERENCES public.quick_snaps(id)
 );
 CREATE TABLE public.quick_snap_reactions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -240,6 +236,8 @@ CREATE TABLE public.quick_snap_reactions (
   user_name text NOT NULL,
   emoji text NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  count integer NOT NULL DEFAULT 1 CHECK (count >= 1),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT quick_snap_reactions_pkey PRIMARY KEY (id),
   CONSTRAINT quick_snap_reactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
   CONSTRAINT quick_snap_reactions_snap_id_fkey FOREIGN KEY (snap_id) REFERENCES public.quick_snaps(id)
@@ -264,13 +262,11 @@ CREATE TABLE public.chore_roulette_records (
   selected_user_name text,
   spun_by_user_id uuid,
   spun_by_name text,
-  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text, 'expired'::text])),
+  status text NOT NULL DEFAULT 'assigned'::text CHECK (status = ANY (ARRAY['assigned'::text, 'completed'::text])),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   completed_at timestamp with time zone,
-  task_id uuid,
-  decision text CHECK (decision IS NULL OR (decision = ANY (ARRAY['accepted'::text, 'rejected'::text]))),
-  expires_at timestamp with time zone NOT NULL DEFAULT (now() + '02:00:00'::interval),
-  responded_at timestamp with time zone,
+  task_id uuid UNIQUE,
+  bonus_points integer NOT NULL DEFAULT 4 CHECK (bonus_points >= 0),
   CONSTRAINT chore_roulette_records_pkey PRIMARY KEY (id),
   CONSTRAINT chore_roulette_records_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
   CONSTRAINT chore_roulette_records_assigned_user_id_fkey FOREIGN KEY (selected_user_id) REFERENCES public.profiles(id),
@@ -293,15 +289,17 @@ CREATE TABLE public.lost_items (
   description text,
   last_seen_location text,
   image_url text,
-  status text NOT NULL DEFAULT 'open'::text CHECK (status = ANY (ARRAY['open'::text, 'found'::text, 'returned'::text])),
+  status text NOT NULL DEFAULT 'open'::text CHECK (status = ANY (ARRAY['open'::text, 'resolved'::text])),
   found_by_id uuid,
   found_at timestamp with time zone,
   returned_at timestamp with time zone,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  resolved_found_item_id uuid,
   CONSTRAINT lost_items_pkey PRIMARY KEY (id),
   CONSTRAINT lost_items_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
   CONSTRAINT lost_items_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.profiles(id),
-  CONSTRAINT lost_items_found_by_id_fkey FOREIGN KEY (found_by_id) REFERENCES public.profiles(id)
+  CONSTRAINT lost_items_found_by_id_fkey FOREIGN KEY (found_by_id) REFERENCES public.profiles(id),
+  CONSTRAINT lost_items_resolved_found_item_id_fkey FOREIGN KEY (resolved_found_item_id) REFERENCES public.found_items(id)
 );
 CREATE TABLE public.found_items (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -311,13 +309,16 @@ CREATE TABLE public.found_items (
   description text,
   found_location text,
   image_url text,
-  status text NOT NULL DEFAULT 'unclaimed'::text CHECK (status = ANY (ARRAY['unclaimed'::text, 'claimed'::text, 'returned'::text])),
+  status text NOT NULL DEFAULT 'unclaimed'::text,
   claimed_by_id uuid,
   claimed_at timestamp with time zone,
   returned_at timestamp with time zone,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  lost_item_id uuid,
+  rejected_at timestamp with time zone,
   CONSTRAINT found_items_pkey PRIMARY KEY (id),
   CONSTRAINT found_items_claimed_by_id_fkey FOREIGN KEY (claimed_by_id) REFERENCES public.profiles(id),
   CONSTRAINT found_items_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
-  CONSTRAINT found_items_finder_id_fkey FOREIGN KEY (finder_id) REFERENCES public.profiles(id)
+  CONSTRAINT found_items_finder_id_fkey FOREIGN KEY (finder_id) REFERENCES public.profiles(id),
+  CONSTRAINT found_items_lost_item_id_fkey FOREIGN KEY (lost_item_id) REFERENCES public.lost_items(id)
 );

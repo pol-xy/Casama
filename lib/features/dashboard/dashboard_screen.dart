@@ -14,6 +14,7 @@ import '../../shared/widgets/avatar_chip.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../calendar/household_calendar_view.dart';
@@ -83,13 +84,36 @@ class DashboardScreen extends ConsumerWidget {
             children: [
               // 1. Stepped Forest Teal Wave Header
               CasamaWaveHeader(
-                title: 'Hello, ${repo.currentUser.effectiveGreetingName}!',
+                title: 'Hello, ${repo.currentUser.preferredName}!',
                 subtitle: _getTimeBasedGreeting(),
                 showNotificationBell: true,
                 onMenuTap: () => _openDrawer(context),
               ),
 
-              // 2. Overlapping Split Hero (Transparent PNG Mascot + Casa Status)
+              // 2. Overlapping Split Hero (or No-Household Prompt)
+              if (!repo.hasActiveHousehold)
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxW),
+                    child: const Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        CasamaSpacing.md,
+                        CasamaSpacing.md,
+                        CasamaSpacing.md,
+                        0,
+                      ),
+                      child: CasamaNoHouseholdPrompt(
+                        title: 'No household yet',
+                        subtitle:
+                            'Join your housemates with an invite code or start your own Casa to unlock Presence, Boards, CASnap, and Chat.',
+                        joinLabel: 'Join a Household',
+                        createLabel: 'Create a Household',
+                        mascotPose: CasPose.hero,
+                      ),
+                    ),
+                  ),
+                )
+              else
               Center(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: maxW),
@@ -186,7 +210,10 @@ class DashboardScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 4,
                       children: [
                         Text(
                           "Who's Home",
@@ -195,7 +222,6 @@ class DashboardScreen extends ConsumerWidget {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
@@ -207,6 +233,8 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           child: Text(
                             repo.currentHousehold.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -218,7 +246,7 @@ class DashboardScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Tap your status to toggle or add a note',
+                      'Tap a profile to view or update a status note',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: pal.textSecondary,
                         fontSize: 12,
@@ -296,31 +324,50 @@ class DashboardScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: CasamaSpacing.md),
-          Wrap(
-            alignment: WrapAlignment.spaceAround,
-            runAlignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 12,
-            children: [
-              for (final m in members)
-                SizedBox(
-                  width: 72,
-                  child: AvatarChip(
-                    name: m.profile.displayName,
-                    avatarUrl: m.profile.avatarUrl,
-                    isHome: m.isHome,
-                    isCurrentUser: m.profile.id == repo.currentUser.id,
-                    onTap: m.profile.id == repo.currentUser.id
-                        ? () => _showPresenceToggleModal(
-                            context,
-                            ref,
-                            m.isHome,
-                            m.note,
-                          )
-                        : () => _showMemberInfoModal(context, m),
-                  ),
-                ),
-            ],
+          SizedBox(
+            width: double.infinity,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 6.0;
+                final maxCols = constraints.maxWidth < 280 ? 3 : 4;
+                final cols = members.isEmpty
+                    ? 1
+                    : (members.length < maxCols ? members.length : maxCols);
+                final slotWidth =
+                    ((constraints.maxWidth - spacing * (cols - 1)) / cols)
+                        .clamp(64.0, 96.0);
+                return Wrap(
+                  alignment: members.length <= maxCols
+                      ? WrapAlignment.spaceEvenly
+                      : WrapAlignment.start,
+                  runAlignment: WrapAlignment.start,
+                  crossAxisAlignment: WrapCrossAlignment.end,
+                  spacing: spacing,
+                  runSpacing: 14,
+                  children: [
+                    for (final m in members)
+                      SizedBox(
+                        width: slotWidth,
+                        child: AvatarChip(
+                          name: m.preferredName,
+                          avatarUrl: m.profile.avatarUrl,
+                          isHome: m.isHome,
+                          isCurrentUser: m.profile.id == repo.currentUser.id,
+                          note: m.note,
+                          onTap: m.profile.id == repo.currentUser.id
+                              ? () => _showPresenceToggleModal(
+                                  context,
+                                  ref,
+                                  m.isHome,
+                                  m.note,
+                                )
+                              : () => _showMemberInfoModal(context, m),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
           ),
           if (members.length <= 1) ...[
             const SizedBox(height: CasamaSpacing.sm),
@@ -382,39 +429,6 @@ class DashboardScreen extends ConsumerWidget {
   ) {
     final items = <_AttentionRowData>[];
 
-    final unpaidBills =
-        repo.bills.where((b) => b.effectiveStatus != BillStatus.paid).toList()
-          ..sort((a, b) {
-            final aOverdue = a.effectiveStatus == BillStatus.overdue ? 0 : 1;
-            final bOverdue = b.effectiveStatus == BillStatus.overdue ? 0 : 1;
-            if (aOverdue != bOverdue) return aOverdue.compareTo(bOverdue);
-            return a.deadline.compareTo(b.deadline);
-          });
-
-    for (final bill in unpaidBills) {
-      final overdue = bill.effectiveStatus == BillStatus.overdue;
-      final dueLabel = DateFormat('MMM d').format(bill.deadline);
-      items.add(
-        _AttentionRowData(
-          priority: overdue ? 0 : 2,
-          icon: Icons.receipt_long_rounded,
-          iconBg: overdue ? pal.softBlush : pal.amberBg,
-          iconColor: overdue ? pal.dangerFg : pal.amberFg,
-          rowBg: overdue ? pal.softBlush.withValues(alpha: 0.72) : pal.card,
-          title: overdue
-              ? '${bill.effectiveBillName} • Overdue'
-              : '${bill.effectiveBillName} • Unpaid',
-          subtitle: 'Due $dueLabel',
-          trailingTop: bill.amount != null
-              ? '₱${bill.amount!.toStringAsFixed(2)}'
-              : null,
-          trailingAction: overdue ? 'Settle ›' : 'View ›',
-          trailingColor: overdue ? pal.dangerFg : pal.forestTeal,
-          onTap: () => _openBoardTab(context, 2, '/boards?tab=bills'),
-        ),
-      );
-    }
-
     final pendingTasks =
         repo.tasks.where((t) => t.status != TaskStatus.done).toList()
           ..sort((a, b) {
@@ -428,7 +442,7 @@ class DashboardScreen extends ConsumerWidget {
       final isUrgent = task.urgency == TaskUrgency.urgent;
       final dueOrCreator = task.dueDate != null
           ? 'Due ${DateFormat('MMM d').format(task.dueDate!)}'
-          : 'By ${task.createdByName}';
+          : 'By ${repo.resolveHousemateName(task.createdBy, fallback: task.createdByName)}';
       items.add(
         _AttentionRowData(
           priority: isUrgent ? 1 : 3,
@@ -460,7 +474,8 @@ class DashboardScreen extends ConsumerWidget {
           iconBg: pal.softBlush,
           iconColor: pal.primaryCoral,
           rowBg: pal.softBlush.withValues(alpha: 0.6),
-          title: '${parcel.courier} COD for ${parcel.buyerName}',
+          title:
+              '${parcel.courier} COD for ${repo.resolveHousemateName(parcel.buyerId, fallback: parcel.buyerName)}',
           subtitle: 'Status: ${parcel.status.label}',
           trailingTop: parcel.codAmount != null
               ? '₱${parcel.codAmount!.toStringAsFixed(0)}'
@@ -530,7 +545,7 @@ class DashboardScreen extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'All caught up — no overdue bills, urgent chores, or COD handoffs.',
+                    'All caught up — no urgent tasks or COD handoffs.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: pal.textSecondary,
                       fontSize: 12.5,
@@ -555,198 +570,95 @@ class DashboardScreen extends ConsumerWidget {
     bool currentIsHome,
     String? currentNote,
   ) {
-    var isHome = currentIsHome;
-    final noteController = TextEditingController(text: currentNote);
-
     showCasamaSheet<void>(
       context,
       icon: Icons.person_pin_circle_outlined,
       title: 'Update Your Presence',
       subtitle: 'Let roommates know if you are Home or Out',
-      builder: (sheetCtx) {
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            final pal = ctx.palette;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(0, 48),
-                          backgroundColor: isHome
-                              ? pal.successBg
-                              : Colors.transparent,
-                          side: BorderSide(
-                            color: isHome ? pal.successFg : pal.border,
-                            width: isHome ? 1.8 : 1,
-                          ),
-                          shape: const StadiumBorder(),
-                        ),
-                        onPressed: () => setModalState(() => isHome = true),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: pal.successFg,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              "I'm Home",
-                              style: TextStyle(
-                                color: isHome ? pal.successFg : pal.textPrimary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(0, 48),
-                          backgroundColor: !isHome
-                              ? pal.neutralBg
-                              : Colors.transparent,
-                          side: BorderSide(
-                            color: !isHome ? pal.neutralFg : pal.border,
-                            width: !isHome ? 1.8 : 1,
-                          ),
-                          shape: const StadiumBorder(),
-                        ),
-                        onPressed: () => setModalState(() => isHome = false),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: pal.neutralFg,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              "I'm Out",
-                              style: TextStyle(
-                                color: !isHome
-                                    ? pal.neutralFg
-                                    : pal.textPrimary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: CasamaSpacing.md),
-                TextField(
-                  controller: noteController,
-                  decoration: const InputDecoration(
-                    labelText: 'Status note (optional)',
-                    hintText: 'e.g., Studying, At class, Cooking',
-                  ),
-                ),
-                const SizedBox(height: CasamaSpacing.lg),
-                CasamaButton(
-                  label: 'Save Status',
-                  isPill: true,
-                  height: 50,
-                  onPressed: () {
-                    final note = noteController.text.trim();
-                    ref
-                        .read(repositoryProvider)
-                        .updatePresence(
-                          isHome: isHome,
-                          note: note.isNotEmpty ? note : null,
-                        );
-                    Navigator.of(sheetCtx).pop();
-                    showCasamaToast(
-                      context,
-                      'Presence updated',
-                      icon: Icons.check_circle_outline_rounded,
-                    );
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(noteController.dispose);
+      builder: (_) => _PresenceUpdateSheetBody(
+        initialIsHome: currentIsHome,
+        initialNote: currentNote,
+        hostContext: context,
+      ),
+    );
   }
 
   void _showMemberInfoModal(BuildContext context, MemberPresence member) {
+    final savedNote = member.note?.trim() ?? '';
+
     showCasamaSheet<void>(
       context,
       icon: Icons.badge_outlined,
-      title: member.profile.displayName,
+      title: member.preferredName,
       subtitle: member.profile.handle,
       builder: (ctx) {
         final pal = ctx.palette;
         final theme = Theme.of(ctx);
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            CasamaAvatar(
-              radius: 36,
-              avatarUrl: member.profile.avatarUrl,
-              name: member.profile.displayName,
-              borderWidth: 2,
-              borderColor: member.isHome ? pal.successFg : pal.border,
+            Center(
+              child: CasamaAvatar(
+                radius: 36,
+                avatarUrl: member.profile.avatarUrl,
+                name: member.preferredName,
+                borderWidth: 2,
+                borderColor: member.isHome ? pal.successFg : pal.border,
+              ),
             ),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: member.isHome ? pal.successBg : pal.neutralBg,
-                borderRadius: CasamaSpacing.roundedPill,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: member.isHome ? pal.successFg : pal.neutralFg,
-                      shape: BoxShape.circle,
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: member.isHome ? pal.successBg : pal.neutralBg,
+                  borderRadius: CasamaSpacing.roundedPill,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: member.isHome ? pal.successFg : pal.neutralFg,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    member.isHome ? 'Currently Home' : 'Currently Out',
-                    style: TextStyle(
-                      color: member.isHome ? pal.successFg : pal.neutralFg,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                    const SizedBox(width: 8),
+                    Text(
+                      member.isHome ? 'Currently Home' : 'Currently Out',
+                      style: TextStyle(
+                        color: member.isHome ? pal.successFg : pal.neutralFg,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            if (member.note != null && member.note!.trim().isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                '"${member.note!.trim()}"',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontStyle: FontStyle.italic,
-                  color: pal.textSecondary,
+                  ],
                 ),
               ),
-            ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: pal.scaffoldBg,
+                borderRadius: CasamaSpacing.roundedMd,
+                border: Border.all(color: pal.border),
+              ),
+              child: Text(
+                savedNote.isNotEmpty ? '"$savedNote"' : 'No status note yet',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: savedNote.isNotEmpty
+                      ? pal.textPrimary
+                      : pal.textSecondary,
+                  fontStyle: savedNote.isNotEmpty
+                      ? FontStyle.normal
+                      : FontStyle.italic,
+                ),
+              ),
+            ),
             const SizedBox(height: CasamaSpacing.md),
           ],
         );
@@ -876,6 +788,179 @@ class _AttentionActionTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PresenceUpdateSheetBody extends ConsumerStatefulWidget {
+  final bool initialIsHome;
+  final String? initialNote;
+  final BuildContext hostContext;
+
+  const _PresenceUpdateSheetBody({
+    required this.initialIsHome,
+    required this.initialNote,
+    required this.hostContext,
+  });
+
+  @override
+  ConsumerState<_PresenceUpdateSheetBody> createState() =>
+      _PresenceUpdateSheetBodyState();
+}
+
+class _PresenceUpdateSheetBodyState
+    extends ConsumerState<_PresenceUpdateSheetBody> {
+  late bool _isHome;
+  late final TextEditingController _noteController;
+
+  @override
+  void initState() {
+    super.initState();
+    _isHome = widget.initialIsHome;
+    _noteController = TextEditingController(text: widget.initialNote ?? '');
+  }
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                  backgroundColor: _isHome ? pal.successBg : Colors.transparent,
+                  side: BorderSide(
+                    color: _isHome ? pal.successFg : pal.border,
+                    width: _isHome ? 1.8 : 1,
+                  ),
+                  shape: const StadiumBorder(),
+                ),
+                onPressed: () => setState(() => _isHome = true),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: pal.successFg,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "I'm Home",
+                      style: TextStyle(
+                        color: _isHome ? pal.successFg : pal.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                  backgroundColor: !_isHome
+                      ? pal.neutralBg
+                      : Colors.transparent,
+                  side: BorderSide(
+                    color: !_isHome ? pal.neutralFg : pal.border,
+                    width: !_isHome ? 1.8 : 1,
+                  ),
+                  shape: const StadiumBorder(),
+                ),
+                onPressed: () => setState(() => _isHome = false),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: pal.neutralFg,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "I'm Out",
+                      style: TextStyle(
+                        color: !_isHome ? pal.neutralFg : pal.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: CasamaSpacing.md),
+        TextField(
+          key: const ValueKey('presence_note_input'),
+          controller: _noteController,
+          maxLength: 120,
+          maxLines: 2,
+          minLines: 1,
+          textInputAction: TextInputAction.done,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            labelText: 'Status note (optional)',
+            hintText: 'e.g., Studying, At class, Cooking',
+            suffixIcon: _noteController.text.isNotEmpty
+                ? IconButton(
+                    tooltip: 'Clear note text',
+                    icon: Icon(
+                      Icons.clear_rounded,
+                      size: 18,
+                      color: pal.textSecondary,
+                    ),
+                    onPressed: () => setState(() => _noteController.clear()),
+                  )
+                : null,
+          ),
+        ),
+        const SizedBox(height: CasamaSpacing.lg),
+        CasamaButton(
+          key: const ValueKey('presence_note_save_button'),
+          label: 'Save',
+          isPill: true,
+          height: 50,
+          onPressed: () {
+            FocusScope.of(context).unfocus();
+            final note = _noteController.text.trim();
+            ref
+                .read(repositoryProvider)
+                .updatePresence(
+                  isHome: _isHome,
+                  note: note.isNotEmpty ? note : null,
+                );
+            Navigator.of(context).pop();
+            if (widget.hostContext.mounted) {
+              showCasamaToast(
+                widget.hostContext,
+                'Presence updated',
+                icon: Icons.check_circle_outline_rounded,
+              );
+            }
+          },
+        ),
+      ],
     );
   }
 }

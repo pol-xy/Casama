@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
@@ -17,7 +18,7 @@ import 'dashboard_screen.dart';
 import 'widgets/casama_household_drawer.dart';
 
 /// Inherited shell scope letting tab screens switch top-level tabs, deep-link
-/// into a remembered Board sub-tab (`0=Parcels, 1=Tasks, 2=Bills, 3=Items`),
+/// into a remembered Board sub-tab (`0=Parcels, 1=Tasks, 2=Items`),
 /// or open [CasamaHouseholdDrawer].
 class CasamaShellScope extends InheritedWidget {
   final int currentIndex;
@@ -83,12 +84,19 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex.clamp(0, 4);
-    _boardTabNotifier = ValueNotifier<int>(widget.initialBoardIndex.clamp(0, 3));
+    _boardTabNotifier = ValueNotifier<int>(widget.initialBoardIndex.clamp(0, 2));
     _isTourActive = widget.isTourMode;
     if (_isTourActive) {
       _tourStep = _currentIndex == 1
           ? 1
           : (_currentIndex == 3 ? 3 : (_currentIndex == 4 ? 4 : 0));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final repo = ref.read(repositoryProvider);
+        if (!repo.currentUser.hasCompletedOnboarding) {
+          repo.completeOnboardingTutorial();
+        }
+      });
     }
   }
 
@@ -99,7 +107,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       _currentIndex = widget.initialIndex.clamp(0, 4);
     }
     if (widget.initialBoardIndex != oldWidget.initialBoardIndex) {
-      _boardTabNotifier.value = widget.initialBoardIndex.clamp(0, 3);
+      _boardTabNotifier.value = widget.initialBoardIndex.clamp(0, 2);
     }
     if (widget.isTourMode != oldWidget.isTourMode) {
       setState(() => _isTourActive = widget.isTourMode);
@@ -142,7 +150,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
   }
 
   void _openBoardTab(int boardIndex) {
-    _boardTabNotifier.value = boardIndex.clamp(0, 3);
+    _boardTabNotifier.value = boardIndex.clamp(0, 2);
     setState(() {
       _currentIndex = 1;
       if (_isTourActive) _tourStep = 1;
@@ -163,6 +171,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       _isTourActive = false;
       _currentIndex = 0;
     });
+    GoRouter.maybeOf(context)?.go('/dashboard');
     showCasamaToast(
       context,
       'Feature tour complete! Welcome to Casama.',
@@ -260,7 +269,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       ),
       1 => (
         '2. Unified Household Boards',
-        'Swipe across Parcels, Chores & Tasks, Utility Bills, and Lost & Found in one shared household hub.',
+        'Swipe across Parcels, Household Tasks, and Lost & Found in one shared household hub.',
         CasPose.deliveries,
         'Next: CASnap ›',
       ),
@@ -271,8 +280,8 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
         'Next: Chat ›',
       ),
       3 => (
-        '4. Household Chat & Meet-ups',
-        'Message housemates 1-on-1, coordinate in topic spaces, and organize group meet-ups with instant RSVPs.',
+        '4. Household Chat & Agendas',
+        'Message housemates 1-on-1, coordinate in topic spaces, and plan household agendas with instant RSVPs.',
         CasPose.chatting,
         'Next: Profile ›',
       ),
@@ -319,28 +328,6 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: pal.primaryCoral,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Semantics(
-                button: true,
-                label: 'Skip feature tour',
-                child: CasamaPressable(
-                  onTap: _finishTour,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    child: Text(
-                      'Skip Tour',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: pal.textMuted,
-                      ),
-                    ),
                   ),
                 ),
               ),
@@ -402,18 +389,20 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
                 )
               else
                 const SizedBox.shrink(),
-              CasamaButton(
-                label: actionLabel,
-                isPill: true,
-                isFullWidth: false,
-                height: 36,
-                onPressed: () {
-                  if (_tourStep < 4) {
-                    _goToTourStep(_tourStep + 1);
-                  } else {
-                    _finishTour();
-                  }
-                },
+              Flexible(
+                child: CasamaButton(
+                  label: actionLabel,
+                  isPill: true,
+                  isFullWidth: false,
+                  height: 36,
+                  onPressed: () {
+                    if (_tourStep < 4) {
+                      _goToTourStep(_tourStep + 1);
+                    } else {
+                      _finishTour();
+                    }
+                  },
+                ),
               ),
             ],
           ),

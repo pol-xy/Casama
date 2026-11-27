@@ -44,7 +44,9 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
     super.initState();
     final user = ref.read(repositoryProvider).currentUser;
     _nameController = TextEditingController(
-      text: user.fullName ?? user.displayName,
+      text: (user.fullName != null && user.fullName!.trim().isNotEmpty)
+          ? user.fullName!.trim()
+          : user.displayName,
     );
     _nicknameController = TextEditingController(text: user.nickname ?? '');
     if (user.birthday != null) {
@@ -163,6 +165,8 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
     String? nextBirthdayError;
     if (birthDate == null) {
       nextBirthdayError = 'Please select your complete birthday';
+    } else if (birthDate.isBefore(DateTime(1900, 1, 1))) {
+      nextBirthdayError = 'Please select a valid birthday';
     } else if (_isFutureDate(birthDate)) {
       nextBirthdayError = 'Birthday cannot be in the future';
     }
@@ -433,8 +437,10 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
               CasamaTextField(
                 controller: _nameController,
                 label: 'Full Name',
-                hint: 'Juan dela Cruz',
+                hint: 'e.g., Jon Paul Berana',
                 prefixIcon: Icons.badge_outlined,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
                 validator: (v) => v == null || v.trim().isEmpty
                     ? 'Please enter your full name'
                     : null,

@@ -7,10 +7,12 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
+import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../../shared/widgets/status_chip.dart';
 import '../chore_roulette/widgets/task_roulette_sheet.dart';
@@ -35,7 +37,9 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
     super.initState();
     if (widget.initialOpenAddModal) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) showNewTaskSheet(context);
+        if (mounted && ref.read(repositoryProvider).hasActiveHousehold) {
+          showNewTaskSheet(context);
+        }
       });
     }
   }
@@ -47,33 +51,38 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
 
     return Scaffold(
       backgroundColor: pal.scaffoldBg,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showNewTaskSheet(context),
-        backgroundColor: pal.coralFab,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_task_rounded),
-        label: const Text(
-          'New task',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-      ),
+      floatingActionButton: repo.hasActiveHousehold
+          ? FloatingActionButton.extended(
+              onPressed: () => showNewTaskSheet(context),
+              backgroundColor: pal.coralFab,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add_task_rounded),
+              label: const Text(
+                'New task',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            )
+          : null,
       body: CasamaAmbientCanvas(
         child: Column(
           children: [
             CasamaWaveHeader(
               title: 'Household Tasks',
-              subtitle: '${repo.currentHousehold.name} • Chores & requests',
+              subtitle: repo.hasActiveHousehold
+                  ? '${repo.currentHousehold.name} • Chores & requests'
+                  : 'No household yet • Chores & requests',
               titleMascotPose: CasPose.tasks,
               extendedWave: true,
               compact: true,
               onBackTap: () =>
                   context.canPop() ? context.pop() : context.go('/boards'),
               rightActions: [
-                CasamaHeaderActionPill(
-                  icon: Icons.add_task_rounded,
-                  label: 'New task',
-                  onTap: () => showNewTaskSheet(context),
-                ),
+                if (repo.hasActiveHousehold)
+                  CasamaHeaderActionPill(
+                    icon: Icons.add_task_rounded,
+                    label: 'New task',
+                    onTap: () => showNewTaskSheet(context),
+                  ),
               ],
             ),
             const Expanded(
@@ -108,18 +117,35 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
   void _completeTask(MaintenanceTask task) {
     if (task.status == TaskStatus.done) return;
     final repo = ref.read(repositoryProvider);
+    final rouletteRecord = repo.rouletteRecordForTask(task.id);
     final isOwnTask =
         task.createdBy.isNotEmpty && task.createdBy == repo.currentUser.id;
+    final rewardPoints = task.rewardPointsForUser(
+      repo.currentUser.id,
+      rouletteRecord: rouletteRecord,
+    );
     repo.completeTask(task.id);
     if (_expandedTaskId == task.id) {
       setState(() => _expandedTaskId = null);
     }
     showCasamaToast(
       context,
-      isOwnTask
+      isOwnTask || rewardPoints <= 0
           ? 'Task marked as done'
-          : 'Completed "${task.title}" (+${task.computedPoints} pts)',
+          : 'Completed "${task.title}" (+$rewardPoints pts)',
       icon: Icons.check_circle_outline_rounded,
+    );
+  }
+
+  String _resolveViewerName(
+    CasamaRepository repo,
+    String userId,
+    String fallbackName,
+  ) {
+    return repo.resolveHousemateName(
+      userId,
+      fallback: fallbackName,
+      useYouForCurrentUser: true,
     );
   }
 
@@ -128,10 +154,30 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
     final pal = context.palette;
     final theme = Theme.of(context);
     final repo = ref.watch(repositoryProvider);
+    if (!repo.hasActiveHousehold) {
+      return SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          CasamaSpacing.md,
+          CasamaSpacing.md,
+          CasamaSpacing.md,
+          widget.bottomPadding,
+        ),
+        child: const CasamaNoHouseholdPrompt(
+          title: 'Join a household',
+          subtitle:
+              'Track shared chores, earn Good Kasama points, and spin Task Roulette once you join or create a household.',
+          mascotPose: CasPose.tasks,
+        ),
+      );
+    }
     final overrides = ref.watch(taskUiOverridesProvider);
     final currentUserId = repo.currentUser.id;
 
     final tasks = repo.tasks;
+    final rouletteByTaskId = <String, ChoreRouletteRecord>{
+      for (final r in repo.rouletteRecords)
+        if (r.taskId != null && r.taskId!.isNotEmpty) r.taskId!: r,
+    };
     final ongoingTasks = tasks
         .where((t) => t.status != TaskStatus.done)
         .toList();
@@ -149,12 +195,17 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
         .length;
     final totalOngoingPoints = ongoingTasks.fold<int>(
       0,
-      (sum, t) => sum + t.computedPoints,
+      (sum, t) =>
+          sum +
+          t.rewardPointsForUser(
+            currentUserId,
+            rouletteRecord: rouletteByTaskId[t.id],
+          ),
     );
     final visibleTasks = _selectedSegment == 0 ? ongoingTasks : completedTasks;
     final emptyTitle = _selectedSegment == 0
-        ? 'No ongoing requests'
-        : 'No completed requests yet';
+        ? 'No ongoing tasks'
+        : 'No completed tasks yet';
     final emptySubtitle = _selectedSegment == 0
         ? 'Tap "New task" to create a chore, repair, restock, or request.'
         : 'Finished household tasks and chores will appear here.';
@@ -193,7 +244,7 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
               ),
             ),
             rightTitle: '$totalOngoingPoints pts',
-            rightSubtitle: 'Across ongoing requests',
+            rightSubtitle: 'Across ongoing tasks',
             rightTitleColor: pal.forestTeal,
           ),
           const SizedBox(height: CasamaSpacing.xs),
@@ -206,8 +257,8 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
               _expandedTaskId = null;
             }),
             segments: const [
-              CasamaFilterOption(value: 0, label: 'Ongoing Requests'),
-              CasamaFilterOption(value: 1, label: 'Completed Requests'),
+              CasamaFilterOption(value: 0, label: 'Ongoing Tasks'),
+              CasamaFilterOption(value: 1, label: 'Completed Tasks'),
             ],
           ),
           const SizedBox(height: CasamaSpacing.xs),
@@ -258,28 +309,66 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
                     child: Column(
                       children: [
                         for (final task in visibleTasks) ...[
-                          _TaskCard(
-                            task: task,
-                            uiCategory: overrides.resolveCategory(task),
-                            isDone: task.status == TaskStatus.done,
-                            isOwnTask:
-                                task.createdBy.isNotEmpty &&
-                                task.createdBy == currentUserId,
-                            isExpanded:
-                                task.status != TaskStatus.done &&
-                                _expandedTaskId == task.id,
-                            onToggleExpand: () {
-                              if (task.status == TaskStatus.done) return;
-                              setState(() {
-                                _expandedTaskId = _expandedTaskId == task.id
+                          Builder(
+                            builder: (_) {
+                              final rouletteRecord = rouletteByTaskId[task.id];
+                              final spinnerLabel = rouletteRecord != null
+                                  ? _resolveViewerName(
+                                      repo,
+                                      rouletteRecord.spunByUserId,
+                                      rouletteRecord.spunByName,
+                                    )
+                                  : null;
+                              final chosenLabel = rouletteRecord != null
+                                  ? _resolveViewerName(
+                                      repo,
+                                      rouletteRecord.selectedUserId,
+                                      rouletteRecord.selectedUserName,
+                                    )
+                                  : null;
+                              return _TaskCard(
+                                task: task,
+                                uiCategory: overrides.resolveCategory(task),
+                                rouletteRecord: rouletteRecord,
+                                spinnerLabel: spinnerLabel,
+                                chosenLabel: chosenLabel,
+                                creatorLabel: repo.resolveHousemateName(
+                                  task.createdBy,
+                                  fallback: task.createdByName,
+                                ),
+                                completerLabel: repo.resolveHousemateName(
+                                  task.completedById,
+                                  fallback: task.completedByName ?? 'Housemate',
+                                ),
+                                isDone: task.status == TaskStatus.done,
+                                isOwnTask:
+                                    task.createdBy.isNotEmpty &&
+                                    task.createdBy == currentUserId,
+                                viewerRewardPoints: task.rewardPointsForUser(
+                                  currentUserId,
+                                  rouletteRecord: rouletteRecord,
+                                ),
+                                isViewerChosen: task.isBonusEligibleForUser(
+                                  currentUserId,
+                                  rouletteRecord: rouletteRecord,
+                                ),
+                                isExpanded:
+                                    task.status != TaskStatus.done &&
+                                    _expandedTaskId == task.id,
+                                onToggleExpand: () {
+                                  if (task.status == TaskStatus.done) return;
+                                  setState(() {
+                                    _expandedTaskId = _expandedTaskId == task.id
+                                        ? null
+                                        : task.id;
+                                  });
+                                },
+                                onMarkDone: task.status == TaskStatus.done
                                     ? null
-                                    : task.id;
-                              });
+                                    : () => _completeTask(task),
+                                onSpin: () => _openRoulette(task),
+                              );
                             },
-                            onMarkDone: task.status == TaskStatus.done
-                                ? null
-                                : () => _completeTask(task),
-                            onSpin: () => _openRoulette(task),
                           ),
                           const SizedBox(height: CasamaSpacing.xs),
                         ],
@@ -341,8 +430,15 @@ class _UrgencyCountBadge extends StatelessWidget {
 class _TaskCard extends StatelessWidget {
   final MaintenanceTask task;
   final CasamaTaskUiCategory uiCategory;
+  final ChoreRouletteRecord? rouletteRecord;
+  final String? spinnerLabel;
+  final String? chosenLabel;
+  final String creatorLabel;
+  final String completerLabel;
   final bool isDone;
   final bool isOwnTask;
+  final int viewerRewardPoints;
+  final bool isViewerChosen;
   final bool isExpanded;
   final VoidCallback onToggleExpand;
   final VoidCallback? onMarkDone;
@@ -351,8 +447,15 @@ class _TaskCard extends StatelessWidget {
   const _TaskCard({
     required this.task,
     required this.uiCategory,
+    this.rouletteRecord,
+    this.spinnerLabel,
+    this.chosenLabel,
+    required this.creatorLabel,
+    required this.completerLabel,
     required this.isDone,
     required this.isOwnTask,
+    required this.viewerRewardPoints,
+    required this.isViewerChosen,
     required this.isExpanded,
     required this.onToggleExpand,
     required this.onMarkDone,
@@ -371,17 +474,12 @@ class _TaskCard extends StatelessWidget {
     final (Color catBg, Color catFg) = uiCategory.badgeColors(pal);
     final String subtitle;
     if (isDone) {
-      final completer =
-          task.completedByName != null &&
-              task.completedByName!.trim().isNotEmpty
-          ? task.completedByName!.trim()
-          : 'Housemate';
-      subtitle = '${uiCategory.shortLabel} • Completed by $completer';
+      subtitle = '${uiCategory.shortLabel} • Completed by $completerLabel';
     } else {
       final dueSuffix = task.dueDate != null
           ? ' • Due ${DateFormat('MMM d').format(task.dueDate!)}'
           : '';
-      subtitle = '${uiCategory.shortLabel} • By ${task.createdByName}$dueSuffix';
+      subtitle = '${uiCategory.shortLabel} • By $creatorLabel$dueSuffix';
     }
 
     final (ChipVariant urgVariant, String urgLabel) = switch (task.urgency) {
@@ -484,6 +582,9 @@ class _TaskCard extends StatelessWidget {
               child: headerContent,
             ),
 
+          const SizedBox(height: 8),
+          _buildRouletteStatusStrip(context, pal, theme),
+
           if (!isDone) ...[
             if (reduceMotion) ...[
               if (isExpanded) _buildExpandedTray(pal),
@@ -506,7 +607,157 @@ class _TaskCard extends StatelessWidget {
     );
   }
 
+  Widget _buildRouletteStatusStrip(
+    BuildContext context,
+    CasamaPalette pal,
+    ThemeData theme,
+  ) {
+    final record = rouletteRecord;
+    if (record == null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+          decoration: BoxDecoration(
+            color: pal.track,
+            borderRadius: CasamaSpacing.roundedPill,
+            border: Border.all(color: pal.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.casino_outlined, size: 13, color: pal.textSecondary),
+              const SizedBox(width: 5),
+              Text(
+                'Unspun',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: pal.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final spinner = spinnerLabel ?? record.spunByName;
+    final chosen = chosenLabel ?? record.selectedUserName;
+    final isViewerChosenHighlight = chosen == 'You';
+    final isViewerSpinner = spinner == 'You';
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Container(
+          key: ValueKey('task_spun_by_pill_${task.id}'),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: pal.softSage.withValues(alpha: 0.72),
+            borderRadius: CasamaSpacing.roundedPill,
+            border: Border.all(
+              color: pal.forestTeal.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.casino_outlined,
+                size: 13.5,
+                color: pal.forestTeal,
+              ),
+              const SizedBox(width: 5),
+              Text.rich(
+                TextSpan(
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 11.5,
+                    color: pal.textSecondary,
+                  ),
+                  children: [
+                    const TextSpan(text: 'Spun by '),
+                    TextSpan(
+                      text: spinner,
+                      style: TextStyle(
+                        fontWeight: isViewerSpinner
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: isViewerSpinner
+                            ? pal.forestTeal
+                            : pal.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          key: ValueKey('task_chosen_pill_${task.id}'),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: isViewerChosenHighlight
+                ? pal.softBlush.withValues(alpha: 0.85)
+                : pal.track,
+            borderRadius: CasamaSpacing.roundedPill,
+            border: Border.all(
+              color: isViewerChosenHighlight
+                  ? pal.primaryCoral.withValues(alpha: 0.38)
+                  : pal.border,
+            ),
+          ),
+          child: Text.rich(
+            TextSpan(
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 11.5,
+                color: pal.textSecondary,
+              ),
+              children: [
+                const TextSpan(text: 'Chosen: '),
+                TextSpan(
+                  text: chosen,
+                  style: TextStyle(
+                    fontWeight: isViewerChosenHighlight
+                        ? FontWeight.w800
+                        : FontWeight.w600,
+                    color: isViewerChosenHighlight
+                        ? pal.primaryCoral
+                        : pal.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (isViewerChosen && !isOwnTask)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: pal.amberBg,
+              borderRadius: CasamaSpacing.roundedPill,
+              border: Border.all(color: pal.amberFg.withValues(alpha: 0.32)),
+            ),
+            child: Text(
+              '+$viewerRewardPoints pts (+${record.bonusPoints} bonus)',
+              style: theme.textTheme.labelSmall?.tabular.copyWith(
+                color: pal.amberFg,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildExpandedTray(CasamaPalette pal) {
+    final record = rouletteRecord;
+    final showPointsBadge = !isOwnTask && viewerRewardPoints > 0;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 0, 4),
       child: Column(
@@ -516,22 +767,26 @@ class _TaskCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: _TaskTrayButton(
-                  label: 'Spin',
-                  icon: Icons.casino_outlined,
-                  bg: pal.softBlush,
-                  fg: pal.primaryCoral,
-                  borderColor: pal.primaryCoral.withValues(alpha: 0.25),
-                  onTap: onSpin,
+              if (record == null) ...[
+                Expanded(
+                  child: _TaskTrayButton(
+                    label: 'Spin',
+                    icon: Icons.casino_outlined,
+                    bg: pal.softBlush,
+                    fg: pal.primaryCoral,
+                    borderColor: pal.primaryCoral.withValues(alpha: 0.25),
+                    onTap: onSpin,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 flex: 2,
                 child: _TaskTrayButton(
                   label: 'Mark as Done',
-                  trailingBadge: isOwnTask ? null : '+${task.computedPoints} pts',
+                  trailingBadge: showPointsBadge
+                      ? '+$viewerRewardPoints pts'
+                      : null,
                   icon: Icons.check_circle_outline_rounded,
                   bg: pal.forestTeal,
                   fg: pal.onForestTeal,
@@ -574,7 +829,7 @@ class _TaskTrayButton extends StatelessWidget {
         onTap: onTap,
         enableHaptic: true,
         child: Container(
-          height: 44,
+          height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: bg,

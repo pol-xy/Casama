@@ -16,7 +16,7 @@ import 'package:image_picker/image_picker.dart';
 
 void main() {
   testWidgets(
-    'ChatDirectoryScreen renders split hero, pinned household, spaces, and launches Space / Meetup sheets',
+    'ChatDirectoryScreen renders split hero, pinned household, spaces, and launches Space / Housemates Agenda sheets',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
@@ -76,48 +76,53 @@ void main() {
         isTrue,
       );
 
-      // Top-right Add Housemate / Plan a Meet-up header buttons are removed
+      // Top-right Add Housemate / Plan Housemates Agenda header buttons are removed
       expect(find.byIcon(Icons.person_add_alt_1_outlined), findsNothing);
       expect(find.byIcon(Icons.calendar_month_outlined), findsNothing);
 
-      // Open Plan a Meet-up sheet from in-body Meet-up Invitations 'New' pill
+      // Open Plan Housemates Agenda sheet from in-body Housemates Agenda 'New' pill
       await tester.ensureVisible(find.text('New'));
       await tester.tap(find.text('New'));
       await tester.pumpAndSettle();
-      expect(find.text('Plan a Meet-up'), findsOneWidget);
+      expect(find.text('Plan Housemates Agenda'), findsOneWidget);
       expect(find.text('INVITEES'), findsNothing);
       expect(find.text('All Housemates'), findsNothing);
       expect(
-        find.text('Manual spot label only — zero GPS tracking used.'),
+        find.text(
+          'Manual location or link label only — zero GPS tracking used.',
+        ),
         findsOneWidget,
       );
 
-      // Empty submit is blocked until Activity & Location are filled
-      final beforeCreateCount = repo.meetUpInvitations.length;
-      await tester.tap(find.text('Send Invitation'));
+      // Empty submit is blocked until Activity & Location / Link are filled
+      final beforeCreateCount = repo.housematesAgendaInvitations.length;
+      await tester.tap(find.text('Send Agenda'));
       await tester.pumpAndSettle();
-      expect(repo.meetUpInvitations.length, beforeCreateCount);
+      expect(repo.housematesAgendaInvitations.length, beforeCreateCount);
       expect(
-        find.text('Please enter an activity and location.'),
+        find.text('Please enter an activity and location or link.'),
         findsWidgets,
       );
 
-      // Tap quick-fill suggestion chips for Activity and Location
-      await tester.ensureVisible(find.text('Coffee Run'));
-      await tester.tap(find.text('Coffee Run'));
+      // Tap quick-fill suggestion chips for Activity and Location / Link
+      await tester.ensureVisible(find.text('Online Hangout / Call'));
+      await tester.tap(find.text('Online Hangout / Call'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Kitchen'));
-      await tester.tap(find.text('Kitchen'));
+      await tester.ensureVisible(find.text('Online / Discord'));
+      await tester.tap(find.text('Online / Discord'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Send Invitation'));
+      await tester.tap(find.text('Send Agenda'));
       await tester.pumpAndSettle();
       expect(repo.groupMessages.length, initialGroupMsgs);
-      expect(repo.meetUpInvitations.length, beforeCreateCount + 1);
-      final created = repo.meetUpInvitations.firstWhere(
-        (m) => m.activity == 'Coffee Run',
+      expect(
+        repo.housematesAgendaInvitations.length,
+        beforeCreateCount + 1,
       );
-      expect(created.location, 'Kitchen');
+      final created = repo.housematesAgendaInvitations.firstWhere(
+        (m) => m.activity == 'Online Hangout / Call',
+      );
+      expect(created.location, 'Online / Discord');
       expect(created.creatorId, repo.currentUser.id);
       expect(created.goingCount, 1);
       expect(
@@ -159,13 +164,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('MEET-UP INVITATION'), findsNothing);
+      expect(find.text('HOUSEMATES AGENDA'), findsNothing);
 
       // Open attachment modal sheet
-      await tester.tap(find.byIcon(Icons.attach_file_rounded));
+      await tester.tap(find.byIcon(Icons.add_rounded));
       await tester.pumpAndSettle();
       expect(find.text('Share in Chat'), findsOneWidget);
-      expect(find.text('Propose Meet-up Activity'), findsOneWidget);
+      expect(find.text('Plan Housemates Agenda'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -253,7 +258,7 @@ void main() {
   );
 
   testWidgets(
-    'ChatDirectoryScreen hides phantom Meet-up card when empty and opens RSVP sheet from View',
+    'ChatDirectoryScreen hides phantom Housemates Agenda card when empty and opens RSVP sheet from View',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
@@ -263,7 +268,7 @@ void main() {
       });
 
       final emptyRepo = MockRepository()..login();
-      await emptyRepo.createMeetUp(
+      await emptyRepo.createHousematesAgendaInvitation(
         activity: '   ',
         location: '',
         scheduledTime: DateTime.now(),
@@ -280,11 +285,11 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-        find.text('No upcoming meet-ups'),
+        find.text('No active agendas'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('No upcoming meet-ups'), findsOneWidget);
+      expect(find.text('No active agendas'), findsOneWidget);
       expect(find.text('View'), findsNothing);
 
       final activeRepo = MockRepository()..login();
@@ -300,32 +305,34 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('No upcoming meet-ups'), findsNothing);
-      await tester.ensureVisible(find.text('View'));
-      await tester.tap(find.text('View'));
+      expect(find.text('No active agendas'), findsNothing);
+      expect(find.text('View'), findsNothing);
+      expect(find.text('Tap to view'), findsOneWidget);
+      await tester.ensureVisible(find.text('Study Session 🎓'));
+      await tester.tap(find.text('Study Session 🎓'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Meet-up Invitation'), findsOneWidget);
+      expect(find.text('Housemates Agenda'), findsWidgets);
       expect(find.text('None yet'), findsOneWidget);
       expect(find.byType(Tooltip), findsWidgets);
 
       await tester.tap(find.textContaining('Maybe (').first);
       await tester.pumpAndSettle();
-      expect(activeRepo.activeMeetUp.currentUserResponse, 'maybe');
+      expect(activeRepo.activeHousematesAgenda.currentUserResponse, 'maybe');
       expect(
-        activeRepo.activeMeetUp.maybeResponders
+        activeRepo.activeHousematesAgenda.maybeResponders
             .any((r) => r.userId == activeRepo.currentUser.id),
         isTrue,
       );
       expect(
-        activeRepo.activeMeetUp.goingResponders
+        activeRepo.activeHousematesAgenda.goingResponders
             .any((r) => r.userId == activeRepo.currentUser.id),
         isFalse,
       );
 
-      await tester.tap(find.byKey(const Key('meetup_responders_Maybe')));
+      await tester.tap(find.byKey(const Key('agenda_responders_Maybe')));
       await tester.pumpAndSettle();
-      expect(find.text(activeRepo.currentUser.displayName), findsOneWidget);
+      expect(find.text(activeRepo.currentUser.preferredName), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -394,7 +401,7 @@ void main() {
   );
 
   testWidgets(
-    'Plan a Meet-up opens native Date and Time pickers',
+    'Plan Housemates Agenda opens native Date and Time pickers',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
@@ -598,7 +605,7 @@ void main() {
   );
 
   testWidgets(
-    'GroupChatScreen Share in Chat launches Spin Chore Roulette in Chat Question mode without cooldown',
+    'GroupChatScreen Share in Chat launches Ask the Wheel in Chat Question mode without cooldown',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
@@ -608,11 +615,12 @@ void main() {
       });
 
       final repo = MockRepository()..login();
-      // Trigger a task roulette spin first so a 24h task cooldown is active.
-      await repo.recordRouletteSpin(
-        taskTitle: 'Take Out Trash',
-        selectedUserId: repo.members.first.profile.id,
+      // Spin a task first to confirm Chat Question mode operates independently.
+      final firstTask = repo.tasks.first;
+      final nonCreatorMember = repo.members.firstWhere(
+        (m) => m.profile.id != firstTask.createdBy,
       );
+      await repo.spinTaskRoulette(firstTask.id, nonCreatorMember.profile.id);
       final initialMsgCount = repo.groupMessages.length;
       final initialPoints = repo.kasamaPoints;
 
@@ -633,14 +641,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.attach_file_rounded));
+      await tester.tap(find.byIcon(Icons.add_rounded));
       await tester.pumpAndSettle();
-      expect(find.text('Spin Chore Roulette'), findsOneWidget);
+      expect(find.text('Ask the Wheel'), findsOneWidget);
 
-      await tester.tap(find.text('Spin Chore Roulette'));
+      await tester.tap(find.text('Ask the Wheel'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Spin Chore Roulette'), findsOneWidget);
+      expect(find.text('Ask the Wheel'), findsOneWidget);
       expect(find.text('Your Question'), findsOneWidget);
       expect(find.text('SPINNING FOR TASK'), findsNothing);
 
@@ -653,7 +661,7 @@ void main() {
       );
       expect(find.text('Send to Chat'), findsNothing);
 
-      // Enter question and spin (bypasses task cooldown)
+      // Enter question and spin
       await tester.enterText(
         find.byType(TextField).last,
         "Who's buying dinner tonight?",
@@ -675,7 +683,7 @@ void main() {
         sent.content,
         matches(
           RegExp(
-            r'^JP asked the wheel "Who' "'" r's buying dinner tonight\?", and the wheel replied:\n".+"$',
+            r'^🎡 Just spun the wheel!\n\n"Who' "'" r's buying dinner tonight\?"\n👉 Landed on: (me! 😂|.+! 🎉)$',
           ),
         ),
       );
@@ -687,7 +695,7 @@ void main() {
   );
 
   testWidgets(
-    'Done meetups are hidden from ChatDirectoryScreen & Casa Schedule, disable historical card RSVPs, and arrival messages render',
+    'Done agendas are hidden from ChatDirectoryScreen & Casa Schedule, disable historical card RSVPs, and arrival messages render',
     (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
@@ -704,8 +712,8 @@ void main() {
         19,
         0,
       );
-      final doneMeetup = MeetUpInvitation(
-        id: 'mu_done_1',
+      final doneAgenda = HousematesAgendaInvitation(
+        id: 'ha_done_1',
         activity: 'Evening Study',
         location: 'Lounge',
         scheduledTime: todayAt7Pm,
@@ -715,16 +723,16 @@ void main() {
         goingCount: 2,
         currentUserResponse: 'maybe',
       );
-      repo.setActiveMeetUpForTest(doneMeetup);
+      repo.setActiveHousematesAgendaForTest(doneAgenda);
       repo.addGroupMessageForTest(
         ChatMessage(
-          id: 'msg_meetup_hist',
+          id: 'msg_agenda_hist',
           senderId: repo.currentUser.id,
           senderName: repo.currentUser.displayName,
           content: '',
           createdAt: todayAt7Pm,
           isCurrentUser: true,
-          meetUpInvitation: doneMeetup,
+          housematesAgendaInvitation: doneAgenda,
         ),
       );
       repo.addGroupMessageForTest(
@@ -733,13 +741,13 @@ void main() {
           senderId: '22222222-2222-2222-2222-222222222222',
           senderName: 'Maria',
           content: 'Evening Study is starting now at Lounge!',
-          clientMessageId: 'meetup_arrival_mu_done_1',
+          clientMessageId: 'housemates_agenda_arrival_ha_done_1',
           createdAt: todayAt7Pm,
           isCurrentUser: false,
         ),
       );
 
-      // 1. ChatDirectoryScreen hides done meetup under Active Meet-up Invitations
+      // 1. ChatDirectoryScreen hides done agenda under Housemates Agenda
       await tester.pumpWidget(
         ProviderScope(
           key: const ValueKey('done_dir_scope'),
@@ -751,12 +759,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('No upcoming meet-ups'), findsOneWidget);
+      expect(find.text('No active agendas'), findsOneWidget);
       expect(find.text('Evening Study'), findsNothing);
 
-      // 2. HouseholdCalendarView excludes done meetup from Casa Schedule
+      // 2. HouseholdCalendarView excludes done agenda from Casa Schedule
       final calRepo = MockRepository()..login();
-      calRepo.setActiveMeetUpForTest(doneMeetup);
+      calRepo.setActiveHousematesAgendaForTest(doneAgenda);
       await tester.pumpWidget(
         ProviderScope(
           key: const ValueKey('done_cal_scope'),
@@ -774,16 +782,16 @@ void main() {
 
       // 3. GroupChatScreen renders Completed inline card with disabled RSVPs + arrival message
       final chatRepo = MockRepository()..login();
-      chatRepo.setActiveMeetUpForTest(doneMeetup);
+      chatRepo.setActiveHousematesAgendaForTest(doneAgenda);
       chatRepo.addGroupMessageForTest(
         ChatMessage(
-          id: 'msg_meetup_hist',
+          id: 'msg_agenda_hist',
           senderId: chatRepo.currentUser.id,
           senderName: chatRepo.currentUser.displayName,
           content: '',
           createdAt: todayAt7Pm,
           isCurrentUser: true,
-          meetUpInvitation: doneMeetup,
+          housematesAgendaInvitation: doneAgenda,
         ),
       );
       chatRepo.addGroupMessageForTest(
@@ -792,7 +800,7 @@ void main() {
           senderId: '22222222-2222-2222-2222-222222222222',
           senderName: 'Maria',
           content: 'Evening Study is starting now at Lounge!',
-          clientMessageId: 'meetup_arrival_mu_done_1',
+          clientMessageId: 'housemates_agenda_arrival_ha_done_1',
           createdAt: todayAt7Pm,
           isCurrentUser: false,
         ),
@@ -810,20 +818,21 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Completed'), findsOneWidget);
+      expect(find.text('HOUSEMATES AGENDA'), findsOneWidget);
+      expect(find.text('Done'), findsOneWidget);
       expect(
         find.text('Evening Study is starting now at Lounge!'),
         findsOneWidget,
       );
       await tester.tap(find.text('Going (2)'));
       await tester.pumpAndSettle();
-      expect(chatRepo.activeMeetUp.goingCount, 2);
-      expect(chatRepo.activeMeetUp.currentUserResponse, 'maybe');
+      expect(chatRepo.activeHousematesAgenda.goingCount, 2);
+      expect(chatRepo.activeHousematesAgenda.currentUserResponse, 'maybe');
     },
   );
 
   testWidgets(
-    'ChatDirectoryScreen filters All Upcoming vs My Invitations, shows 2-line cards, and lets creators delete with confirmation',
+    'ChatDirectoryScreen filters All Upcoming vs My Agendas, shows 2-line cards, and lets creators delete with confirmation',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
@@ -839,9 +848,9 @@ void main() {
       final otherMember = repo.members.firstWhere(
         (m) => m.profile.id != repo.currentUser.id,
       );
-      repo.addMeetUpForTest(
-        MeetUpInvitation(
-          id: 'm_other_1',
+      repo.addHousematesAgendaForTest(
+        HousematesAgendaInvitation(
+          id: 'ha_other_1',
           creatorId: otherMember.profile.id,
           activity: 'Movie Marathon',
           location: 'Living Room',
@@ -854,7 +863,7 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          key: const ValueKey('meetup_filter_delete_scope'),
+          key: const ValueKey('agenda_filter_delete_scope'),
           overrides: [repositoryProvider.overrideWith((ref) => repo)],
           child: MaterialApp(
             theme: CasamaTheme.lightTheme,
@@ -870,60 +879,67 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
 
-      // Both active meetups appear under All Upcoming
-      expect(find.text('All Upcoming'), findsOneWidget);
-      expect(find.text('My Invitations'), findsOneWidget);
+      // Both active agendas appear under All Active
+      expect(find.text('All Active'), findsOneWidget);
+      expect(find.text('My Agendas'), findsOneWidget);
+      expect(find.text('History'), findsOneWidget);
       expect(find.text('Study Session 🎓'), findsOneWidget);
       expect(find.text('Movie Marathon'), findsOneWidget);
       expect(find.text('Living Room • 2 going'), findsOneWidget);
 
-      // Non-creator sheet hides Delete button
-      final viewButtons = find.text('View');
-      expect(viewButtons, findsNWidgets(2));
-      await tester.ensureVisible(viewButtons.last);
-      await tester.tap(viewButtons.last);
+      // Non-creator sheet hides Delete button (open by tapping card)
+      expect(find.text('View'), findsNothing);
+      expect(find.text('Tap to view'), findsNWidgets(2));
+      await tester.ensureVisible(find.text('Movie Marathon'));
+      await tester.tap(find.text('Movie Marathon'));
       await tester.pumpAndSettle();
-      expect(find.text('Meet-up Invitation'), findsOneWidget);
+      expect(
+        find.text('Coordinate plans & RSVP with your housemates'),
+        findsOneWidget,
+      );
       expect(find.text('Movie Marathon'), findsWidgets);
-      expect(find.byKey(const Key('meetup_delete_button')), findsNothing);
-      await tester.tap(find.bySemanticsLabel('Close Meet-up Invitation'));
+      expect(find.byKey(const Key('agenda_delete_button')), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Close Housemates Agenda'));
       await tester.pumpAndSettle();
 
-      // Switch to My Invitations: only creator's meetup remains
-      await tester.tap(find.text('My Invitations'));
+      // Switch to My Agendas: only creator's agenda remains
+      await tester.tap(find.text('My Agendas'));
       await tester.pumpAndSettle();
       expect(find.text('Study Session 🎓'), findsOneWidget);
       expect(find.text('Movie Marathon'), findsNothing);
 
-      // Open creator's meetup sheet -> Delete button is visible
-      await tester.ensureVisible(find.text('View'));
-      await tester.tap(find.text('View'));
+      // Open creator's agenda sheet by tapping card -> Delete button is visible
+      await tester.ensureVisible(find.text('Study Session 🎓'));
+      await tester.tap(find.text('Study Session 🎓'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('meetup_delete_button')), findsOneWidget);
+      expect(find.byKey(const Key('agenda_delete_button')), findsOneWidget);
 
-      // Tap Delete -> confirmation dialog appears; Cancel keeps meetup
-      await tester.tap(find.byKey(const Key('meetup_delete_button')));
+      // Tap Delete -> confirmation dialog appears; Cancel keeps agenda
+      await tester.tap(find.byKey(const Key('agenda_delete_button')));
       await tester.pumpAndSettle();
-      expect(find.text('Delete Meet-up?'), findsOneWidget);
+      expect(find.text('Delete Agenda?'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(
-        repo.meetUpInvitations.any((m) => m.id == 'm1'),
+        repo.housematesAgendaInvitations.any((m) => m.id == 'm1'),
         isTrue,
       );
 
-      // Confirm Delete -> removes meetup, closes sheet, shows My Invitations empty state
-      await tester.tap(find.byKey(const Key('meetup_delete_button')));
+      // Confirm Delete -> removes agenda, closes sheet, shows My Agendas empty state
+      await tester.tap(find.byKey(const Key('agenda_delete_button')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('meetup_confirm_delete_button')));
+      await tester.tap(find.byKey(const Key('agenda_confirm_delete_button')));
       await tester.pumpAndSettle();
       expect(
-        repo.meetUpInvitations.any((m) => m.id == 'm1'),
+        repo.housematesAgendaInvitations.any((m) => m.id == 'm1'),
         isFalse,
       );
-      expect(find.text('Meet-up Invitation'), findsNothing);
       expect(
-        find.text("You haven't created any upcoming meet-ups yet."),
+        find.text('Coordinate plans & RSVP with your housemates'),
+        findsNothing,
+      );
+      expect(
+        find.text('You have no active agendas'),
         findsOneWidget,
       );
     },
@@ -1101,6 +1117,202 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.totalUnreadChatCount, 0);
       expect(find.textContaining('0 Unread'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Multi-line wheel spin and agenda messages render cleanly in GroupChatScreen and collapse newlines in ChatDirectoryScreen preview',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
+      });
+
+      final repo = MockRepository()..login();
+      const multilineWheel =
+          '🎡 Just spun the wheel!\n\n'
+          '"Who is ordering dinner?"\n'
+          '👉 Landed on: Maria! 🎉';
+      repo.addGroupMessageForTest(
+        ChatMessage(
+          id: 'msg_wheel_multiline',
+          senderId: repo.currentUser.id,
+          senderName: repo.currentUser.displayName,
+          content: multilineWheel,
+          createdAt: DateTime.now(),
+          isCurrentUser: true,
+        ),
+      );
+
+      Widget wrap(Widget home) => ProviderScope(
+            overrides: [repositoryProvider.overrideWith((ref) => repo)],
+            child: MaterialApp(theme: CasamaTheme.lightTheme, home: home),
+          );
+
+      await tester.pumpWidget(wrap(const GroupChatScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text(multilineWheel), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(wrap(const ChatDirectoryScreen()));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'You: 🎡 Just spun the wheel! "Who is ordering dinner?" 👉 Landed on: Maria! 🎉',
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Housemates Agenda 4-status lifecycle: My Agendas green dot, View button only on upcoming, and creator Done/Missed confirmation moves to History',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
+      });
+
+      final repo = MockRepository()..login();
+      final otherMember = repo.members.firstWhere(
+        (m) => m.profile.id != repo.currentUser.id,
+      );
+      final now = DateTime.now();
+
+      // Seeded 'm1' is upcoming by currentUser; add ongoing (currentUser), ongoing (other), missed (history)
+      repo.addHousematesAgendaForTest(
+        HousematesAgendaInvitation(
+          id: 'ha_ongoing_mine',
+          creatorId: repo.currentUser.id,
+          activity: 'My Live Sync',
+          location: 'Online / Discord',
+          scheduledTime: now.subtract(const Duration(minutes: 10)),
+          status: 'ongoing',
+          goingCount: 2,
+          currentUserResponse: 'going',
+        ),
+      );
+      repo.addHousematesAgendaForTest(
+        HousematesAgendaInvitation(
+          id: 'ha_ongoing_other',
+          creatorId: otherMember.profile.id,
+          activity: 'Other Live Call',
+          location: 'Living Room',
+          scheduledTime: now.subtract(const Duration(minutes: 5)),
+          status: 'ongoing',
+          goingCount: 1,
+          currentUserResponse: 'maybe',
+        ),
+      );
+      repo.addHousematesAgendaForTest(
+        HousematesAgendaInvitation(
+          id: 'ha_missed_past',
+          creatorId: otherMember.profile.id,
+          activity: 'Yesterday Cleanup',
+          location: 'Kitchen',
+          scheduledTime: now.subtract(const Duration(days: 1)),
+          status: 'missed',
+          goingCount: 1,
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp(
+            theme: CasamaTheme.lightTheme,
+            home: const ChatDirectoryScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('My Live Sync'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+
+      // Green dot visible on My Agendas pill because creator has ongoing agenda
+      expect(find.byKey(const Key('my_agendas_ongoing_dot')), findsOneWidget);
+
+      // Colored status pills render; View button NEVER renders; Tap to view + chevron cue renders on every card
+      expect(find.text('Ongoing'), findsNWidgets(2));
+      expect(find.text('Upcoming'), findsOneWidget);
+      expect(find.text('View'), findsNothing);
+      expect(find.text('Tap to view'), findsNWidgets(3));
+      expect(find.byIcon(Icons.chevron_right_rounded), findsNWidgets(3));
+
+      // Tapping upcoming card opens Housemates Agenda sheet with enabled RSVPs
+      await tester.ensureVisible(find.text('Study Session 🎓'));
+      await tester.tap(find.text('Study Session 🎓'));
+      await tester.pumpAndSettle();
+      expect(find.text('YOUR RESPONSE'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Close Housemates Agenda'));
+      await tester.pumpAndSettle();
+
+      // Ongoing agendas sort before upcoming under All Active
+      final ongoingMineY = tester.getTopLeft(find.text('My Live Sync')).dy;
+      final upcomingY = tester.getTopLeft(find.text('Study Session 🎓')).dy;
+      expect(ongoingMineY, lessThan(upcomingY));
+
+      // Tapping non-creator ongoing agenda hides Done/Missed confirmation buttons
+      await tester.ensureVisible(find.text('Other Live Call'));
+      await tester.tap(find.text('Other Live Call'));
+      await tester.pumpAndSettle();
+      expect(find.text('• Agenda is currently ongoing'), findsOneWidget);
+      expect(find.byKey(const Key('agenda_mark_done_button')), findsNothing);
+      expect(find.byKey(const Key('agenda_mark_missed_button')), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Close Housemates Agenda'));
+      await tester.pumpAndSettle();
+
+      // Tapping creator's ongoing agenda reveals Done & Missed buttons; tapping Done moves it to History & removes green dot
+      await tester.ensureVisible(find.text('My Live Sync'));
+      await tester.tap(find.text('My Live Sync'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('agenda_mark_done_button')), findsOneWidget);
+      expect(find.byKey(const Key('agenda_mark_missed_button')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('agenda_mark_done_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('my_agendas_ongoing_dot')), findsNothing);
+      expect(find.text('My Live Sync'), findsNothing);
+
+      // Switch to History: shows Done ('My Live Sync') above older Missed ('Yesterday Cleanup'), no View buttons
+      await tester.drag(find.text('My Agendas'), const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('History'));
+      await tester.pumpAndSettle();
+      expect(find.text('My Live Sync'), findsOneWidget);
+      expect(find.text('Yesterday Cleanup'), findsOneWidget);
+      expect(find.text('Done'), findsOneWidget);
+      expect(find.text('Missed'), findsOneWidget);
+      expect(find.text('View'), findsNothing);
+      expect(find.text('Tap to view'), findsNWidgets(2));
+      expect(
+        tester.getTopLeft(find.text('My Live Sync')).dy,
+        lessThan(tester.getTopLeft(find.text('Yesterday Cleanup')).dy),
+      );
+
+      // Tapping a History ('missed') card opens read-only Housemates Agenda sheet
+      await tester.ensureVisible(find.text('Yesterday Cleanup'));
+      await tester.tap(find.text('Yesterday Cleanup'));
+      await tester.pumpAndSettle();
+      expect(find.text('FINAL RESPONSES'), findsOneWidget);
     },
   );
 }

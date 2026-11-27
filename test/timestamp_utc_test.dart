@@ -56,19 +56,19 @@ void main() {
     test('Models serialize all timestamptz fields in UTC (Z) and hydrate in local time', () {
       final localTime = DateTime(2026, 11, 26, 23, 35);
 
-      // MeetUpInvitation
-      final meetup = MeetUpInvitation(
+      // HousematesAgendaInvitation
+      final agenda = HousematesAgendaInvitation(
         id: 'm1',
         activity: 'Dinner',
         location: 'Kitchen',
         scheduledTime: localTime,
       );
-      final meetupJson = meetup.toJson();
-      expect((meetupJson['scheduled_time'] as String).endsWith('Z'), isTrue);
-      final parsedMeetup = MeetUpInvitation.fromJson(meetupJson);
-      expect(parsedMeetup.scheduledTime.isUtc, isFalse);
+      final agendaJson = agenda.toJson();
+      expect((agendaJson['scheduled_time'] as String).endsWith('Z'), isTrue);
+      final parsedAgenda = HousematesAgendaInvitation.fromJson(agendaJson);
+      expect(parsedAgenda.scheduledTime.isUtc, isFalse);
       expect(
-        parsedMeetup.scheduledTime.millisecondsSinceEpoch,
+        parsedAgenda.scheduledTime.millisecondsSinceEpoch,
         localTime.millisecondsSinceEpoch,
       );
 
@@ -89,32 +89,6 @@ void main() {
       expect(parsedParcel.expectedArrival.isUtc, isFalse);
       expect(
         parsedParcel.expectedArrival.millisecondsSinceEpoch,
-        localTime.millisecondsSinceEpoch,
-      );
-
-      // HouseholdBill
-      final bill = HouseholdBill(
-        id: 'b1',
-        householdId: 'h1',
-        creatorId: 'u1',
-        creatorName: 'JP',
-        category: BillCategory.electricity,
-        deadline: localTime,
-        createdAt: localTime,
-        paidAt: localTime,
-      );
-      final billJson = bill.toSupabaseJson();
-      expect((billJson['deadline'] as String).endsWith('Z'), isTrue);
-      expect((billJson['paid_at'] as String).endsWith('Z'), isTrue);
-      final parsedBill = HouseholdBill.fromJson({
-        ...billJson,
-        'created_at': toSupabaseUtcIso(localTime),
-      });
-      expect(parsedBill.deadline.isUtc, isFalse);
-      expect(parsedBill.paidAt!.isUtc, isFalse);
-      expect(parsedBill.createdAt.isUtc, isFalse);
-      expect(
-        parsedBill.deadline.millisecondsSinceEpoch,
         localTime.millisecondsSinceEpoch,
       );
 
@@ -167,17 +141,23 @@ void main() {
       final roulette = ChoreRouletteRecord(
         id: 'r1',
         householdId: 'h1',
+        taskId: 't1',
         choreTitle: 'Trash',
-        assignedToName: 'JP',
+        selectedUserId: 'u1',
+        selectedUserName: 'JP',
+        spunByUserId: 'u2',
         spunByName: 'Maria',
-        mode: 'random_dormmate',
+        status: 'completed',
+        bonusPoints: 4,
         createdAt: localTime,
+        completedAt: localTime,
       );
-      expect((roulette.toJson()['created_at'] as String).endsWith('Z'), isTrue);
-      expect(
-        ChoreRouletteRecord.fromJson(roulette.toJson()).createdAt.isUtc,
-        isFalse,
-      );
+      final rouletteJson = roulette.toJson();
+      expect((rouletteJson['created_at'] as String).endsWith('Z'), isTrue);
+      expect((rouletteJson['completed_at'] as String).endsWith('Z'), isTrue);
+      final parsedRoulette = ChoreRouletteRecord.fromJson(rouletteJson);
+      expect(parsedRoulette.createdAt.isUtc, isFalse);
+      expect(parsedRoulette.completedAt!.isUtc, isFalse);
     });
   });
 }

@@ -50,7 +50,7 @@ void main() {
       expect(avatar.avatarUrl, repo.currentUser.effectiveAvatarUrl);
 
       // Tap a photo tile to launch 200ms Hero lightbox (no Direct badge)
-      await tester.tap(find.bySemanticsLabel('Photo by ${repo.currentUser.displayName}').first);
+      await tester.tap(find.bySemanticsLabel('Photo by ${repo.currentUser.preferredName}').first);
       await tester.pumpAndSettle();
 
       expect(find.bySemanticsLabel('Close photo viewer'), findsOneWidget);
@@ -362,7 +362,7 @@ void main() {
       expect(find.text('All CASnaps'), findsOneWidget);
 
       await tester.tap(
-        find.bySemanticsLabel('Open photo by ${repo.currentUser.displayName}'),
+        find.bySemanticsLabel('Open photo by ${repo.currentUser.preferredName}'),
       );
       await tester.pumpAndSettle();
 

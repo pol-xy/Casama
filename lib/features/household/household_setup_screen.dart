@@ -126,6 +126,16 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
     }
   }
 
+  void _joinLater() {
+    if (_isSubmitting) return;
+    final repo = _tryReadRepository();
+    if (repo?.currentUser.hasCompletedOnboarding == true) {
+      context.go('/dashboard');
+    } else {
+      context.push('/permissions');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pal = context.palette;
@@ -156,6 +166,25 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
             child: _selectedTab == 0
                 ? _buildJoinForm(context, pal)
                 : _buildCreateForm(context, pal),
+          ),
+          const SizedBox(height: CasamaSpacing.md),
+          Center(
+            child: TextButton(
+              key: const Key('household_setup_join_later_button'),
+              onPressed: _isSubmitting ? null : _joinLater,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              child: Text(
+                'Join a household later',
+                style: TextStyle(
+                  color: pal.textSecondary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
           ),
         ],
       ),

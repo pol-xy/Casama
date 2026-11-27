@@ -75,18 +75,9 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
   }
 
   void _scrollToBottom() {
-    final reduced = CasamaMotion.reduceMotion(context);
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (!_scrollController.hasClients) return;
-      final maxExtent = _scrollController.position.maxScrollExtent;
-      if (reduced) {
-        _scrollController.jumpTo(maxExtent);
-      } else {
-        _scrollController.animateTo(
-          maxExtent,
-          duration: CasamaMotion.sheet,
-          curve: CasamaMotion.easeOut,
-        );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        scrollChatListToBottom(context, _scrollController);
       }
     });
   }
@@ -264,21 +255,26 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
     if (repo.getDirectUnreadCount(widget.contactKey) > 0) {
       _scheduleMarkRead();
     }
-    final member = repo.members.firstWhere(
-      (m) =>
-          m.profile.displayName.toLowerCase().contains(
-            widget.contactKey.toLowerCase(),
-          ) ||
-          m.profile.handle.toLowerCase().contains(
-            widget.contactKey.toLowerCase(),
-          ),
-      orElse: () => repo.members.first,
+    final keyLower = widget.contactKey.trim().toLowerCase();
+    final matchedMember = repo.members.cast<MemberPresence?>().firstWhere(
+      (m) {
+        if (m == null) return false;
+        final p = m.profile;
+        return p.id.toLowerCase() == keyLower ||
+            p.handle.toLowerCase().contains(keyLower) ||
+            p.preferredName.toLowerCase().contains(keyLower) ||
+            (p.nickname?.toLowerCase().contains(keyLower) ?? false) ||
+            (p.fullName?.toLowerCase().contains(keyLower) ?? false) ||
+            p.displayName.toLowerCase().contains(keyLower);
+      },
+      orElse: () => repo.members.isNotEmpty ? repo.members.first : null,
     );
 
-    final displayName = widget.contactName ?? member.profile.displayName;
-    final avatar = widget.avatarUrl ?? member.profile.avatarUrl;
-    final isHome = member.isHome;
-    final note = member.note ?? (isHome ? 'At home' : 'Away');
+    final displayName =
+        matchedMember?.preferredName ?? widget.contactName ?? 'Housemate';
+    final avatar = widget.avatarUrl ?? matchedMember?.profile.avatarUrl;
+    final isHome = matchedMember?.isHome ?? false;
+    final note = matchedMember?.note ?? (isHome ? 'At home' : 'Away');
 
     return Scaffold(
       backgroundColor: pal.scaffoldBg,
@@ -436,67 +432,53 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
               ],
             ),
             Expanded(
-              child: messages.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(CasamaSpacing.lg),
-                        child: CasamaCard(
-                          padding: const EdgeInsets.all(CasamaSpacing.lg),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.chat_bubble_outline_rounded,
-                                size: 42,
-                                color: pal.textMuted,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Say hi to $displayName! 👋',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: pal.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Keep your housemate coordination seamless.',
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: pal.textSecondary,
-                                ),
-                              ),
-                            ],
+              child: CasamaChatMessageList(
+                controller: _scrollController,
+                messages: messages,
+                showSenderName: false,
+                fallbackAvatarUrl: avatar,
+                onRetryBuilder: (msg) =>
+                    msg.deliveryStatus == MessageDeliveryStatus.failed
+                        ? () => repo.retryDirectMessage(
+                              widget.contactKey,
+                              msg.id,
+                            )
+                        : null,
+                emptyState: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(CasamaSpacing.lg),
+                    child: CasamaCard(
+                      padding: const EdgeInsets.all(CasamaSpacing.lg),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 42,
+                            color: pal.textMuted,
                           ),
-                        ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Say hi to $displayName! 👋',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: pal.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Keep your housemate coordination seamless.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: pal.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: CasamaSpacing.md,
-                        vertical: CasamaSpacing.md,
-                      ),
-                      itemCount: messages.length,
-                      itemBuilder: (context, index) {
-                        final msg = messages[index];
-                        final timeStr =
-                            '${msg.createdAt.hour}:${msg.createdAt.minute.toString().padLeft(2, '0')}';
-                        return CasamaMessageBubble(
-                          message: msg,
-                          timeLabel: timeStr,
-                          showSenderName: false,
-                          fallbackAvatarUrl: avatar,
-                          onRetry: msg.deliveryStatus ==
-                                  MessageDeliveryStatus.failed
-                              ? () => repo.retryDirectMessage(
-                                    widget.contactKey,
-                                    msg.id,
-                                  )
-                              : null,
-                        );
-                      },
                     ),
+                  ),
+                ),
+              ),
             ),
             SafeArea(
               top: false,

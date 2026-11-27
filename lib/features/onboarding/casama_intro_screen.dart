@@ -13,11 +13,6 @@ import '../auth/widgets/auth_wave_header.dart';
 class CasamaIntroScreen extends ConsumerWidget {
   const CasamaIntroScreen({super.key});
 
-  void _skipToDashboard(BuildContext context, WidgetRef ref) {
-    ref.read(repositoryProvider).completeOnboardingTutorial();
-    context.go('/dashboard');
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pal = context.palette;
@@ -28,8 +23,6 @@ class CasamaIntroScreen extends ConsumerWidget {
     return CasamaAuthShell(
       onBack: () =>
           context.canPop() ? context.pop() : context.go('/permissions'),
-      skipLabel: 'Skip to Home',
-      onSkip: () => _skipToDashboard(context, ref),
       mascotPose: CasPose.waving,
       mascotAlignment: Alignment.bottomRight,
       child: Column(
@@ -93,7 +86,7 @@ class CasamaIntroScreen extends ConsumerWidget {
             iconColor: pal.infoFg,
             title: 'Harmonious Housemate Connect',
             desc:
-                'Coordinate in shared spaces, message housemates 1-on-1, and RSVP to household meet-ups.',
+                'Coordinate in shared spaces, message housemates 1-on-1, and RSVP to household agendas.',
           ),
           const SizedBox(height: CasamaSpacing.xl),
 
@@ -102,14 +95,6 @@ class CasamaIntroScreen extends ConsumerWidget {
             isPill: true,
             height: 50,
             onPressed: () => context.push('/interactive-tutorial'),
-          ),
-          const SizedBox(height: CasamaSpacing.xs),
-
-          CasamaButton(
-            label: 'Skip Tutorial & Go to Dashboard',
-            style: CasamaButtonStyle.ghost,
-            height: 48,
-            onPressed: () => _skipToDashboard(context, ref),
           ),
         ],
       ),

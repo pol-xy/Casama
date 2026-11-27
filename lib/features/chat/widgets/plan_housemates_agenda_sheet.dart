@@ -10,39 +10,40 @@ import '../../../shared/widgets/casama_button.dart';
 import '../../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../../shared/widgets/casama_text_field.dart';
 
-/// Opens the unified slide-up Plan a Meet-up sheet matching
-/// `casama-app-mockup.html` while keeping repository message posting identical.
-Future<void> showCreateMeetupSheet(BuildContext context) {
+/// Opens the unified slide-up Plan Housemates Agenda sheet for online or
+/// in-person household plans.
+Future<void> showPlanHousematesAgendaSheet(BuildContext context) {
   return showCasamaSheet<void>(
     context,
     icon: Icons.calendar_month_rounded,
-    title: 'Plan a Meet-up',
-    subtitle: 'Suggest a time & spot for your household',
-    builder: (sheetCtx) => _CreateMeetupSheetBody(hostContext: context),
+    title: 'Plan Housemates Agenda',
+    subtitle: 'Suggest an activity, link, or spot for your household',
+    builder: (sheetCtx) => PlanHousematesAgendaSheet(hostContext: context),
   );
 }
 
-class _CreateMeetupSheetBody extends ConsumerStatefulWidget {
+class PlanHousematesAgendaSheet extends ConsumerStatefulWidget {
   final BuildContext hostContext;
 
-  const _CreateMeetupSheetBody({required this.hostContext});
+  const PlanHousematesAgendaSheet({super.key, required this.hostContext});
 
   @override
-  ConsumerState<_CreateMeetupSheetBody> createState() =>
-      _CreateMeetupSheetBodyState();
+  ConsumerState<PlanHousematesAgendaSheet> createState() =>
+      _PlanHousematesAgendaSheetState();
 }
 
-class _CreateMeetupSheetBodyState
-    extends ConsumerState<_CreateMeetupSheetBody> {
+class _PlanHousematesAgendaSheetState
+    extends ConsumerState<PlanHousematesAgendaSheet> {
   static const List<String> _activitySuggestions = [
     'Study Session',
+    'Online Hangout / Call',
     'Dinner',
     'Movie Night',
-    'Coffee Run',
-    'Grocery Run',
+    'House Sync',
   ];
 
   static const List<String> _locationSuggestions = [
+    'Online / Discord',
     'Dorm Common Area',
     'Kitchen',
     'Living Room',
@@ -133,11 +134,11 @@ class _CreateMeetupSheetBodyState
     final location = _locationController.text.trim();
     if (activity.isEmpty || location.isEmpty) {
       setState(() {
-        _validationError = 'Please enter an activity and location.';
+        _validationError = 'Please enter an activity and location or link.';
       });
       showCasamaToast(
         widget.hostContext,
-        'Please enter an activity and location.',
+        'Please enter an activity and location or link.',
         icon: Icons.info_outline_rounded,
       );
       return;
@@ -151,7 +152,7 @@ class _CreateMeetupSheetBodyState
       _selectedTime.minute,
     );
 
-    ref.read(repositoryProvider).createMeetUp(
+    ref.read(repositoryProvider).createHousematesAgendaInvitation(
       activity: activity,
       location: location,
       scheduledTime: scheduledTime,
@@ -161,7 +162,7 @@ class _CreateMeetupSheetBodyState
     if (widget.hostContext.mounted) {
       showCasamaToast(
         widget.hostContext,
-        'Meet-up invitation sent to housemates!',
+        'Housemates agenda sent to household!',
         icon: Icons.check_circle_outline_rounded,
       );
     }
@@ -179,7 +180,7 @@ class _CreateMeetupSheetBodyState
         CasamaTextField(
           controller: _activityController,
           label: 'Activity',
-          hint: "What's the plan?",
+          hint: "What's the agenda?",
           prefixIcon: Icons.event_note_outlined,
           textCapitalization: TextCapitalization.sentences,
           onChanged: (_) {
@@ -223,8 +224,8 @@ class _CreateMeetupSheetBodyState
 
         CasamaTextField(
           controller: _locationController,
-          label: 'Location',
-          hint: 'Where are we meeting?',
+          label: 'Location / Link',
+          hint: 'Where or what link? (e.g. Discord, Kitchen)',
           prefixIcon: Icons.location_on_outlined,
           textCapitalization: TextCapitalization.words,
           onChanged: (_) {
@@ -247,7 +248,7 @@ class _CreateMeetupSheetBodyState
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Manual spot label only — zero GPS tracking used.',
+                'Manual location or link label only — zero GPS tracking used.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: pal.textSecondary,
                   fontSize: 12,
@@ -269,7 +270,7 @@ class _CreateMeetupSheetBodyState
         const SizedBox(height: CasamaSpacing.lg),
 
         CasamaButton(
-          label: 'Send Invitation',
+          label: 'Send Agenda',
           icon: Icons.send_rounded,
           onPressed: _submit,
         ),

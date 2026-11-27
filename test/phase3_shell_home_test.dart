@@ -10,6 +10,7 @@ import 'package:casama/features/dashboard/main_navigation_shell.dart';
 import 'package:casama/features/dashboard/widgets/casama_household_drawer.dart';
 import 'package:casama/features/household/create_household_sheet.dart';
 import 'package:casama/features/points/leaderboard_screen.dart';
+import 'package:casama/shared/widgets/avatar_chip.dart';
 import 'package:casama/shared/widgets/cas_mascot_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -47,9 +48,14 @@ void main() {
       expect(find.byKey(const Key('center_quicksnap_shutter_button')), findsOneWidget);
       expect(find.byIcon(Icons.photo_camera_rounded), findsOneWidget);
 
-      // Tapping Live Attention row routes to Boards while remembering tab 2 (Bills)
+      // Tapping Live Attention row routes to Boards while remembering tab 2 (Items)
       final context = tester.element(find.byType(DashboardScreen));
       final shell = CasamaShellScope.maybeOf(context)!;
+      expect(shell.boardTabListenable.value, 2);
+
+      // Legacy out-of-range board tab index (3) safely clamps to 2
+      shell.openBoardTab(3);
+      await tester.pumpAndSettle();
       expect(shell.boardTabListenable.value, 2);
 
       shell.openBoardTab(1);
@@ -287,14 +293,14 @@ void main() {
   );
 
   testWidgets(
-    'DashboardScreen toggles inline You: Home status, renders Live Attention items, and filters Bills in Casa Schedule under dark mode & reduced motion',
+    'DashboardScreen toggles inline You: Home status, renders Live Attention items, and filters Tasks in Casa Schedule under dark mode & reduced motion',
     (tester) async {
       final repo = MockRepository()..login();
-      repo.addBill(
-        category: BillCategory.electricity,
-        billName: 'Meralco Due Today',
-        amount: 2400,
-        deadline: DateTime.now(),
+      repo.addTask(
+        title: 'Clean Balcony Today',
+        category: TaskCategory.cleaning,
+        urgency: TaskUrgency.urgent,
+        dueDate: DateTime.now(),
       );
 
       await tester.pumpWidget(
@@ -323,17 +329,21 @@ void main() {
       expect(find.textContaining('Unassigned'), findsNothing);
       expect(find.text('Casa Schedule'), findsOneWidget);
       expect(find.byType(HouseholdCalendarView), findsOneWidget);
-      expect(find.text('Bills'), findsOneWidget);
+      expect(find.text('Bills'), findsNothing);
 
-      // Filter Casa Schedule to Bills
-      await tester.ensureVisible(find.text('Bills'));
+      // Filter Casa Schedule to Tasks
+      final tasksPill = find.descendant(
+        of: find.byType(HouseholdCalendarView),
+        matching: find.text('Tasks'),
+      );
+      await tester.ensureVisible(tasksPill);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Bills'));
+      await tester.tap(tasksPill);
       await tester.pumpAndSettle();
       expect(
         find.descendant(
           of: find.byType(HouseholdCalendarView),
-          matching: find.text('Meralco Due Today (Due)'),
+          matching: find.text('Clean Balcony Today'),
         ),
         findsOneWidget,
       );
@@ -348,6 +358,143 @@ void main() {
 
       // Clear toast timer
       await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'DashboardScreen shows clean Live Attention Needed empty copy when no urgent tasks or COD handoffs remain',
+    (tester) async {
+      final repo = MockRepository()..login();
+      for (final t in List<MaintenanceTask>.from(repo.tasks)) {
+        repo.completeTask(t.id);
+      }
+      for (final p in List<ParcelItem>.from(repo.parcels)) {
+        if (p.status != ParcelStatus.received &&
+            p.status != ParcelStatus.cancelled) {
+          repo.receiveParcel(p.id);
+        }
+      }
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp(
+            theme: CasamaTheme.lightTheme,
+            home: const DashboardScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('All caught up — no urgent tasks or COD handoffs.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    "DashboardScreen Who's Home card aligns avatars, renders note bubbles, and opens bottom drawer without controller disposal errors",
+    (tester) async {
+      final repo = MockRepository()..login();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MediaQuery(
+            // Keep animations enabled to exercise the real 280ms sheet exit transition.
+            data: const MediaQueryData(
+              size: Size(390, 844),
+              disableAnimations: false,
+            ),
+            child: MaterialApp(
+              theme: CasamaTheme.lightTheme,
+              home: const DashboardScreen(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify all 4 avatars sit on a single aligned baseline row
+      final avatarChips = find.byType(AvatarChip);
+      expect(avatarChips, findsNWidgets(4));
+      final baselineY = tester.getBottomLeft(avatarChips.at(0)).dy;
+      for (var i = 1; i < 4; i++) {
+        expect(
+          tester.getBottomLeft(avatarChips.at(i)).dy,
+          closeTo(baselineY, 0.5),
+        );
+      }
+
+      // Existing housemate note bubble is rendered above Maria's avatar
+      expect(find.text('In living room'), findsOneWidget);
+
+      // Tap current user ("You") -> opens bottom sheet drawer with input & Save
+      await tester.tap(find.text('You'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Update Your Presence'), findsOneWidget);
+      expect(find.byKey(const ValueKey('presence_note_input')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('presence_note_save_button')),
+        findsOneWidget,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('presence_note_input')),
+        'Studying in living room',
+      );
+      await tester.tap(find.byKey(const ValueKey('presence_note_save_button')));
+      // Pump through the 280ms reverse sheet transition to catch _dependents.isEmpty
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final selfMember = repo.members.firstWhere(
+        (m) => m.profile.id == repo.currentUser.id,
+      );
+      expect(selfMember.note, 'Studying in living room');
+      expect(find.text('Studying in living room'), findsOneWidget);
+
+      // Advance past toast timer
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      // Reopen self sheet, clear note, and save -> clears note cleanly
+      await tester.tap(find.text('You'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('presence_note_input')),
+        '',
+      );
+      await tester.tap(find.byKey(const ValueKey('presence_note_save_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final clearedSelf = repo.members.firstWhere(
+        (m) => m.profile.id == repo.currentUser.id,
+      );
+      expect(clearedSelf.note, isNull);
+      expect(find.text('Studying in living room'), findsNothing);
+
+      // Advance past toast timer
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      // Tap another housemate ("Maria") -> opens bottom drawer with saved note
+      await tester.tap(find.text('Maria'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Currently Home'), findsOneWidget);
+      expect(find.text('"In living room"'), findsOneWidget);
+
+      await tester.tap(find.bySemanticsLabel('Close Maria'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },

@@ -1,3 +1,4 @@
+import 'package:casama/core/router/app_router.dart';
 import 'package:casama/core/theme/app_theme.dart';
 import 'package:casama/data/mock_repository.dart';
 import 'package:casama/data/models.dart';
@@ -97,39 +98,6 @@ void main() {
         TaskCategoryDbX.fromDbValue('personal_request'),
         TaskCategory.personalRequest,
       );
-    });
-
-    test('HouseholdBill serializes live bills columns and parses responses', () {
-      final bill = HouseholdBill(
-        id: '11111111-1111-1111-1111-111111111111',
-        householdId: '22222222-2222-2222-2222-222222222222',
-        creatorId: '33333333-3333-3333-3333-333333333333',
-        creatorName: 'JP',
-        category: BillCategory.other,
-        customCategoryLabel: 'Parking',
-        billName: 'Basement Parking',
-        amount: 1200,
-        deadline: DateTime(2026, 12, 1),
-        reminderEnabled: true,
-        reminderTiming: ReminderTiming.threeDaysBefore,
-        recipientType: BillRecipientType.selectedMembers,
-        createdAt: DateTime(2026, 11, 20),
-      );
-
-      final json = bill.toSupabaseJson();
-      expect(json['title'], 'Basement Parking');
-      expect(json['custom_category_name'], 'Parking');
-      expect(json['reminder_enabled'], isTrue);
-      expect(json['reminder_timing'], 'three_days_before');
-      expect(json['recipient_type'], 'specific_members');
-      expect(json['created_by_name'], 'JP');
-
-      final parsed = HouseholdBill.fromJson(json);
-      expect(parsed.billName, 'Basement Parking');
-      expect(parsed.customCategoryLabel, 'Parking');
-      expect(parsed.reminderTiming, ReminderTiming.threeDaysBefore);
-      expect(parsed.recipientType, BillRecipientType.selectedMembers);
-      expect(parsed.creatorName, 'JP');
     });
 
     test('QuickSnap & ParcelItem & LostFoundItem match live schema JSON contracts', () {
@@ -270,36 +238,55 @@ void main() {
       expect(foundJson['lost_item_id'], isNull);
 
       final localTime = DateTime(2026, 11, 27, 19, 0);
-      final meetup = MeetUpInvitation(
-        id: 'mu-1',
+      final agenda = HousematesAgendaInvitation(
+        id: 'ha-1',
         activity: 'Movie Night',
         location: 'Living Room',
         scheduledTime: localTime,
       );
-      final meetupJson = meetup.toJson(conversationId: 'conv-1', creatorId: 'u1');
-      expect(meetupJson['status'], 'active');
-      expect(meetupJson['reminder_sent'], isFalse);
-      expect(meetupJson['arrival_handled'], isFalse);
-      expect((meetupJson['scheduled_time'] as String).endsWith('Z'), isTrue);
+      final agendaJson = agenda.toJson(conversationId: 'conv-1', creatorId: 'u1');
+      expect(agendaJson['status'], 'upcoming');
+      expect(agendaJson['reminder_sent'], isFalse);
+      expect(agendaJson['arrival_handled'], isFalse);
+      expect((agendaJson['scheduled_time'] as String).endsWith('Z'), isTrue);
 
-      final parsedMeetup = MeetUpInvitation.fromJson({
-        ...meetupJson,
+      final normalizedPastActive = HousematesAgendaInvitation.fromJson({
+        ...agendaJson,
+        'scheduled_time': DateTime.now()
+            .subtract(const Duration(minutes: 5))
+            .toUtc()
+            .toIso8601String(),
+        'status': 'active',
+      });
+      expect(normalizedPastActive.status, 'ongoing');
+      expect(normalizedPastActive.isOngoing, isTrue);
+      expect(normalizedPastActive.isActive, isTrue);
+
+      final parsedAgenda = HousematesAgendaInvitation.fromJson({
+        ...agendaJson,
         'creator_id': 'u1',
         'status': 'done',
         'reminder_sent': true,
         'arrival_handled': true,
       });
-      expect(parsedMeetup.creatorId, 'u1');
-      expect(parsedMeetup.isActive, isFalse);
-      expect(parsedMeetup.isDone, isTrue);
-      expect(parsedMeetup.reminderSent, isTrue);
-      expect(parsedMeetup.arrivalHandled, isTrue);
-      expect(parsedMeetup.scheduledTime.isUtc, isFalse);
-      expect(parsedMeetup.scheduledTime.toUtc(), localTime.toUtc());
+      expect(parsedAgenda.creatorId, 'u1');
+      expect(parsedAgenda.isActive, isFalse);
+      expect(parsedAgenda.isHistory, isTrue);
+      expect(parsedAgenda.isDone, isTrue);
+      expect(parsedAgenda.isMissed, isFalse);
+
+      final missedAgenda = parsedAgenda.copyWith(status: 'missed');
+      expect(missedAgenda.isMissed, isTrue);
+      expect(missedAgenda.isHistory, isTrue);
+      expect(missedAgenda.isActive, isFalse);
+      expect(parsedAgenda.reminderSent, isTrue);
+      expect(parsedAgenda.arrivalHandled, isTrue);
+      expect(parsedAgenda.scheduledTime.isUtc, isFalse);
+      expect(parsedAgenda.scheduledTime.toUtc(), localTime.toUtc());
 
       final reminderNotif = HouseholdNotificationItem(
         id: 'n-rem-1',
-        type: 'meetup_reminder',
+        type: 'housemates_agenda_reminder',
         title: '',
         subtitle: '',
         createdAt: DateTime.now(),
@@ -309,8 +296,8 @@ void main() {
           'location': 'Living Room',
         },
       );
-      expect(reminderNotif.displayTitle, 'Meet-up Reminder: Movie Night');
-      expect(reminderNotif.displaySubtitle, 'Starting soon at Living Room');
+      expect(reminderNotif.displayTitle, 'Agenda Reminder: Movie Night');
+      expect(reminderNotif.displaySubtitle, 'Starting soon — Living Room');
 
       final rejectedLinkedFind = LostFoundItem.fromJson({
         'id': 'f2',
@@ -350,6 +337,7 @@ void main() {
       expect(task.createdBy, 'u2');
       expect(task.createdByName, 'Maria');
       expect(task.computedPoints, 9);
+      expect(task.totalRewardPoints(), 9);
       expect(task.completedById, 'u1');
       expect(task.completedByName, 'JP');
       expect(task.completedAt, isNotNull);
@@ -359,6 +347,39 @@ void main() {
       expect(taskJson['created_by'], 'u2');
       expect(taskJson['completed_by'], 'u1');
       expect(taskJson['completed_at'], isNotNull);
+
+      final rouletteRecord = ChoreRouletteRecord.fromJson({
+        'id': 'r1',
+        'household_id': 'h1',
+        'task_id': 't1',
+        'chore_title': 'Clean Sink',
+        'selected_user_id': 'u2',
+        'selected_user_name': 'Maria',
+        'spun_by_user_id': 'u1',
+        'spun_by_name': 'JP',
+        'status': 'assigned',
+        'bonus_points': 4,
+        'created_at': '2026-11-26T08:00:00Z',
+        'completed_at': null,
+      });
+      expect(rouletteRecord.isAssigned, isTrue);
+      expect(rouletteRecord.isCompleted, isFalse);
+      expect(rouletteRecord.bonusPoints, 4);
+      expect(task.totalRewardPoints(rouletteRecord: rouletteRecord), 13);
+      final defaultBonusRecord = ChoreRouletteRecord.fromJson({
+        'id': 'r2',
+        'household_id': 'h1',
+        'created_at': '2026-11-26T08:00:00Z',
+      });
+      expect(defaultBonusRecord.bonusPoints, 4);
+      final rouletteJson = rouletteRecord.toJson();
+      expect(rouletteJson['task_id'], 't1');
+      expect(rouletteJson['selected_user_id'], 'u2');
+      expect(rouletteJson['spun_by_user_id'], 'u1');
+      expect(rouletteJson['bonus_points'], 4);
+      expect(rouletteJson.containsKey('decision'), isFalse);
+      expect(rouletteJson.containsKey('expires_at'), isFalse);
+      expect(rouletteJson.containsKey('responded_at'), isFalse);
 
       final chatMsg = ChatMessage(
         id: 'm1',
@@ -461,6 +482,219 @@ void main() {
         expect(
           find.textContaining('Too many verification emails requested'),
           findsOneWidget,
+        );
+      },
+    );
+
+    test(
+      'SupabaseRepository.parseNotificationRow & applyNotificationRealtimeDelete handle all domains and Realtime deletes',
+      () {
+        final rows = [
+          {
+            'id': 'n_p_arrived',
+            'type': 'parcel_arrived',
+            'created_at': '2026-11-26T15:30:00Z',
+            'read_at': null,
+            'payload': {
+              'entity_type': 'parcel',
+              'entity_id': 'p1',
+              'parcel_id': 'p1',
+              'actor_id': 'u2',
+              'title': '📦 J&T Express is arriving now!',
+              'message': 'Waiting at the gate for Maria.',
+            },
+          },
+          {
+            'id': 'n_t_overdue',
+            'type': 'task_overdue',
+            'created_at': '2026-11-26T15:31:00Z',
+            'read_at': null,
+            'payload': {
+              'entity_type': 'task',
+              'entity_id': 't1',
+              'task_id': 't1',
+              'title': '⏰ Overdue: Leaking Faucet',
+              'message': 'Needs attention soon.',
+            },
+          },
+          {
+            'id': 'n_lf_found',
+            'type': 'found_item_claimed',
+            'created_at': '2026-11-26T15:32:00Z',
+            'read_at': '2026-11-26T15:40:00Z',
+            'payload': {
+              'entity_type': 'found_item',
+              'entity_id': 'i2',
+              'found_item_id': 'i2',
+              'points': 2,
+              'title': 'Found Backpack claimed!',
+              'message': 'You earned +2 pts.',
+            },
+          },
+          {
+            'id': 'n_ag_started',
+            'type': 'housemates_agenda_started',
+            'created_at': '2026-11-26T15:33:00Z',
+            'read_at': null,
+            'payload': {
+              'entity_type': 'housemates_agenda',
+              'entity_id': 'm1',
+              'invitation_id': 'm1',
+              'title': '🎉 Study Session is starting now!',
+              'message': 'Meet in Dorm Common Area.',
+            },
+          },
+        ];
+
+        final parsed = rows.map(SupabaseRepository.parseNotificationRow).toList();
+        expect(parsed.every((n) => n.isSupportedNotification), isTrue);
+        expect(parsed[0].domain, NotificationDomain.parcels);
+        expect(parsed[0].displayTitle, '📦 J&T Express is arriving now!');
+        expect(parsed[0].isUnread, isTrue);
+        expect(parsed[1].domain, NotificationDomain.tasks);
+        expect(parsed[2].domain, NotificationDomain.lostFound);
+        expect(parsed[2].isUnread, isFalse);
+        expect(parsed[2].earnedPoints, 2);
+        expect(parsed[3].domain, NotificationDomain.agenda);
+
+        final afterDelete = SupabaseRepository.applyNotificationRealtimeDelete(
+          parsed,
+          {'id': 'n_t_overdue'},
+        );
+        expect(afterDelete.length, 3);
+        expect(afterDelete.any((n) => n.id == 'n_t_overdue'), isFalse);
+
+        // Unmatched or empty oldRecord leaves list untouched
+        expect(
+          SupabaseRepository.applyNotificationRealtimeDelete(afterDelete, {}),
+          hasLength(3),
+        );
+      },
+    );
+
+    test(
+      'UserProfile name join/split, handle helpers, and buildProfileUpdateMap avoid handle collisions',
+      () {
+        expect(UserProfile.joinFullName('  Clara ', ' Reyes '), 'Clara Reyes');
+        final split = UserProfile.splitFullName('Jon Paul Berana');
+        expect(split.firstName, 'Jon');
+        expect(split.lastName, 'Paul Berana');
+
+        expect(UserProfile.isPlaceholderHandle(''), isTrue);
+        expect(UserProfile.isPlaceholderHandle('@member'), isTrue);
+        expect(UserProfile.isPlaceholderHandle('@clara_a1b2c3'), isFalse);
+
+        final fallback = UserProfile.buildFallbackHandle(
+          preferred: 'Clara Reyes!',
+          userId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        );
+        expect(fallback, '@clarareyes_a1b2c3');
+
+        final retry = UserProfile.buildCollisionRetryHandle(
+          baseHandle: fallback,
+          randomSuffix: '9F2E',
+        );
+        expect(retry, '@clarareyes_a1b2c3_9f2e');
+
+        final preservedMap = SupabaseRepository.buildProfileUpdateMap(
+          displayName: 'Clara Reyes',
+          explicitHandle: '',
+          existingHandle: '@clara_existing',
+          fullName: 'Clara Reyes',
+          nickname: 'Clar',
+          birthday: DateTime(2001, 5, 14),
+          hasConsentedTerms: true,
+          hasCompletedOnboarding: false,
+        );
+        expect(preservedMap['handle'], '@clara_existing');
+        expect(preservedMap['birthday'], '2001-05-14');
+
+        final omittedBlankMap = SupabaseRepository.buildProfileUpdateMap(
+          displayName: 'Clara Reyes',
+          explicitHandle: '   ',
+          existingHandle: '',
+          fullName: 'Clara Reyes',
+          nickname: 'Clar',
+          birthday: DateTime(2001, 5, 14),
+          hasConsentedTerms: true,
+          hasCompletedOnboarding: false,
+        );
+        expect(omittedBlankMap.containsKey('handle'), isFalse);
+      },
+    );
+
+    test(
+      'Router completeness guard blocks incomplete profiles from skipping /profile-setup',
+      () {
+        const incompleteUser = UserProfile(
+          id: 'u-1',
+          displayName: 'Housemate',
+          handle: '',
+          fullName: 'Clara Reyes',
+          nickname: 'Clar',
+          hasConsentedTerms: true,
+          // birthday is missing
+        );
+        expect(incompleteUser.hasCompleteRequiredProfile, isFalse);
+
+        expect(
+          resolveStartupRoute(
+            isAuthenticated: true,
+            hasActiveHousehold: true,
+            hasCompleteRequiredProfile: false,
+          ),
+          '/profile-setup',
+        );
+        expect(
+          resolveProfileCompletenessRedirect(
+            isAuthenticated: true,
+            currentUser: incompleteUser,
+            matchedLocation: '/dashboard',
+          ),
+          '/profile-setup',
+        );
+        expect(
+          resolveProfileCompletenessRedirect(
+            isAuthenticated: true,
+            currentUser: incompleteUser,
+            matchedLocation: '/household-setup',
+          ),
+          '/profile-setup',
+        );
+        expect(
+          resolveProfileCompletenessRedirect(
+            isAuthenticated: true,
+            currentUser: incompleteUser,
+            matchedLocation: '/profile-setup',
+          ),
+          isNull,
+        );
+        expect(
+          resolveProfileCompletenessRedirect(
+            isAuthenticated: true,
+            currentUser: incompleteUser,
+            matchedLocation: '/terms-consent',
+          ),
+          isNull,
+        );
+
+        final completeUser = UserProfile(
+          id: 'u-1',
+          displayName: 'Clara Reyes',
+          handle: '@clara_u1',
+          fullName: 'Clara Reyes',
+          nickname: 'Clar',
+          birthday: DateTime(2001, 5, 14),
+          hasConsentedTerms: true,
+        );
+        expect(completeUser.hasCompleteRequiredProfile, isTrue);
+        expect(
+          resolveProfileCompletenessRedirect(
+            isAuthenticated: true,
+            currentUser: completeUser,
+            matchedLocation: '/dashboard',
+          ),
+          isNull,
         );
       },
     );

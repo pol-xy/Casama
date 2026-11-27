@@ -12,7 +12,6 @@ import 'package:casama/features/onboarding/interactive_tutorial_screen.dart';
 import 'package:casama/features/settings/app_settings_screen.dart';
 import 'package:casama/features/profile/profile_screen.dart';
 import 'package:casama/features/profile/edit_profile_dialog.dart';
-import 'package:casama/features/bills/add_bill_screen.dart';
 import 'package:casama/features/quicksnap/quicksnap_feed_screen.dart';
 import 'package:casama/features/quicksnap/quicksnap_camera_screen.dart';
 import 'package:casama/features/dashboard/dashboard_screen.dart';
@@ -22,7 +21,7 @@ import 'package:casama/features/calendar/household_calendar_view.dart';
 import 'package:casama/features/parcels/parcels_screen.dart';
 import 'package:casama/features/items/lost_found_screen.dart';
 import 'package:casama/features/tasks/maintenance_screen.dart';
-import 'package:casama/features/chat/create_meetup_screen.dart';
+import 'package:casama/features/chat/plan_housemates_agenda_screen.dart';
 import 'package:casama/features/chat/chat_directory_screen.dart';
 import 'package:casama/features/chat/group_chat_screen.dart';
 import 'package:casama/features/chat/direct_chat_screen.dart';
@@ -131,24 +130,24 @@ void main() {
   );
 
   testWidgets(
-    'DevicePermissionsScreen explains relevant permissions with skippable options',
+    'DevicePermissionsScreen renders Camera & Photo Library without Push Notifications or skip buttons',
     (WidgetTester tester) async {
       await tester.pumpWidget(
         const ProviderScope(child: MaterialApp(home: DevicePermissionsScreen())),
       );
 
       expect(find.text('Device Permissions'), findsOneWidget);
-      expect(find.text('Push Notifications'), findsOneWidget);
+      expect(find.text('Push Notifications'), findsNothing);
       expect(find.text('Camera & Photo Library'), findsOneWidget);
       expect(find.text('Contacts Assistance'), findsNothing);
       expect(find.text('Save & Continue'), findsOneWidget);
-      expect(find.text('Skip All for Now'), findsOneWidget);
-      expect(find.text('Skip All'), findsOneWidget);
+      expect(find.text('Skip All for Now'), findsNothing);
+      expect(find.text('Skip All'), findsNothing);
     },
   );
 
   testWidgets(
-    'CasamaIntroScreen displays welcome benefits and CTA to launch interactive tutorial',
+    'CasamaIntroScreen displays welcome benefits and Let\'s Get Started CTA without skip buttons',
     (WidgetTester tester) async {
       await tester.pumpWidget(
         const ProviderScope(child: MaterialApp(home: CasamaIntroScreen())),
@@ -160,12 +159,13 @@ void main() {
       expect(find.text('Fair Chores & Kasama Points'), findsOneWidget);
       expect(find.text('Harmonious Housemate Connect'), findsOneWidget);
       expect(find.text("Let's Get Started"), findsOneWidget);
-      expect(find.text('Skip to Home'), findsOneWidget);
+      expect(find.text('Skip to Home'), findsNothing);
+      expect(find.text('Skip Tutorial & Go to Dashboard'), findsNothing);
     },
   );
 
   testWidgets(
-    'InteractiveTutorialScreen highlights actual navigation elements with skip option',
+    'InteractiveTutorialScreen highlights actual navigation elements without skip button',
     (WidgetTester tester) async {
       await tester.pumpWidget(
         const ProviderScope(
@@ -175,7 +175,7 @@ void main() {
 
       // Initial step: Home
       expect(find.text('1. Home Dashboard & Presence'), findsOneWidget);
-      expect(find.text('Skip Tour'), findsOneWidget);
+      expect(find.text('Skip Tour'), findsNothing);
       expect(find.text('Next: Boards ›'), findsOneWidget);
 
       // Advance to Step 2: Boards
@@ -191,7 +191,7 @@ void main() {
       // Advance to Step 4: Chat
       await tester.tap(find.text('Next: Chat ›'));
       await tester.pumpAndSettle();
-      expect(find.text('4. Household Chat & Meet-ups'), findsOneWidget);
+      expect(find.text('4. Household Chat & Agendas'), findsOneWidget);
 
       // Advance to Step 5: Profile
       await tester.tap(find.text('Next: Profile ›'));
@@ -314,7 +314,7 @@ void main() {
       expect(find.text('All'), findsOneWidget);
       expect(find.text('Parcels'), findsOneWidget);
       expect(find.text('Tasks'), findsOneWidget);
-      expect(find.text('Meetups'), findsOneWidget);
+      expect(find.text('Agenda'), findsWidgets);
 
       // Month Navigation: tap chevron right (Next month)
       final nextMonthFinder = find.byIcon(Icons.chevron_right_rounded);
@@ -333,7 +333,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Category filter tap
-      await tester.tap(find.text('Meetups'), warnIfMissed: false);
+      await tester.tap(find.text('Agenda').first, warnIfMissed: false);
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('All'), warnIfMissed: false);
@@ -555,7 +555,7 @@ void main() {
   );
 
   testWidgets(
-    'Create a Meet-up action launches existing meet-up form and sends invitation to chat',
+    'Plan Housemates Agenda action launches agenda form and saves to repository',
     (WidgetTester tester) async {
       final mockRepo = MockRepository();
       final initialMessages = mockRepo.groupMessages.length;
@@ -563,27 +563,27 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
-          child: const MaterialApp(home: CreateMeetupScreen()),
+          child: const MaterialApp(home: PlanHousematesAgendaScreen()),
         ),
       );
 
       await tester.pumpAndSettle();
 
-      expect(find.text('Create Meet-up'), findsOneWidget);
+      expect(find.text('Plan Housemates Agenda'), findsOneWidget);
       expect(find.text('Bring the household together'), findsOneWidget);
-      expect(find.text('Send Invitation'), findsOneWidget);
+      expect(find.text('Send Agenda'), findsOneWidget);
 
       await tester.drag(
         find.byType(SingleChildScrollView),
         const Offset(0, -300),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Send Invitation'));
+      await tester.tap(find.text('Send Agenda'));
       await tester.pumpAndSettle();
 
-      // Meet-up saved without posting a group chat message
+      // Agenda saved without posting a group chat message
       expect(mockRepo.groupMessages.length, initialMessages);
-      expect(mockRepo.activeMeetUp.activity, isNotEmpty);
+      expect(mockRepo.activeHousematesAgenda.activity, isNotEmpty);
     },
   );
 
@@ -830,7 +830,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Clara Reyes'), findsOneWidget);
+      expect(find.text('Clara'), findsNWidgets(2));
       expect(find.text('@clara'), findsOneWidget);
       expect(find.text('Invite'), findsOneWidget);
 
@@ -987,7 +987,7 @@ void main() {
   );
 
   testWidgets(
-    'GroupChatScreen displays group messages, meet-up card and allows opening household members sheet',
+    'GroupChatScreen displays group messages, agenda card and allows opening household members sheet',
     (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
@@ -1196,7 +1196,7 @@ void main() {
 
       expect(find.text('Default Avatar'), findsOneWidget);
 
-      // Clear name field to test validation
+      // Clear full name field to test validation
       await tester.enterText(
         find.widgetWithText(TextField, 'Jon Paul Berana'),
         '',
@@ -1209,7 +1209,7 @@ void main() {
       // Error message displayed
       expect(find.text('Please enter your full name'), findsOneWidget);
 
-      // Restore name and save
+      // Restore full name and save
       await tester.enterText(find.byType(TextField).first, 'Jon Paul');
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save Changes'));
@@ -1254,12 +1254,12 @@ void main() {
       expect(find.text('Dark'), findsWidgets);
       expect(find.text('System'), findsWidgets);
 
-      // 3. Notification Settings
-      expect(find.text('Notification Settings'), findsOneWidget);
-      expect(find.text('Household Updates'), findsOneWidget);
-      expect(find.text('Parcel & Delivery Alerts'), findsOneWidget);
-      expect(find.text('Task & Chore Reminders'), findsOneWidget);
-      expect(find.text('Chat & Meet-up Notifications'), findsOneWidget);
+      // 3. Notification Settings removed
+      expect(find.text('Notification Settings'), findsNothing);
+      expect(find.text('Household Updates'), findsNothing);
+      expect(find.text('Parcel & Delivery Alerts'), findsNothing);
+      expect(find.text('Task & Chore Reminders'), findsNothing);
+      expect(find.text('Chat & Agenda Notifications'), findsNothing);
 
       // 4. Privacy and Security
       expect(find.text('Privacy and Security'), findsOneWidget);
@@ -1310,17 +1310,12 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Toggle Parcel & Delivery Alerts
+      // Only Privacy & Security switch remains (Notification Settings removed)
       final switches = find.byType(Switch);
-      expect(
-        switches,
-        findsNWidgets(5),
-      ); // 4 notification switches + 1 privacy switch
+      expect(switches, findsOneWidget);
 
-      await tester.tap(switches.at(1)); // Parcel switch
+      await tester.tap(switches.first);
       await tester.pumpAndSettle();
-
-      expect(mockRepo.notificationPreferences.parcelNotifications, false);
     },
   );
 
@@ -1402,45 +1397,29 @@ void main() {
   });
 
   testWidgets(
-    'BoardsScreen displays unified 4-tab boards hub and switches to Bills tab',
+    'BoardsScreen displays unified 3-tab boards hub and switches to Items tab',
     (tester) async {
+      final mockRepo = MockRepository();
       await tester.pumpWidget(
-        const ProviderScope(child: MaterialApp(home: BoardsScreen())),
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: BoardsScreen()),
+        ),
       );
       await tester.pumpAndSettle();
 
       expect(find.text('Parcels & Deliveries'), findsOneWidget);
       expect(find.text('Parcels'), findsOneWidget);
       expect(find.text('Tasks'), findsOneWidget);
-      expect(find.text('Bills'), findsOneWidget);
       expect(find.text('Items'), findsOneWidget);
+      expect(find.text('Bills'), findsNothing);
       expect(find.text('Add parcel'), findsOneWidget);
 
-      await tester.tap(find.text('Bills'));
+      await tester.tap(find.text('Items'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Bills & Payments'), findsOneWidget);
-      expect(find.text('Edit billings'), findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    'AddBillScreen renders illustration, form fields, and responsible member dropdown without assertion errors',
-    (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(child: MaterialApp(home: AddBillScreen())),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Add a New Bill'), findsOneWidget);
-      expect(find.text('Bill Type'), findsOneWidget);
-      expect(find.text('Electricity'), findsOneWidget);
-      expect(find.text('Water'), findsOneWidget);
-      expect(find.text('Responsible Member'), findsOneWidget);
-      expect(find.text('Save Bill'), findsOneWidget);
-
-      // Verify dropdown rendered valid initial responsible member without crash
-      expect(find.byType(DropdownButton<String>), findsOneWidget);
+      expect(find.text('Lost & Found'), findsOneWidget);
+      expect(find.text('Report item'), findsOneWidget);
     },
   );
 

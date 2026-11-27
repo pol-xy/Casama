@@ -261,7 +261,7 @@ class _AddHousemateSheetBodyState extends ConsumerState<_AddHousemateSheetBody>
                           CasamaAvatar(
                             avatarUrl: user.avatarUrl,
                             radius: 20,
-                            name: user.displayName,
+                            name: user.preferredName,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -269,7 +269,7 @@ class _AddHousemateSheetBodyState extends ConsumerState<_AddHousemateSheetBody>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  user.displayName,
+                                  user.preferredName,
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     color: pal.textPrimary,
                                     fontWeight: FontWeight.w700,
@@ -312,12 +312,12 @@ class _AddHousemateSheetBodyState extends ConsumerState<_AddHousemateSheetBody>
                                   onPressed: () {
                                     final sent = repo.sendInvitation(
                                       inviteeEmailOrHandle: user.handle,
-                                      inviteeName: user.displayName,
+                                      inviteeName: user.preferredName,
                                     );
                                     if (sent) {
                                       showCasamaToast(
                                         widget.hostContext,
-                                        'Invitation sent to ${user.displayName} (${user.handle})!',
+                                        'Invitation sent to ${user.preferredName} (${user.handle})!',
                                         icon: Icons.check_circle_outline_rounded,
                                       );
                                       setState(() {});

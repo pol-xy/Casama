@@ -15,6 +15,7 @@ import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_no_household_card.dart';
 import 'quicksnap_feed_screen.dart';
 
 class QuickSnapCameraScreen extends ConsumerStatefulWidget {
@@ -71,7 +72,9 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
 
     if (widget.autoPromptPermission) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _checkAndPromptPermission();
+        if (mounted && ref.read(repositoryProvider).hasActiveHousehold) {
+          _checkAndPromptPermission();
+        }
       });
     }
   }
@@ -612,6 +615,61 @@ class _QuickSnapCameraScreenState extends ConsumerState<QuickSnapCameraScreen>
   @override
   Widget build(BuildContext context) {
     final repo = ref.watch(repositoryProvider);
+    if (!repo.hasActiveHousehold) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF070C16),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Semantics(
+                      button: true,
+                      label: 'Close camera',
+                      child: CasamaPressable(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(CasamaSpacing.md),
+                    child: CasamaNoHouseholdPrompt(
+                      title: 'Join a household',
+                      subtitle:
+                          'Join or create a household to capture and share daily CASnaps with your housemates.',
+                      mascotPose: CasPose.jumping,
+                      darkSurface: true,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final memberCount = repo.members.length;
     final vfSize = math.min(MediaQuery.sizeOf(context).width - 32, 340.0);
 
