@@ -71,7 +71,7 @@ class LeaderboardScreen extends ConsumerWidget {
                       Transform.translate(
                         offset: const Offset(0, -16),
                         child: CasamaSplitHero(
-                          mascotPose: CasPose.roulette,
+                          mascotPose: CasPose.leaderboard,
                           kicker: 'November 2026',
                           kickerDotColor: pal.amberFg,
                           headline: 'Good Kasama Rank',

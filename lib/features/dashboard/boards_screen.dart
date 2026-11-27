@@ -52,7 +52,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       pillIcon: Icons.checklist_rounded,
       fabLabel: 'Add task',
       fabIcon: Icons.add_task_rounded,
-      mascotPose: CasPose.tasks,
+      mascotPose: CasPose.chores,
     ),
     _BoardTabMeta(
       headerTitle: 'Lost & Found',
@@ -60,7 +60,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
       pillLabel: 'Items',
       fabLabel: 'Report item',
       useLostFoundIcon: true,
-      mascotPose: CasPose.together,
+      mascotPose: CasPose.lostFound,
     ),
   ];
 

@@ -6,12 +6,22 @@ enum CasPose {
   jumping,
   standing,
   deliveries,
+  deliveriesEmpty,
   tasks,
+  tasksEmpty,
   roulette,
   together,
   chatting,
   chores,
+  home,
+  leaderboard,
+  about,
+  lostFound,
+  lostFoundEmpty,
+  drawer,
 }
+
+typedef CasMascotPose = CasPose;
 
 /// Renders transparent Cas/Migo mascot PNG illustrations cleanly over any
 /// background (stepped wave headers, cards, or avatar rims) with no opaque
@@ -32,6 +42,8 @@ class CasMascotView extends StatelessWidget {
     this.semanticLabel,
   });
 
+  String get assetPath => _assetPath;
+
   String get _assetPath {
     switch (pose) {
       case CasPose.hero:
@@ -41,15 +53,31 @@ class CasMascotView extends StatelessWidget {
       case CasPose.waving:
       case CasPose.chatting:
         return 'assets/images/cas/migo_chat.png';
-      case CasPose.jumping:
       case CasPose.roulette:
         return 'assets/images/cas/migo_roulette.png';
+      case CasPose.jumping:
+      case CasPose.leaderboard:
+        return 'assets/images/cas/migo_leaderboard.png';
       case CasPose.deliveries:
         return 'assets/images/cas/migo_deliveries.png';
+      case CasPose.deliveriesEmpty:
+        return 'assets/images/cas/migo_deliveries_empty.png';
       case CasPose.tasks:
-        return 'assets/images/cas/migo_chores.png';
+        return 'assets/images/cas/migo_tasks.png';
+      case CasPose.tasksEmpty:
+        return 'assets/images/cas/migo_tasks_empty.png';
       case CasPose.chores:
         return 'assets/images/cas/migo_chores.png';
+      case CasPose.home:
+        return 'assets/images/cas/migo_home.png';
+      case CasPose.about:
+        return 'assets/images/cas/migo_about.png';
+      case CasPose.lostFound:
+        return 'assets/images/cas/migo_lost_found.png';
+      case CasPose.lostFoundEmpty:
+        return 'assets/images/cas/migo_lost_found_empty.png';
+      case CasPose.drawer:
+        return 'assets/images/cas/migo_drawer.png';
     }
   }
 

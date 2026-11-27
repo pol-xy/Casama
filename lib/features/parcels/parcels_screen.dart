@@ -218,7 +218,7 @@ class _ParcelsBoardViewState extends ConsumerState<ParcelsBoardView> {
                       child: Column(
                         children: [
                           const CasMascotView(
-                            pose: CasPose.deliveries,
+                            pose: CasPose.deliveriesEmpty,
                             width: 112,
                             height: 112,
                           ),
@@ -642,7 +642,7 @@ class _ParcelCard extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               const CasMascotView(
-                pose: CasPose.jumping,
+                pose: CasPose.leaderboard,
                 width: 118,
                 height: 118,
               ),

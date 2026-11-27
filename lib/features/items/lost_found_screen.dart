@@ -76,7 +76,7 @@ class _LostFoundScreenState extends ConsumerState<LostFoundScreen> {
               subtitle: repo.hasActiveHousehold
                   ? '${repo.currentHousehold.name} • Missing & found items'
                   : 'No household yet • Missing & found items',
-              titleMascotPose: CasPose.together,
+              titleMascotPose: CasPose.lostFound,
               extendedWave: true,
               compact: true,
               onBackTap: () =>
@@ -328,7 +328,7 @@ class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           CasamaPeekingSummaryBar(
-            mascotPose: CasPose.together,
+            mascotPose: CasPose.lostFound,
             leftTitle: '${openLost.length} Lost',
             leftSubtitle: 'Open missing reports',
             rightTitle: '${unclaimedFound.length} Found',
@@ -383,7 +383,7 @@ class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
                       child: Column(
                         children: [
                           CasMascotView(
-                            pose: CasPose.together,
+                            pose: CasPose.lostFoundEmpty,
                             height: 88,
                             semanticLabel: 'Lost and Found Mascot',
                           ),

@@ -264,7 +264,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       0 => (
         '1. Home Dashboard & Presence',
         'Check live housemate presence with zero background GPS, share quick status notes, and view upcoming events.',
-        CasPose.hero,
+        CasPose.home,
         'Next: Boards ›',
       ),
       1 => (

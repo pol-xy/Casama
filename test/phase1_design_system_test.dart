@@ -20,10 +20,20 @@ void main() {
       final expected = {
         CasPose.hero: 'assets/images/cas/together_cards.png',
         CasPose.waving: 'assets/images/cas/migo_chat.png',
+        CasPose.chatting: 'assets/images/cas/migo_chat.png',
         CasPose.deliveries: 'assets/images/cas/migo_deliveries.png',
-        CasPose.tasks: 'assets/images/cas/migo_chores.png',
+        CasPose.deliveriesEmpty: 'assets/images/cas/migo_deliveries_empty.png',
+        CasPose.tasks: 'assets/images/cas/migo_tasks.png',
+        CasPose.tasksEmpty: 'assets/images/cas/migo_tasks_empty.png',
         CasPose.roulette: 'assets/images/cas/migo_roulette.png',
         CasPose.chores: 'assets/images/cas/migo_chores.png',
+        CasPose.home: 'assets/images/cas/migo_home.png',
+        CasPose.leaderboard: 'assets/images/cas/migo_leaderboard.png',
+        CasPose.jumping: 'assets/images/cas/migo_leaderboard.png',
+        CasPose.about: 'assets/images/cas/migo_about.png',
+        CasPose.lostFound: 'assets/images/cas/migo_lost_found.png',
+        CasPose.lostFoundEmpty: 'assets/images/cas/migo_lost_found_empty.png',
+        CasPose.drawer: 'assets/images/cas/migo_drawer.png',
       };
 
       for (final entry in expected.entries) {

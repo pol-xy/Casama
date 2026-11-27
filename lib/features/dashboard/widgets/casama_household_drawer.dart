@@ -580,7 +580,7 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
                               ),
                               child: const ClipOval(
                                 child: CasMascotView(
-                                  pose: CasPose.hero,
+                                  pose: CasPose.drawer,
                                   width: 36,
                                   height: 36,
                                   fit: BoxFit.contain,

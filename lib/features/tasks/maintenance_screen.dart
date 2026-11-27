@@ -71,7 +71,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
               subtitle: repo.hasActiveHousehold
                   ? '${repo.currentHousehold.name} • Chores & requests'
                   : 'No household yet • Chores & requests',
-              titleMascotPose: CasPose.tasks,
+              titleMascotPose: CasPose.chores,
               extendedWave: true,
               compact: true,
               onBackTap: () =>
@@ -277,7 +277,7 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
                       child: Column(
                         children: [
                           CasMascotView(
-                            pose: CasPose.tasks,
+                            pose: CasPose.tasksEmpty,
                             height: 88,
                             semanticLabel: 'Tasks Mascot',
                           ),

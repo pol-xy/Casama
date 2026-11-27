@@ -99,7 +99,7 @@ class ProfileScreen extends ConsumerWidget {
                                       child: Transform.rotate(
                                         angle: 14 * math.pi / 180,
                                         child: const CasMascotView(
-                                          pose: CasPose.standing,
+                                          pose: CasPose.drawer,
                                           width: 68,
                                           height: 68,
                                         ),
@@ -615,7 +615,7 @@ class ProfileScreen extends ConsumerWidget {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CasMascotView(pose: CasPose.hero, width: 108, height: 108),
+            const CasMascotView(pose: CasPose.about, width: 108, height: 108),
             const SizedBox(height: CasamaSpacing.sm),
             Text(
               '"A better home starts with being a good kasama."',

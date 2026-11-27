@@ -123,7 +123,7 @@ class DashboardScreen extends ConsumerWidget {
                       Transform.translate(
                         offset: const Offset(0, -18),
                         child: CasamaSplitHero(
-                          mascotPose: CasPose.hero,
+                          mascotPose: CasPose.home,
                           kicker: '${repo.currentHousehold.name} Status',
                           kickerDotColor: activeCount > 0
                               ? pal.successFg
