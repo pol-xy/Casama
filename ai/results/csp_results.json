@@ -1,0 +1,76 @@
+{
+  "scenarios": 1000,
+  "seed": 2026,
+  "strategies": {
+    "Random (original roulette)": {
+      "availability_violation_rate": 0.10489626556016597,
+      "rounds_with_hard_violation": 0.855,
+      "mean_load_std": 2.629569708365711,
+      "mean_load_gap": 6.888,
+      "repeat_rate": 0.14240663900414938,
+      "mean_cost_vs_optimal": 1.2299023521492676
+    },
+    "Greedy": {
+      "availability_violation_rate": 0.0,
+      "rounds_with_hard_violation": 0.08,
+      "mean_load_std": 1.4303860889738265,
+      "mean_load_gap": 3.694,
+      "repeat_rate": 0.15103734439834024,
+      "mean_cost_vs_optimal": 1.0638960142617657
+    },
+    "CSP (ours)": {
+      "availability_violation_rate": 0.0,
+      "rounds_with_hard_violation": 0.0,
+      "mean_load_std": 0.854460258752501,
+      "mean_load_gap": 2.172,
+      "repeat_rate": 0.025726141078838173,
+      "mean_cost_vs_optimal": 1.0
+    }
+  },
+  "performance": {
+    "mean_ms": 0.251715,
+    "p95_ms": 1.102,
+    "max_ms": 7.969,
+    "mean_nodes": 472.526,
+    "max_nodes": 15622,
+    "capacity_relaxed_rate": 0.035
+  },
+  "ablation": {
+    "All heuristics (app)": {
+      "mean_nodes": 472.526,
+      "max_nodes": 15622,
+      "mean_ms": 0.23494900000000002,
+      "optimal_rate": 1.0
+    },
+    "No MRV": {
+      "mean_nodes": 987.09,
+      "max_nodes": 24411,
+      "mean_ms": 0.456743,
+      "optimal_rate": 1.0
+    },
+    "No value ordering": {
+      "mean_nodes": 563.384,
+      "max_nodes": 15571,
+      "mean_ms": 0.25076499999999996,
+      "optimal_rate": 1.0
+    },
+    "No forward checking": {
+      "mean_nodes": 472.72,
+      "max_nodes": 15622,
+      "mean_ms": 0.157286,
+      "optimal_rate": 1.0
+    },
+    "No branch & bound": {
+      "mean_nodes": 14997.861,
+      "max_nodes": 200000,
+      "mean_ms": 4.13381,
+      "optimal_rate": 0.999
+    },
+    "Plain backtracking (all off)": {
+      "mean_nodes": 15565.019,
+      "max_nodes": 200000,
+      "mean_ms": 1.320848,
+      "optimal_rate": 0.997
+    }
+  }
+}

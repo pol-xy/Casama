@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ai/ai_providers.dart';
+import '../../ai/naive_bayes_classifier.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../data/models.dart';
@@ -42,6 +44,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen>
   @override
   Widget build(BuildContext context) {
     final repo = ref.watch(repositoryProvider);
+    ref.watch(taskClassifierProvider); // warm up the AI model in the background
     final allTasks = repo.tasks;
     final todoTasks = allTasks
         .where((t) => t.status == TaskStatus.open)
@@ -163,6 +166,12 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen>
     final titleController = TextEditingController();
     String? selectedAssignee = 'Jon Paul';
 
+    // AI: Naive Bayes suggestion state. Once the user picks a dropdown
+    // themselves, the AI stops overriding that field.
+    TaskSuggestion? suggestion;
+    bool userPickedCategory = false;
+    bool userPickedUrgency = false;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -196,17 +205,39 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen>
                     const SizedBox(height: 16),
 
                     TextField(
+                      key: const Key('task_title_field'),
                       controller: titleController,
                       decoration: const InputDecoration(
                         labelText: 'Task Title',
                         hintText:
                             'e.g., Fix front door knob, Restock detergent',
                       ),
+                      onChanged: (text) {
+                        final classifier = ref
+                            .read(taskClassifierProvider)
+                            .valueOrNull;
+                        if (classifier == null) return;
+                        final s = classifier.suggest(text);
+                        setModalState(() {
+                          suggestion = s.isEmpty ? null : s;
+                          if (s.shouldApplyCategory && !userPickedCategory) {
+                            category = s.category!;
+                          }
+                          if (s.shouldApplyUrgency && !userPickedUrgency) {
+                            urgency = s.urgency!;
+                          }
+                        });
+                      },
                     ),
+                    if (suggestion != null) ...[
+                      const SizedBox(height: 10),
+                      _AiSuggestionCard(suggestion: suggestion!),
+                    ],
                     const SizedBox(height: 14),
 
                     // Category Selector
                     DropdownButtonFormField<TaskCategory>(
+                      key: ValueKey('category_$category'),
                       initialValue: category,
                       decoration: const InputDecoration(labelText: 'Category'),
                       items: const [
@@ -224,13 +255,19 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen>
                         ),
                       ],
                       onChanged: (val) {
-                        if (val != null) setModalState(() => category = val);
+                        if (val != null) {
+                          setModalState(() {
+                            category = val;
+                            userPickedCategory = true;
+                          });
+                        }
                       },
                     ),
                     const SizedBox(height: 14),
 
                     // Urgency Selector
                     DropdownButtonFormField<TaskUrgency>(
+                      key: ValueKey('urgency_$urgency'),
                       initialValue: urgency,
                       decoration: const InputDecoration(
                         labelText: 'Urgency Level',
@@ -250,7 +287,12 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen>
                         ),
                       ],
                       onChanged: (val) {
-                        if (val != null) setModalState(() => urgency = val);
+                        if (val != null) {
+                          setModalState(() {
+                            urgency = val;
+                            userPickedUrgency = true;
+                          });
+                        }
                       },
                     ),
                     const SizedBox(height: 14),
@@ -314,6 +356,110 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen>
           },
         );
       },
+    );
+  }
+}
+
+/// "Cas AI suggests…" card shown under the task title while typing.
+class _AiSuggestionCard extends StatelessWidget {
+  final TaskSuggestion suggestion;
+
+  const _AiSuggestionCard({required this.suggestion});
+
+  static String _categoryLabel(TaskCategory c) {
+    switch (c) {
+      case TaskCategory.diy:
+        return 'DIY / Roommate';
+      case TaskCategory.landlord:
+        return 'Landlord / Admin';
+      case TaskCategory.restock:
+        return 'Household Restock';
+    }
+  }
+
+  Widget _row(
+    BuildContext context,
+    String field,
+    String value,
+    double confidence,
+    bool applied,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          Text(
+            '$field: ',
+            style: TextStyle(fontSize: 12, color: context.textSecondaryColor),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: context.textColor,
+              ),
+            ),
+          ),
+          Text(
+            applied
+                ? '${(confidence * 100).round()}% · applied'
+                : '${(confidence * 100).round()}% · unsure',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: applied
+                  ? CasamaColors.primaryCoral
+                  : context.textSecondaryColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('ai_suggestion_card'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: context.isDark
+            ? CasamaColors.darkSurface
+            : const Color(0xFFFFECE8),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '🦉 Cas AI suggests',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: CasamaColors.primaryCoral,
+            ),
+          ),
+          if (suggestion.category != null)
+            _row(
+              context,
+              'Category',
+              _categoryLabel(suggestion.category!),
+              suggestion.categoryConfidence,
+              suggestion.shouldApplyCategory,
+            ),
+          if (suggestion.urgency != null)
+            _row(
+              context,
+              'Urgency',
+              suggestion.urgency!.label,
+              suggestion.urgencyConfidence,
+              suggestion.shouldApplyUrgency,
+            ),
+        ],
+      ),
     );
   }
 }
