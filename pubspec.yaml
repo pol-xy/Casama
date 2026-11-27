@@ -56,6 +56,28 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icons/Casama App Icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#046B56"
+  adaptive_icon_foreground: "assets/icons/Casama App Icon.png"
+  web:
+    generate: true
+    image_path: "assets/icons/Casama App Icon.png"
+    background_color: "#046B56"
+    theme_color: "#046B56"
+  windows:
+    generate: true
+    image_path: "assets/icons/Casama App Icon.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icons/Casama App Icon.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -72,7 +94,7 @@ flutter:
     - .env
     - assets/images/
     - assets/images/cas/
-    - .env
+    - assets/images/Casama Profile Icons/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

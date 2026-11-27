@@ -3974,7 +3974,11 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   bool _needsStorageUpload(String source) {
     final s = source.trim();
     if (s.isEmpty) return false;
-    if (s.startsWith('http://') || s.startsWith('https://')) return false;
+    if (s.startsWith('http://') ||
+        s.startsWith('https://') ||
+        s.startsWith('assets/')) {
+      return false;
+    }
     return s.startsWith('data:image') ||
         s.startsWith('/') ||
         s.startsWith('file:') ||

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../data/models.dart';
 
 class CasamaAvatar extends StatelessWidget {
   final String? avatarUrl;
@@ -97,6 +98,15 @@ class CasamaAvatar extends StatelessWidget {
             if (progress == null) return child;
             return _buildFallback(context);
           },
+          errorBuilder: (_, _, _) => _buildFallback(context),
+        );
+      } else if (url.startsWith('assets/')) {
+        avatarContent = Image.asset(
+          url,
+          width: size,
+          height: size,
+          cacheWidth: cachePx,
+          fit: BoxFit.cover,
           errorBuilder: (_, _, _) => _buildFallback(context),
         );
       } else if (!kIsWeb && (url.startsWith('/') || url.startsWith('file:'))) {
@@ -205,6 +215,71 @@ class CasamaAvatar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Shared preset avatar selector displaying the 7 bundled Casama character icons.
+class CasamaPresetAvatarPicker extends StatelessWidget {
+  final String? selectedAvatar;
+  final ValueChanged<String?> onSelected;
+  final WrapAlignment alignment;
+  final double avatarRadius;
+  final bool toggleDeselect;
+
+  const CasamaPresetAvatarPicker({
+    super.key,
+    required this.selectedAvatar,
+    required this.onSelected,
+    this.alignment = WrapAlignment.center,
+    this.avatarRadius = 20,
+    this.toggleDeselect = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+
+    return Wrap(
+      alignment: alignment,
+      spacing: 8,
+      runSpacing: 8,
+      children: List.generate(UserProfile.presetAvatars.length, (i) {
+        final assetPath = UserProfile.presetAvatars[i];
+        final isSelected = selectedAvatar == assetPath;
+        return Semantics(
+          button: true,
+          selected: isSelected,
+          label: 'Preset avatar ${i + 1}',
+          child: CasamaPressable(
+            onTap: () => onSelected(
+              (toggleDeselect && isSelected) ? null : assetPath,
+            ),
+            child: SizedBox(
+              width: CasamaSpacing.minTouchTarget,
+              height: CasamaSpacing.minTouchTarget,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: CasamaMotion.resolve(context, CasamaMotion.press),
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected ? pal.primaryCoral : pal.border,
+                      width: isSelected ? 2.5 : 1,
+                    ),
+                  ),
+                  child: CasamaAvatar(
+                    avatarUrl: assetPath,
+                    radius: avatarRadius,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
     );
   }
 }

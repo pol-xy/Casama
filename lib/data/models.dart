@@ -70,10 +70,19 @@ class UserProfile {
     return 'Kasama';
   }
 
+  static const List<String> presetAvatars = [
+    'assets/images/Casama Profile Icons/cas_study_buddy.jpg',
+    'assets/images/Casama Profile Icons/cas_energetic.jpg',
+    'assets/images/Casama Profile Icons/cas_sleepy.jpg',
+    'assets/images/Casama Profile Icons/cas_music.jpg',
+    'assets/images/Casama Profile Icons/cas_bandana.jpg',
+    'assets/images/Casama Profile Icons/cas_pink_bandana.jpg',
+    'assets/images/Casama Profile Icons/cas_streetwear.jpg',
+  ];
+
   /// Default avatar fallback when none provided
   String get effectiveAvatarUrl {
-    return avatarUrl ??
-        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80';
+    return avatarUrl ?? presetAvatars.first;
   }
 
   bool get hasCompleteRequiredProfile =>

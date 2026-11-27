@@ -1695,4 +1695,48 @@ void main() {
       expect(find.text('Edit Profile'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'OptionalProfileScreen and EditProfileDialog display all 7 Casama preset avatars and save selection',
+    (WidgetTester tester) async {
+      final mockRepo = MockRepository();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: OptionalProfileScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (int i = 1; i <= 7; i++) {
+        expect(find.bySemanticsLabel('Preset avatar $i'), findsOneWidget);
+      }
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => mockRepo)],
+          child: const MaterialApp(home: Scaffold(body: EditProfileDialog())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (int i = 1; i <= 7; i++) {
+        expect(find.bySemanticsLabel('Preset avatar $i'), findsOneWidget);
+      }
+
+      await tester.ensureVisible(find.bySemanticsLabel('Preset avatar 7'));
+      await tester.tap(find.bySemanticsLabel('Preset avatar 7'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Save Changes'));
+      await tester.tap(find.text('Save Changes'));
+      await tester.pumpAndSettle();
+
+      expect(
+        mockRepo.currentUser.avatarUrl,
+        'assets/images/Casama Profile Icons/cas_streetwear.jpg',
+      );
+    },
+  );
 }

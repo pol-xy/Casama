@@ -32,13 +32,6 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
   String? _selectedAvatar;
   bool _isPickingImage = false;
 
-  final List<String> _avatarPresets = [
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -407,30 +400,11 @@ class _EditProfileDialogState extends ConsumerState<EditProfileDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _avatarPresets.map((url) {
-                    final isSelected = _selectedAvatar == url;
-                    return CasamaPressable(
-                      onTap: () => setState(() => _selectedAvatar = url),
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isSelected
-                                ? pal.primaryCoral
-                                : Colors.transparent,
-                            width: 2.5,
-                          ),
-                        ),
-                        child: CasamaAvatar(avatarUrl: url, radius: 22),
-                      ),
-                    );
-                  }).toList(),
-                ),
+              CasamaPresetAvatarPicker(
+                selectedAvatar: _selectedAvatar,
+                onSelected: (next) => setState(() => _selectedAvatar = next),
+                alignment: WrapAlignment.start,
+                avatarRadius: 20,
               ),
               const SizedBox(height: CasamaSpacing.lg),
 

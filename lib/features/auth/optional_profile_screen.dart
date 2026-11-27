@@ -105,14 +105,6 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
     return age >= 0 ? age : null;
   }
 
-  // Preset avatar choices for quick one-tap selection
-  final List<String> _avatarPresets = const [
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-  ];
-
   @override
   void dispose() {
     _termsTap.dispose();
@@ -345,47 +337,13 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
+                  CasamaPresetAvatarPicker(
+                    selectedAvatar: _selectedAvatar,
+                    onSelected: (next) =>
+                        setState(() => _selectedAvatar = next),
                     alignment: WrapAlignment.center,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: List.generate(_avatarPresets.length, (i) {
-                      final url = _avatarPresets[i];
-                      final isSelected = _selectedAvatar == url;
-                      return Semantics(
-                        button: true,
-                        selected: isSelected,
-                        label: 'Preset avatar ${i + 1}',
-                        child: CasamaPressable(
-                          onTap: () => setState(
-                            () => _selectedAvatar = isSelected ? null : url,
-                          ),
-                          child: SizedBox(
-                            width: 48,
-                            height: 48,
-                            child: Center(
-                              child: AnimatedContainer(
-                                duration: CasamaMotion.resolve(
-                                  context,
-                                  CasamaMotion.press,
-                                ),
-                                padding: const EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? CasamaColors.primaryCoral
-                                        : pal.border,
-                                    width: isSelected ? 2.5 : 1,
-                                  ),
-                                ),
-                                child: CasamaAvatar(avatarUrl: url, radius: 18),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
+                    avatarRadius: 18,
+                    toggleDeselect: true,
                   ),
                 ],
               ),
