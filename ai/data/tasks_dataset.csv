@@ -1,0 +1,418 @@
+title,category,urgency
+Leaking faucet in the kitchen,landlord,urgent
+Leaking faucet sa CR,landlord,urgent
+Pipe burst under the sink,landlord,urgent
+Water leaking from the ceiling,landlord,urgent
+Roof is leaking when it rains,landlord,urgent
+Tulo sa bubong,landlord,urgent
+May tulo sa kisame,landlord,urgent
+No water supply since morning,landlord,urgent
+Walang tubig sa buong unit,landlord,urgent
+Power outage in our room only,landlord,urgent
+Walang kuryente sa kwarto,landlord,urgent
+Circuit breaker keeps tripping,landlord,urgent
+Sparking electrical outlet,landlord,urgent
+Burning smell from the wall socket,landlord,urgent
+Exposed electrical wires in hallway,landlord,urgent
+Gas leak smell near the stove,landlord,urgent
+Amoy gas sa kusina,landlord,urgent
+Main door lock is broken,landlord,urgent
+Sira ang lock ng main door,landlord,urgent
+Front door will not lock,landlord,urgent
+Window glass is shattered,landlord,urgent
+Basag ang bintana,landlord,urgent
+Toilet overflowing,landlord,urgent
+Barado at umaapaw ang inidoro,landlord,urgent
+Sewage smell coming from the drain,landlord,urgent
+Flooding inside the unit,landlord,urgent
+Baha sa loob ng unit,landlord,urgent
+Ceiling is sagging after the rain,landlord,urgent
+Smoke detector beeping nonstop,landlord,urgent
+Fire extinguisher is expired,landlord,urgent
+Water heater not working and leaking,landlord,urgent
+Elevator stuck in our floor,landlord,urgent
+Termites eating the door frame,landlord,medium
+Anay sa pinto,landlord,medium
+Aircon not cooling,landlord,medium
+Sira ang aircon,landlord,medium
+Aircon dripping water inside,landlord,medium
+Ceiling fan wobbling badly,landlord,medium
+Electric fan wiring is loose,landlord,medium
+Shower head has low pressure,landlord,medium
+Mahina ang tubig sa shower,landlord,medium
+Water heater not heating,landlord,medium
+Walang mainit na tubig,landlord,medium
+Wifi router keeps disconnecting,landlord,medium
+Walang internet since kahapon,landlord,medium
+Internet is down for the whole floor,landlord,medium
+Mold growing on bathroom wall,landlord,medium
+Amag sa pader ng banyo,landlord,medium
+Cracked tiles in the bathroom floor,landlord,medium
+Bedroom door hinge is broken,landlord,medium
+Sira ang bisagra ng pinto,landlord,medium
+Closet door fell off the track,landlord,medium
+Window will not close properly,landlord,medium
+Hindi sumasara ang bintana,landlord,medium
+Rats in the kitchen ceiling,landlord,medium
+May daga sa kisame,landlord,medium
+Cockroach infestation needs pest control,landlord,medium
+Need pest control for ipis,landlord,medium
+Bed bugs in the double deck,landlord,medium
+Surot sa kama,landlord,medium
+Toilet flush is broken,landlord,medium
+Sira ang flush ng inidoro,landlord,medium
+Toilet keeps running water,landlord,medium
+Kitchen sink drain is slow,landlord,medium
+Request spare key from landlord,landlord,medium
+Lost the gate key need duplicate,landlord,medium
+Ask admin about electric bill computation,landlord,medium
+Report noisy neighbor to admin,landlord,medium
+Ask landlord to fix the doorbell,landlord,low
+Doorbell not working,landlord,low
+Paint peeling off the wall,landlord,low
+Natutuklap ang pintura,landlord,low
+Request repainting of the room,landlord,low
+Hallway light is busted,landlord,low
+Busted lights sa hagdan,landlord,low
+Ask admin for parking slot,landlord,low
+Request additional cabinet from landlord,landlord,low
+Ask landlord about contract renewal,landlord,low
+Renew lease contract,landlord,low
+Ask admin to trim the plants outside,landlord,low
+Gate is squeaky,landlord,low
+Maingay ang gate,landlord,low
+Faded curtains need replacing by owner,landlord,low
+Request window screen installation,landlord,low
+Ask landlord for laundry area access,landlord,low
+Loose tile near the entrance,landlord,low
+Cabinet handle fell off,landlord,low
+Ask about installing a water filter,landlord,low
+Request mailbox key,landlord,low
+Common area bulletin board is broken,landlord,low
+Ask admin about the wifi password change,landlord,low
+Termites in the closet,landlord,medium
+Water meter reading looks wrong,landlord,medium
+Electric meter seems faulty,landlord,medium
+Clogged main drain pipe,landlord,urgent
+Septic tank is full,landlord,urgent
+Puno na ang poso negro,landlord,urgent
+Stairs railing is loose and dangerous,landlord,urgent
+Balcony railing is shaking,landlord,urgent
+Buy drinking water,restock,medium
+Bumili ng tubig na inumin,restock,medium
+Refill water gallon,restock,medium
+Paorder ng tubig,restock,medium
+Out of drinking water,restock,urgent
+Ubos na ang tubig na inumin,restock,urgent
+LPG tank is empty,restock,urgent
+Ubos na ang gasul,restock,urgent
+Refill LPG tank,restock,urgent
+Buy rice,restock,medium
+Bili ng bigas,restock,medium
+Ubos na ang bigas,restock,urgent
+No more rice for dinner,restock,urgent
+Restock toilet paper,restock,medium
+Ubos na tissue sa CR,restock,urgent
+No toilet paper left,restock,urgent
+Buy dishwashing liquid,restock,medium
+Bili ng dishwashing liquid,restock,medium
+Restock detergent,restock,medium
+Bili ng sabon panlaba,restock,medium
+Buy fabric conditioner,restock,low
+Buy bath soap,restock,medium
+Restock shampoo for the bathroom,restock,low
+Buy trash bags,restock,medium
+Bili ng garbage bag,restock,medium
+Buy cooking oil,restock,medium
+Ubos na ang mantika,restock,medium
+Buy salt and sugar,restock,low
+Bili ng asukal,restock,low
+Buy coffee and creamer,restock,low
+Restock coffee sa pantry,restock,low
+Buy eggs for breakfast,restock,medium
+Bili ng itlog,restock,medium
+Buy bread for tomorrow,restock,medium
+Buy instant noodles stock,restock,low
+Bili ng noodles at de lata,restock,low
+Buy canned goods,restock,low
+Restock alcohol and hand sanitizer,restock,medium
+Bili ng alcohol,restock,medium
+Buy light bulb replacement,restock,low
+Buy batteries for the remote,restock,low
+Bili ng battery para sa remote,restock,low
+Buy mosquito repellent,restock,medium
+Bili ng katol,restock,medium
+Buy insect spray,restock,medium
+Restock paper towels,restock,low
+Buy sponge for dishes,restock,low
+Bili ng bagong sponge,restock,low
+Buy broom and dustpan,restock,low
+Bili ng walis,restock,low
+Buy mop refill,restock,low
+Buy toilet bowl cleaner,restock,low
+Bili ng zonrox,restock,low
+Restock bleach,restock,low
+Buy air freshener,restock,low
+Buy ketchup and soy sauce,restock,low
+Bili ng toyo at suka,restock,low
+Buy milk,restock,medium
+Bili ng gatas,restock,medium
+Restock snacks for movie night,restock,low
+Buy ice for the party,restock,low
+Buy extension cord,restock,low
+Buy hangers,restock,low
+Bili ng sampayan at sipit,restock,low
+Buy clothes pins,restock,low
+Order more water from the station,restock,medium
+Buy load for the pocket wifi,restock,medium
+Paload ng pocket wifi,restock,medium
+Prepaid electricity load running out,restock,urgent
+Malapit maubos ang load ng kuryente,restock,urgent
+Buy first aid kit supplies,restock,medium
+Bili ng gamot sa first aid kit,restock,medium
+Buy paracetamol for the medicine box,restock,medium
+Restock band aids,restock,low
+Buy rice cooker replacement,restock,low
+Buy a new chopping board,restock,low
+Buy food container set,restock,low
+Buy foil and cling wrap,restock,low
+Restock hand soap in the CR,restock,medium
+Bili ng hand soap,restock,medium
+Buy tissue for the dining table,restock,low
+Buy coffee filter,restock,low
+Grocery run for the week,restock,medium
+Mag grocery para sa linggo,restock,medium
+Buy vegetables for dinner,restock,medium
+Bili ng gulay,restock,medium
+Buy fruits,restock,low
+Buy water for the dispenser,restock,medium
+Defrost freezer,diy,low
+Defrost the ref,diy,low
+Clean the refrigerator,diy,low
+Linisin ang ref,diy,low
+Wash the dishes,diy,medium
+Maghugas ng pinggan,diy,medium
+Pile of dirty dishes in the sink,diy,medium
+Take out the trash,diy,medium
+Itapon ang basura,diy,medium
+Trash is overflowing and smelly,diy,urgent
+Umaapaw na ang basura,diy,urgent
+Garbage collection is tomorrow morning,diy,medium
+Sweep the living room,diy,low
+Magwalis sa sala,diy,low
+Mop the kitchen floor,diy,low
+Mag mop ng sahig,diy,low
+Clean the bathroom,diy,medium
+Linisin ang CR,diy,medium
+Scrub the toilet bowl,diy,medium
+Kuskusin ang inidoro,diy,medium
+Wipe kitchen counters,diy,low
+Punasan ang lamesa,diy,low
+Clean the stove top,diy,low
+Linisin ang kalan,diy,low
+Do the laundry,diy,medium
+Maglaba ng damit,diy,medium
+Fold the laundry,diy,low
+Magtupi ng damit,diy,low
+Bring in the laundry it is raining,diy,urgent
+Kunin ang sinampay umuulan,diy,urgent
+Change the bedsheets,diy,low
+Palitan ang bedsheet,diy,low
+Water the plants,diy,low
+Diligan ang halaman,diy,low
+Dust the shelves,diy,low
+Clean the windows,diy,low
+Linisin ang bintana,diy,low
+Vacuum the carpet,diy,low
+Organize the shoe rack,diy,low
+Ayusin ang lalagyan ng sapatos,diy,low
+Declutter the storage room,diy,low
+Clean the microwave,diy,low
+Linisin ang microwave,diy,low
+Clean the electric fan,diy,low
+Linisin ang electric fan,diy,low
+Wash the aircon filter,diy,low
+Clean the rice cooker,diy,low
+Replace the busted bulb in our room,diy,medium
+Palitan ang pundidong ilaw,diy,medium
+Unclog the bathroom sink,diy,medium
+Tanggalin ang bara sa lababo,diy,medium
+Tighten the loose cabinet screw,diy,low
+Fix the wobbly chair,diy,low
+Ayusin ang umaalog na upuan,diy,low
+Tighten the curtain rod,diy,low
+Reset the wifi router,diy,medium
+I-restart ang router,diy,medium
+Clean the dining table after dinner,diy,low
+Spoiled food in the ref,diy,urgent
+May panis na pagkain sa ref,diy,urgent
+Rotten smell from the ref,diy,urgent
+Clean up spilled juice on the floor,diy,urgent
+Natapon na juice sa sahig,diy,urgent
+Broken glass on the kitchen floor,diy,urgent
+May basag na baso sa sahig,diy,urgent
+Clean the cat litter box,diy,medium
+Feed the dog,diy,medium
+Pakainin ang aso,diy,medium
+Walk the dog,diy,low
+Clean the balcony,diy,low
+Linisin ang balkonahe,diy,low
+Sanitize door knobs,diy,low
+Disinfect the bathroom,diy,medium
+Wash the trash bin,diy,low
+Hugasan ang basurahan,diy,low
+Segregate the recyclables,diy,low
+Ihiwalay ang plastic at bote,diy,low
+Clean the kitchen sink,diy,low
+Wipe the mirror in the CR,diy,low
+Clean behind the ref,diy,low
+Clean the ceiling fan blades,diy,low
+Iron the uniforms,diy,medium
+Mamalantsa ng uniform,diy,medium
+Cook dinner for everyone,diy,medium
+Magluto ng hapunan,diy,medium
+Prepare baon for tomorrow,diy,medium
+Clean the shoe cabinet,diy,low
+Remove cobwebs in the ceiling,diy,low
+Tanggalin ang agiw,diy,low
+Clean the study table,diy,low
+Arrange the books on the shelf,diy,low
+Tidy up the common area,diy,low
+Ayusin ang sala,diy,low
+Clean up after the party,diy,medium
+Wash the curtains,diy,low
+Labhan ang kurtina,diy,low
+Clean the water dispenser,diy,low
+Linisin ang water dispenser,diy,low
+Dishes have been sitting for days,diy,urgent
+Ants all over the kitchen counter,diy,urgent
+Ang daming langgam sa lamesa,diy,urgent
+Clean the gas stove burners,diy,low
+Wipe the dining chairs,diy,low
+Clean the window grills,diy,low
+Polish the faucets,diy,low
+Wash the doormat,diy,low
+Labhan ang basahan,diy,low
+Unplug appliances before leaving,diy,medium
+Turn off the water pump,diy,medium
+Patayin ang water pump,diy,medium
+Check if the stove is turned off,diy,urgent
+Naiwang bukas ang kalan,diy,urgent
+Iron left plugged in,diy,urgent
+Clean the bathroom drain hair,diy,medium
+Oil the squeaky door,diy,low
+Lagyan ng langis ang maingay na pinto,diy,low
+Hang the new curtains,diy,low
+Assemble the new shelf,diy,low
+Move the sofa to clean underneath,diy,low
+Clean the grease on the range hood,diy,low
+Replace the shower curtain,diy,low
+Fix the loose remote cover,diy,low
+Charge the emergency flashlight,diy,medium
+Clear the hallway for move in,diy,medium
+Return the borrowed cooler,diy,low
+Ibalik ang hiniram na cooler,diy,low
+Water dripping near the electric outlet,landlord,urgent
+Short circuit sa kusina,landlord,urgent
+Nag-short circuit ang saksakan,landlord,urgent
+Fire alarm going off with no fire,landlord,urgent
+Smoke coming out of the breaker box,landlord,urgent
+Door knob fell off and we are locked out,landlord,urgent
+Naka-lock kami sa labas,landlord,urgent
+Broken gate latch anyone can enter,landlord,urgent
+Ceiling board fell down,landlord,urgent
+Bumagsak ang kisame,landlord,urgent
+Big crack on the wall after the earthquake,landlord,urgent
+Lindol may crack sa pader,landlord,urgent
+Toilet will not flush at all and only one CR,landlord,urgent
+Water tank overflowing on the roof,landlord,urgent
+Snake spotted in the laundry area,landlord,urgent
+Wasp nest by the window,landlord,medium
+Bubuyog sa may bintana,landlord,medium
+Refrigerator not cooling it is owned by landlord,landlord,medium
+Washing machine provided by owner is broken,landlord,medium
+Sira ang washing machine,landlord,medium
+Stove knob is broken,landlord,medium
+Lababo is cracked,landlord,medium
+Drain smells bad in the shower,landlord,medium
+Water pressure very low on our floor,landlord,medium
+Outlet in bedroom not working,landlord,medium
+Patay ang saksakan sa kwarto,landlord,medium
+Window lock is broken,landlord,medium
+Light switch is loose,landlord,medium
+CCTV in the hallway is not working,landlord,low
+Ask landlord to repaint the gate,landlord,low
+Ask admin for a copy of house rules,landlord,low
+Ask about visitor policy,landlord,low
+Request new name plate on the door,landlord,low
+Ask landlord to replace old mattress,landlord,low
+Ask owner to fix the faded floor,landlord,low
+Hallway paint has scratches,landlord,low
+Garden faucet is loose,landlord,low
+Request extra shelf in kitchen,landlord,low
+Rooftop door is squeaky,landlord,low
+Ask admin for new parking sticker,landlord,low
+No more LPG and we need to cook now,restock,urgent
+Wala nang gas pang luto,restock,urgent
+Out of baby formula,restock,urgent
+No drinking water left for tonight,restock,urgent
+Walang maiinom na tubig,restock,urgent
+Ubos na ang toilet paper,restock,urgent
+Electricity load is almost zero,restock,urgent
+Out of insulin need to buy today,restock,urgent
+Ubos ang gamot sa lagnat,restock,urgent
+No more cat food,restock,urgent
+Ubos na pagkain ng pusa,restock,urgent
+Buy medicine for sick housemate,restock,urgent
+Buy dog food,restock,medium
+Bili ng dog food,restock,medium
+Buy pads and personal care,restock,medium
+Buy toothpaste,restock,medium
+Bili ng toothpaste,restock,medium
+Buy face masks,restock,medium
+Buy dishwashing paste,restock,medium
+Buy rags for cleaning,restock,low
+Bili ng basahan,restock,low
+Buy cooking pot,restock,low
+Buy new spoons and forks,restock,low
+Bili ng kutsara at tinidor,restock,low
+Buy extra pillows,restock,low
+Buy wall hooks,restock,low
+Buy plants for the balcony,restock,low
+Buy seasoning and spices,restock,low
+Buy chips for the weekend,restock,low
+Restock tea bags,restock,low
+Buy shoe rack,restock,low
+Buy new doormat,restock,low
+Water is flooding from the washing machine hose,diy,urgent
+Bathtub overflowing someone left the tap open,diy,urgent
+Naiwang bukas ang gripo,diy,urgent
+Rice cooker left on and burning,diy,urgent
+Nasusunog ang sinaing,diy,urgent
+Pan on the stove is smoking,diy,urgent
+Vomit on the bathroom floor,diy,urgent
+Dog pooped in the living room,diy,urgent
+Tumae ang aso sa sala,diy,urgent
+Spilled oil on the kitchen floor slippery,diy,urgent
+Rotting garbage attracting flies,diy,urgent
+Langaw sa basura,diy,urgent
+Leftover food left out overnight,diy,medium
+Clean the bathroom before guests arrive,diy,medium
+Linisin bago dumating ang bisita,diy,medium
+Wash the plates from lunch,diy,medium
+Fix the slow internet by restarting the modem,diy,medium
+Unclog the shower drain,diy,medium
+Replace the kitchen bulb,diy,medium
+Take the recyclables to the junk shop,diy,low
+Dalhin sa junk shop ang bote,diy,low
+Clean the fan in the bedroom,diy,low
+Wipe the TV screen,diy,low
+Rearrange the kitchen cabinet,diy,low
+Ayusin ang kabinet sa kusina,diy,low
+Wash the throw pillows,diy,low
+Label the food containers,diy,low
+Clean the refrigerator door gasket,diy,low
+Scrub the bathroom tiles,diy,low
+Kuskusin ang tiles sa banyo,diy,low
+Sweep the front porch,diy,low
+Walisin ang harap ng bahay,diy,low

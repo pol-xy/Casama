@@ -1,0 +1,1048 @@
+[
+ {
+  "title": "Leaking faucet in the kitchen",
+  "tokens": [
+   "leaking",
+   "faucet",
+   "kitchen",
+   "leaking_faucet",
+   "faucet_kitchen"
+  ],
+  "category": {
+   "diy": 0.017320730579751437,
+   "landlord": 0.980593483356321,
+   "restock": 0.002085786063927655
+  },
+  "urgency": {
+   "low": 0.0888401801447777,
+   "medium": 0.04109681648368725,
+   "urgent": 0.870063003371535
+  }
+ },
+ {
+  "title": "Power outage in our room only",
+  "tokens": [
+   "power",
+   "outage",
+   "room",
+   "only",
+   "power_outage",
+   "outage_room",
+   "room_only"
+  ],
+  "category": {
+   "diy": 0.025897863589697614,
+   "landlord": 0.9676305764368628,
+   "restock": 0.006471559973439693
+  },
+  "urgency": {
+   "low": 0.07774821605399056,
+   "medium": 0.04900499541058033,
+   "urgent": 0.8732467885354291
+  }
+ },
+ {
+  "title": "Sira ang lock ng main door",
+  "tokens": [
+   "sira",
+   "lock",
+   "main",
+   "door",
+   "sira_lock",
+   "lock_main",
+   "main_door"
+  ],
+  "category": {
+   "diy": 0.00035668906783969506,
+   "landlord": 0.9995318955772741,
+   "restock": 0.00011141535488618361
+  },
+  "urgency": {
+   "low": 0.022476984227202217,
+   "medium": 0.07589641851123893,
+   "urgent": 0.9016265972615589
+  }
+ },
+ {
+  "title": "Ceiling is sagging after the rain",
+  "tokens": [
+   "ceiling",
+   "sagging",
+   "after",
+   "rain",
+   "ceiling_sagging",
+   "sagging_after",
+   "after_rain"
+  ],
+  "category": {
+   "diy": 0.023444644524746858,
+   "landlord": 0.9733006141579575,
+   "restock": 0.003254741317295583
+  },
+  "urgency": {
+   "low": 0.07272603089108967,
+   "medium": 0.076399183839963,
+   "urgent": 0.8508747852689473
+  }
+ },
+ {
+  "title": "Aircon dripping water inside",
+  "tokens": [
+   "aircon",
+   "dripping",
+   "water",
+   "inside",
+   "aircon_dripping",
+   "dripping_water",
+   "water_inside"
+  ],
+  "category": {
+   "diy": 0.006182249310664643,
+   "landlord": 0.9899555780651779,
+   "restock": 0.0038621726241573635
+  },
+  "urgency": {
+   "low": 0.031135265843769546,
+   "medium": 0.8969093165990966,
+   "urgent": 0.07195541755713386
+  }
+ },
+ {
+  "title": "Internet is down for the whole floor",
+  "tokens": [
+   "internet",
+   "down",
+   "whole",
+   "floor",
+   "internet_down",
+   "down_whole",
+   "whole_floor"
+  ],
+  "category": {
+   "diy": 0.02091688582734048,
+   "landlord": 0.976905250397215,
+   "restock": 0.0021778637754444785
+  },
+  "urgency": {
+   "low": 0.035266362486399354,
+   "medium": 0.8791558972657958,
+   "urgent": 0.08557774024780497
+  }
+ },
+ {
+  "title": "Rats in the kitchen ceiling",
+  "tokens": [
+   "rats",
+   "kitchen",
+   "ceiling",
+   "rats_kitchen",
+   "kitchen_ceiling"
+  ],
+  "category": {
+   "diy": 0.1364149764025541,
+   "landlord": 0.858109262677762,
+   "restock": 0.00547576091968383
+  },
+  "urgency": {
+   "low": 0.2371746922387947,
+   "medium": 0.5554333398349346,
+   "urgent": 0.20739196792627068
+  }
+ },
+ {
+  "title": "Kitchen sink drain is slow",
+  "tokens": [
+   "kitchen",
+   "sink",
+   "drain",
+   "slow",
+   "kitchen_sink",
+   "sink_drain",
+   "drain_slow"
+  ],
+  "category": {
+   "diy": 0.35653763370853786,
+   "landlord": 0.6424311803818942,
+   "restock": 0.001031185909567937
+  },
+  "urgency": {
+   "low": 0.0527993542973916,
+   "medium": 0.8914190180659378,
+   "urgent": 0.05578162763667056
+  }
+ },
+ {
+  "title": "Request repainting of the room",
+  "tokens": [
+   "request",
+   "repainting",
+   "room",
+   "request_repainting",
+   "repainting_room"
+  ],
+  "category": {
+   "diy": 0.03522191112798036,
+   "landlord": 0.9571434390412952,
+   "restock": 0.0076346498307243525
+  },
+  "urgency": {
+   "low": 0.8983707084844519,
+   "medium": 0.05818109261033144,
+   "urgent": 0.043448198905216576
+  }
+ },
+ {
+  "title": "Maingay ang gate",
+  "tokens": [
+   "maingay",
+   "gate",
+   "maingay_gate"
+  ],
+  "category": {
+   "diy": 0.09315670716133745,
+   "landlord": 0.8630546359766339,
+   "restock": 0.04378865686202863
+  },
+  "urgency": {
+   "low": 0.755417288588837,
+   "medium": 0.13572312033155182,
+   "urgent": 0.10885959107961107
+  }
+ },
+ {
+  "title": "Ask admin about the wifi password change",
+  "tokens": [
+   "ask",
+   "admin",
+   "about",
+   "wifi",
+   "password",
+   "change",
+   "ask_admin",
+   "admin_about",
+   "about_wifi",
+   "wifi_password",
+   "password_change"
+  ],
+  "category": {
+   "diy": 5.056251024346491e-06,
+   "landlord": 0.999988646618723,
+   "restock": 6.29713025267184e-06
+  },
+  "urgency": {
+   "low": 0.9939058219255545,
+   "medium": 0.005906444775214368,
+   "urgent": 0.0001877332992310753
+  }
+ },
+ {
+  "title": "Buy drinking water",
+  "tokens": [
+   "buy",
+   "drinking",
+   "water",
+   "buy_drinking",
+   "drinking_water"
+  ],
+  "category": {
+   "diy": 0.0004965907323346059,
+   "landlord": 0.000602442431106955,
+   "restock": 0.9989009668365584
+  },
+  "urgency": {
+   "low": 0.16278675660931344,
+   "medium": 0.7388018383154609,
+   "urgent": 0.09841140507522567
+  }
+ },
+ {
+  "title": "Buy rice",
+  "tokens": [
+   "buy",
+   "rice",
+   "buy_rice"
+  ],
+  "category": {
+   "diy": 0.004558671481444552,
+   "landlord": 0.0011731684193735119,
+   "restock": 0.994268160099182
+  },
+  "urgency": {
+   "low": 0.6739348070891088,
+   "medium": 0.29009574241799757,
+   "urgent": 0.035969450492893615
+  }
+ },
+ {
+  "title": "Restock detergent",
+  "tokens": [
+   "restock",
+   "detergent",
+   "restock_detergent"
+  ],
+  "category": {
+   "diy": 0.021323237088089992,
+   "landlord": 0.016462520647388106,
+   "restock": 0.9622142422645218
+  },
+  "urgency": {
+   "low": 0.3987855174540041,
+   "medium": 0.5373622005339509,
+   "urgent": 0.06385228201204494
+  }
+ },
+ {
+  "title": "Buy salt and sugar",
+  "tokens": [
+   "buy",
+   "salt",
+   "sugar",
+   "buy_salt",
+   "salt_sugar"
+  ],
+  "category": {
+   "diy": 0.0009925887127107634,
+   "landlord": 0.00070242967662908,
+   "restock": 0.9983049816106602
+  },
+  "urgency": {
+   "low": 0.8768015659887389,
+   "medium": 0.10749285025882213,
+   "urgent": 0.015705583752438898
+  }
+ },
+ {
+  "title": "Buy canned goods",
+  "tokens": [
+   "buy",
+   "canned",
+   "goods",
+   "buy_canned",
+   "canned_goods"
+  ],
+  "category": {
+   "diy": 0.0009925887127107634,
+   "landlord": 0.00070242967662908,
+   "restock": 0.9983049816106602
+  },
+  "urgency": {
+   "low": 0.8768015659887389,
+   "medium": 0.10749285025882213,
+   "urgent": 0.015705583752438898
+  }
+ },
+ {
+  "title": "Restock paper towels",
+  "tokens": [
+   "restock",
+   "paper",
+   "towels",
+   "restock_paper",
+   "paper_towels"
+  ],
+  "category": {
+   "diy": 0.0019159725402479201,
+   "landlord": 0.0013558848238371163,
+   "restock": 0.9967281426359149
+  },
+  "urgency": {
+   "low": 0.7914275565798005,
+   "medium": 0.1518671282503902,
+   "urgent": 0.05670531516980929
+  }
+ },
+ {
+  "title": "Buy air freshener",
+  "tokens": [
+   "buy",
+   "air",
+   "freshener",
+   "buy_air",
+   "air_freshener"
+  ],
+  "category": {
+   "diy": 0.0009925887127107634,
+   "landlord": 0.00070242967662908,
+   "restock": 0.9983049816106602
+  },
+  "urgency": {
+   "low": 0.8768015659887389,
+   "medium": 0.10749285025882213,
+   "urgent": 0.015705583752438898
+  }
+ },
+ {
+  "title": "Bili ng sampayan at sipit",
+  "tokens": [
+   "bili",
+   "sampayan",
+   "sipit",
+   "bili_sampayan",
+   "sampayan_sipit"
+  ],
+  "category": {
+   "diy": 0.002393009349190554,
+   "landlord": 0.0016934715877754494,
+   "restock": 0.995913519063034
+  },
+  "urgency": {
+   "low": 0.789433407816775,
+   "medium": 0.18935567346911786,
+   "urgent": 0.021210918714107165
+  }
+ },
+ {
+  "title": "Buy paracetamol for the medicine box",
+  "tokens": [
+   "buy",
+   "paracetamol",
+   "medicine",
+   "box",
+   "buy_paracetamol",
+   "paracetamol_medicine",
+   "medicine_box"
+  ],
+  "category": {
+   "diy": 0.00028734942720013356,
+   "landlord": 0.00018639496529524968,
+   "restock": 0.9995262556075046
+  },
+  "urgency": {
+   "low": 0.08753276573103815,
+   "medium": 0.8922379192954628,
+   "urgent": 0.02022931497349918
+  }
+ },
+ {
+  "title": "Buy coffee filter",
+  "tokens": [
+   "buy",
+   "coffee",
+   "filter",
+   "buy_coffee",
+   "coffee_filter"
+  ],
+  "category": {
+   "diy": 0.0006620999704727665,
+   "landlord": 0.00046855123597484854,
+   "restock": 0.9988693487935525
+  },
+  "urgency": {
+   "low": 0.9634492589463278,
+   "medium": 0.03189117918960099,
+   "urgent": 0.004659561864071118
+  }
+ },
+ {
+  "title": "Clean the refrigerator",
+  "tokens": [
+   "clean",
+   "refrigerator",
+   "clean_refrigerator"
+  ],
+  "category": {
+   "diy": 0.9898804071151112,
+   "landlord": 0.006289987195643501,
+   "restock": 0.0038296056892453984
+  },
+  "urgency": {
+   "low": 0.8835867159854542,
+   "medium": 0.09470938250632138,
+   "urgent": 0.021703901508224387
+  }
+ },
+ {
+  "title": "Garbage collection is tomorrow morning",
+  "tokens": [
+   "garbage",
+   "collection",
+   "tomorrow",
+   "morning",
+   "garbage_collection",
+   "collection_tomorrow",
+   "tomorrow_morning"
+  ],
+  "category": {
+   "diy": 0.9786095535330795,
+   "landlord": 0.0044083022647629574,
+   "restock": 0.01698214420215765
+  },
+  "urgency": {
+   "low": 0.02327402163487635,
+   "medium": 0.9283171410028306,
+   "urgent": 0.04840883736229298
+  }
+ },
+ {
+  "title": "Wipe kitchen counters",
+  "tokens": [
+   "wipe",
+   "kitchen",
+   "counters",
+   "wipe_kitchen",
+   "kitchen_counters"
+  ],
+  "category": {
+   "diy": 0.9873234105451801,
+   "landlord": 0.009704217221442813,
+   "restock": 0.002972372233377056
+  },
+  "urgency": {
+   "low": 0.8790259622680069,
+   "medium": 0.060241655647743204,
+   "urgent": 0.060732382084249845
+  }
+ },
+ {
+  "title": "Kunin ang sinampay umuulan",
+  "tokens": [
+   "kunin",
+   "sinampay",
+   "umuulan",
+   "kunin_sinampay",
+   "sinampay_umuulan"
+  ],
+  "category": {
+   "diy": 0.9469845821880849,
+   "landlord": 0.020942418856829233,
+   "restock": 0.032072998955085745
+  },
+  "urgency": {
+   "low": 0.12241487489338468,
+   "medium": 0.1189192300415661,
+   "urgent": 0.7586658950650491
+  }
+ },
+ {
+  "title": "Organize the shoe rack",
+  "tokens": [
+   "organize",
+   "shoe",
+   "rack",
+   "organize_shoe",
+   "shoe_rack"
+  ],
+  "category": {
+   "diy": 0.8365572540538082,
+   "landlord": 0.012333558282887104,
+   "restock": 0.15110918766330475
+  },
+  "urgency": {
+   "low": 0.9263995468462367,
+   "medium": 0.0399975919710943,
+   "urgent": 0.03360286118266895
+  }
+ },
+ {
+  "title": "Replace the busted bulb in our room",
+  "tokens": [
+   "replace",
+   "busted",
+   "bulb",
+   "room",
+   "replace_busted",
+   "busted_bulb",
+   "bulb_room"
+  ],
+  "category": {
+   "diy": 0.9854492790437178,
+   "landlord": 0.011985595552496998,
+   "restock": 0.00256512540378518
+  },
+  "urgency": {
+   "low": 0.30764204127077605,
+   "medium": 0.6544391029113731,
+   "urgent": 0.03791885581785087
+  }
+ },
+ {
+  "title": "I-restart ang router",
+  "tokens": [
+   "i",
+   "restart",
+   "router",
+   "i_restart",
+   "restart_router"
+  ],
+  "category": {
+   "diy": 0.9505111621219752,
+   "landlord": 0.028027209477941385,
+   "restock": 0.021461628400083428
+  },
+  "urgency": {
+   "low": 0.07086684303390887,
+   "medium": 0.8712964717953127,
+   "urgent": 0.0578366851707785
+  }
+ },
+ {
+  "title": "Clean the cat litter box",
+  "tokens": [
+   "clean",
+   "cat",
+   "litter",
+   "box",
+   "clean_cat",
+   "cat_litter",
+   "litter_box"
+  ],
+  "category": {
+   "diy": 0.9963702253913412,
+   "landlord": 0.0007480509419321665,
+   "restock": 0.002881723666726606
+  },
+  "urgency": {
+   "low": 0.15723067686076136,
+   "medium": 0.7981740171634173,
+   "urgent": 0.04459530597582142
+  }
+ },
+ {
+  "title": "Hugasan ang basurahan",
+  "tokens": [
+   "hugasan",
+   "basurahan",
+   "hugasan_basurahan"
+  ],
+  "category": {
+   "diy": 0.8237101477423964,
+   "landlord": 0.07949281225465299,
+   "restock": 0.09679704000295063
+  },
+  "urgency": {
+   "low": 0.6758300572721725,
+   "medium": 0.17988743313405403,
+   "urgent": 0.1442825095937735
+  }
+ },
+ {
+  "title": "Cook dinner for everyone",
+  "tokens": [
+   "cook",
+   "dinner",
+   "everyone",
+   "cook_dinner",
+   "dinner_everyone"
+  ],
+  "category": {
+   "diy": 0.8694008613948612,
+   "landlord": 0.012817779229389209,
+   "restock": 0.11778135937574959
+  },
+  "urgency": {
+   "low": 0.11387649849679302,
+   "medium": 0.7467161666075629,
+   "urgent": 0.13940733489564416
+  }
+ },
+ {
+  "title": "Ayusin ang sala",
+  "tokens": [
+   "ayusin",
+   "sala",
+   "ayusin_sala"
+  ],
+  "category": {
+   "diy": 0.9589531127593106,
+   "landlord": 0.018508907116752675,
+   "restock": 0.022537980123936766
+  },
+  "urgency": {
+   "low": 0.8197376342869311,
+   "medium": 0.08182190252440505,
+   "urgent": 0.09844046318866373
+  }
+ },
+ {
+  "title": "Clean the gas stove burners",
+  "tokens": [
+   "clean",
+   "gas",
+   "stove",
+   "burners",
+   "clean_gas",
+   "gas_stove",
+   "stove_burners"
+  ],
+  "category": {
+   "diy": 0.9980738767417797,
+   "landlord": 0.0013487931079212427,
+   "restock": 0.0005773301502991033
+  },
+  "urgency": {
+   "low": 0.9217539173073247,
+   "medium": 0.030429481385055444,
+   "urgent": 0.04781660130761989
+  }
+ },
+ {
+  "title": "Check if the stove is turned off",
+  "tokens": [
+   "check",
+   "if",
+   "stove",
+   "turned",
+   "off",
+   "check_if",
+   "if_stove",
+   "stove_turned",
+   "turned_off"
+  ],
+  "category": {
+   "diy": 0.9937152954055765,
+   "landlord": 0.00553920862232758,
+   "restock": 0.000745495972095875
+  },
+  "urgency": {
+   "low": 0.03355056245945527,
+   "medium": 0.028585176006670085,
+   "urgent": 0.9378642615338747
+  }
+ },
+ {
+  "title": "Clean the grease on the range hood",
+  "tokens": [
+   "clean",
+   "grease",
+   "range",
+   "hood",
+   "clean_grease",
+   "grease_range",
+   "range_hood"
+  ],
+  "category": {
+   "diy": 0.9989027614360919,
+   "landlord": 0.000374976222426392,
+   "restock": 0.0007222623414816535
+  },
+  "urgency": {
+   "low": 0.961158318325085,
+   "medium": 0.02820473220721142,
+   "urgent": 0.010636949467703523
+  }
+ },
+ {
+  "title": "Nag-short circuit ang saksakan",
+  "tokens": [
+   "nag",
+   "short",
+   "circuit",
+   "saksakan",
+   "nag_short",
+   "short_circuit",
+   "circuit_saksakan"
+  ],
+  "category": {
+   "diy": 0.0017771479095127546,
+   "landlord": 0.9960024140521643,
+   "restock": 0.002220438038323031
+  },
+  "urgency": {
+   "low": 0.020253305952468183,
+   "medium": 0.03191434741984993,
+   "urgent": 0.9478323466276818
+  }
+ },
+ {
+  "title": "Lindol may crack sa pader",
+  "tokens": [
+   "lindol",
+   "may",
+   "crack",
+   "pader",
+   "lindol_may",
+   "may_crack",
+   "crack_pader"
+  ],
+  "category": {
+   "diy": 0.006365487999149958,
+   "landlord": 0.9909834147586097,
+   "restock": 0.0026510972422402
+  },
+  "urgency": {
+   "low": 0.0216120400392561,
+   "medium": 0.06811075992678801,
+   "urgent": 0.910277200033956
+  }
+ },
+ {
+  "title": "Stove knob is broken",
+  "tokens": [
+   "stove",
+   "knob",
+   "broken",
+   "stove_knob",
+   "knob_broken"
+  ],
+  "category": {
+   "diy": 0.041602531136161414,
+   "landlord": 0.9538886162139653,
+   "restock": 0.004508852649873301
+  },
+  "urgency": {
+   "low": 0.1076657371328625,
+   "medium": 0.6177420867496739,
+   "urgent": 0.27459217611746367
+  }
+ },
+ {
+  "title": "Ask landlord to repaint the gate",
+  "tokens": [
+   "ask",
+   "landlord",
+   "repaint",
+   "gate",
+   "ask_landlord",
+   "landlord_repaint",
+   "repaint_gate"
+  ],
+  "category": {
+   "diy": 3.964716599534328e-05,
+   "landlord": 0.9999108161156389,
+   "restock": 4.953671836572351e-05
+  },
+  "urgency": {
+   "low": 0.9931462366771833,
+   "medium": 0.005299330833032966,
+   "urgent": 0.0015544324897837298
+  }
+ },
+ {
+  "title": "Rooftop door is squeaky",
+  "tokens": [
+   "rooftop",
+   "door",
+   "squeaky",
+   "rooftop_door",
+   "door_squeaky"
+  ],
+  "category": {
+   "diy": 0.04471132190115334,
+   "landlord": 0.9492314489116619,
+   "restock": 0.006057229187184762
+  },
+  "urgency": {
+   "low": 0.8582605820334879,
+   "medium": 0.07058222879000445,
+   "urgent": 0.07115718917650758
+  }
+ },
+ {
+  "title": "Out of insulin need to buy today",
+  "tokens": [
+   "out",
+   "insulin",
+   "buy",
+   "today",
+   "out_insulin",
+   "insulin_buy",
+   "buy_today"
+  ],
+  "category": {
+   "diy": 0.00025862661156635694,
+   "landlord": 0.00016776333524327522,
+   "restock": 0.9995736100531903
+  },
+  "urgency": {
+   "low": 0.18307516295134274,
+   "medium": 0.24574426669857083,
+   "urgent": 0.5711805703500865
+  }
+ },
+ {
+  "title": "Bili ng toothpaste",
+  "tokens": [
+   "bili",
+   "toothpaste",
+   "bili_toothpaste"
+  ],
+  "category": {
+   "diy": 0.007291422333185142,
+   "landlord": 0.005629313701901871,
+   "restock": 0.9870792639649131
+  },
+  "urgency": {
+   "low": 0.2227751749264705,
+   "medium": 0.7504722782105405,
+   "urgent": 0.02675254686298902
+  }
+ },
+ {
+  "title": "Buy wall hooks",
+  "tokens": [
+   "buy",
+   "wall",
+   "hooks",
+   "buy_wall",
+   "wall_hooks"
+  ],
+  "category": {
+   "diy": 0.0009898076313885884,
+   "landlord": 0.003502308188778749,
+   "restock": 0.9955078841798327
+  },
+  "urgency": {
+   "low": 0.8585241102649838,
+   "medium": 0.11840860510198702,
+   "urgent": 0.02306728463302917
+  }
+ },
+ {
+  "title": "Naiwang bukas ang gripo",
+  "tokens": [
+   "naiwang",
+   "bukas",
+   "gripo",
+   "naiwang_bukas",
+   "bukas_gripo"
+  ],
+  "category": {
+   "diy": 0.9836829816609801,
+   "landlord": 0.006445631226799784,
+   "restock": 0.009871387112220015
+  },
+  "urgency": {
+   "low": 0.06001750421841715,
+   "medium": 0.05830366119220949,
+   "urgent": 0.8816788345893734
+  }
+ },
+ {
+  "title": "Langaw sa basura",
+  "tokens": [
+   "langaw",
+   "basura",
+   "langaw_basura"
+  ],
+  "category": {
+   "diy": 0.9033344847975016,
+   "landlord": 0.04358851943595118,
+   "restock": 0.0530769957665473
+  },
+  "urgency": {
+   "low": 0.17889519480483923,
+   "medium": 0.2410609399523394,
+   "urgent": 0.5800438652428214
+  }
+ },
+ {
+  "title": "Dalhin sa junk shop ang bote",
+  "tokens": [
+   "dalhin",
+   "junk",
+   "shop",
+   "bote",
+   "dalhin_junk",
+   "junk_shop",
+   "shop_bote"
+  ],
+  "category": {
+   "diy": 0.99707936936457,
+   "landlord": 0.0009981120594920719,
+   "restock": 0.001922518575938057
+  },
+  "urgency": {
+   "low": 0.9647175650542247,
+   "medium": 0.018767469282339796,
+   "urgent": 0.016514965663435546
+  }
+ },
+ {
+  "title": "Kuskusin ang tiles sa banyo",
+  "tokens": [
+   "kuskusin",
+   "tiles",
+   "banyo",
+   "kuskusin_tiles",
+   "tiles_banyo"
+  ],
+  "category": {
+   "diy": 0.9484354865281943,
+   "landlord": 0.03728800416817484,
+   "restock": 0.014276509303630837
+  },
+  "urgency": {
+   "low": 0.712037448783174,
+   "medium": 0.23056830222297386,
+   "urgent": 0.057394248993852134
+  }
+ },
+ {
+  "title": "Barado ang lababo sa kusina",
+  "tokens": [
+   "barado",
+   "lababo",
+   "kusina",
+   "barado_lababo",
+   "lababo_kusina"
+  ],
+  "category": {
+   "diy": 0.2815977815720084,
+   "landlord": 0.6522191639139657,
+   "restock": 0.06618305451402592
+  },
+  "urgency": {
+   "low": 0.2748137254604663,
+   "medium": 0.32916532761950973,
+   "urgent": 0.39602094692002393
+  }
+ },
+ {
+  "title": "Bili ng shampoo bukas",
+  "tokens": [
+   "bili",
+   "shampoo",
+   "bukas",
+   "bili_shampoo",
+   "shampoo_bukas"
+  ],
+  "category": {
+   "diy": 0.061353196424271866,
+   "landlord": 0.015789168569297157,
+   "restock": 0.9228576350064309
+  },
+  "urgency": {
+   "low": 0.5239094807813486,
+   "medium": 0.39220378198403494,
+   "urgent": 0.08388673723461644
+  }
+ },
+ {
+  "title": "Sira ang ilaw sa CR",
+  "tokens": [
+   "sira",
+   "ilaw",
+   "cr",
+   "sira_ilaw",
+   "ilaw_cr"
+  ],
+  "category": {
+   "diy": 0.264117673500991,
+   "landlord": 0.6117328312178776,
+   "restock": 0.12414949528113145
+  },
+  "urgency": {
+   "low": 0.12208064396056045,
+   "medium": 0.6580135187616204,
+   "urgent": 0.21990583727781912
+  }
+ },
+ {
+  "title": "Ubos na ang tubig!!",
+  "tokens": [
+   "ubos",
+   "tubig",
+   "ubos_tubig"
+  ],
+  "category": {
+   "diy": 0.01127423922350921,
+   "landlord": 0.03481691418786985,
+   "restock": 0.953908846588621
+  },
+  "urgency": {
+   "low": 0.058134900374084045,
+   "medium": 0.23500994028527245,
+   "urgent": 0.7068551593406436
+  }
+ }
+]

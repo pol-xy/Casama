@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../ai/ai_providers.dart';
+import '../../ai/chore_csp_solver.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../data/models.dart';
@@ -29,34 +31,93 @@ class _ChoreRouletteScreenState extends ConsumerState<ChoreRouletteScreen>
   bool _isSpinning = false;
   RouletteMode _rouletteMode = RouletteMode.randomHousemate;
 
+  // effort: 1 = quick, 3 = heavy. requiresHome: has to be done right now,
+  // so the AI solver only gives it to someone whose presence is "Home".
   final List<_ChoreItem> _chores = [
-    _ChoreItem('Take Out Trash', Icons.delete_outline, const Color(0xFF80CBC4)),
+    _ChoreItem(
+      'Take Out Trash',
+      Icons.delete_outline,
+      const Color(0xFF80CBC4),
+      effort: 1,
+      requiresHome: true,
+    ),
     _ChoreItem(
       'Grocery Run',
       Icons.shopping_cart_outlined,
       const Color(0xFFFF8A65),
+      effort: 2,
     ),
     _ChoreItem(
       'Sweep Living Room',
       Icons.cleaning_services_outlined,
       const Color(0xFFFFD54F),
+      effort: 1,
     ),
     _ChoreItem(
       'Mop Kitchen Floor',
       Icons.water_drop_outlined,
       const Color(0xFF64B5F6),
+      effort: 2,
     ),
     _ChoreItem(
       'Clean Bathroom',
       Icons.bathtub_outlined,
       const Color(0xFFBA68C8),
+      effort: 3,
     ),
     _ChoreItem(
       'Wipe Counters',
       Icons.countertops_outlined,
       const Color(0xFF4DB6AC),
+      effort: 1,
+      requiresHome: true,
     ),
   ];
+
+  /// AI: solve chore assignment as a CSP (see lib/ai/chore_csp_solver.dart).
+  void _fairAssign() {
+    final repo = ref.read(repositoryProvider);
+    final result = const ChoreCspSolver().solve([
+      for (final c in _chores)
+        CspChore(
+          title: c.title,
+          effort: c.effort,
+          requiresHome: c.requiresHome,
+        ),
+    ], buildCspMembers(repo));
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _FairAssignSheet(
+        result: result,
+        onAddAll: () {
+          for (final a in result.assignments ?? const <ChoreAssignment>[]) {
+            repo.addTask(
+              title: a.chore.title,
+              category: TaskCategory.diy,
+              urgency: a.chore.requiresHome
+                  ? TaskUrgency.urgent
+                  : TaskUrgency.medium,
+              assigneeName: a.member.name,
+            );
+          }
+          Navigator.pop(ctx);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Added ${result.assignments?.length ?? 0} fairly assigned chores!',
+              ),
+              backgroundColor: CasamaColors.midnightNavy,
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -481,8 +542,153 @@ class _ChoreRouletteScreenState extends ConsumerState<ChoreRouletteScreen>
               ),
             ),
 
-            const SizedBox(height: 40),
+            if (_rouletteMode == RouletteMode.randomHousemate) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const Key('fair_assign_button'),
+                onPressed: _isSpinning ? null : _fairAssign,
+                icon: const Text('🦉', style: TextStyle(fontSize: 16)),
+                label: const Text('Fair Assign All (AI)'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: CasamaColors.midnightNavy,
+                  side: const BorderSide(color: CasamaColors.midnightNavy),
+                  minimumSize: const Size(220, 44),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: CasamaSpacing.roundedPill,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ] else
+              const SizedBox(height: 40),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet showing the CSP solver's assignment and why.
+class _FairAssignSheet extends StatelessWidget {
+  final CspResult result;
+  final VoidCallback onAddAll;
+
+  const _FairAssignSheet({required this.result, required this.onAddAll});
+
+  @override
+  Widget build(BuildContext context) {
+    final assignments = result.assignments;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Fair Assignment 🦉',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: context.textColor,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Solved as a constraint satisfaction problem: chores that must '
+                'be done now go to people at home, nobody gets more than '
+                '${result.capacity} chores, and workload is balanced.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.textSecondaryColor,
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (assignments == null)
+                Text(
+                  result.failureReason ?? 'No fair assignment found.',
+                  key: const Key('fair_assign_failure'),
+                  style: const TextStyle(
+                    color: CasamaColors.primaryCoral,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              else ...[
+                for (final a in assignments)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${a.chore.title}  →  ${a.member.name}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: context.textColor,
+                                ),
+                              ),
+                              Text(
+                                a.reason,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: context.textSecondaryColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          '+${a.chore.effort}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: CasamaColors.primaryCoral,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const Divider(),
+                Text(
+                  'Workload after assignment: '
+                  '${result.finalLoads.entries.map((e) => '${e.key} ${e.value}').join(' · ')}',
+                  style: TextStyle(fontSize: 12, color: context.textColor),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Search: ${result.stats.nodesExpanded} nodes, '
+                  '${result.stats.boundPrunes} branch-and-bound prunes, '
+                  '${result.stats.elapsed.inMicroseconds / 1000} ms'
+                  '${result.capacityRelaxed ? ' · capacity relaxed' : ''}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: context.textSecondaryColor,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                CasamaButton(
+                  label: 'Add All to Maintenance Tasks',
+                  onPressed: onAddAll,
+                  height: 44,
+                ),
+              ],
+              const SizedBox(height: 4),
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    'Close',
+                    style: TextStyle(color: context.textSecondaryColor),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -493,8 +699,16 @@ class _ChoreItem {
   final String title;
   final IconData icon;
   final Color color;
+  final int effort;
+  final bool requiresHome;
 
-  _ChoreItem(this.title, this.icon, this.color);
+  _ChoreItem(
+    this.title,
+    this.icon,
+    this.color, {
+    this.effort = 1,
+    this.requiresHome = false,
+  });
 }
 
 class _RouletteWheelPainter extends CustomPainter {

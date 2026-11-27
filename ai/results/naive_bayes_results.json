@@ -1,0 +1,526 @@
+{
+  "dataset": {
+    "n": 417,
+    "category": {
+      "diy": 158,
+      "landlord": 139,
+      "restock": 120
+    },
+    "urgency": {
+      "low": 174,
+      "medium": 139,
+      "urgent": 104
+    }
+  },
+  "category": {
+    "train_size": 333,
+    "test_size": 84,
+    "cv": {
+      "0.1": {
+        "mean": 0.8074174581637268,
+        "std": 0.057205724290530814
+      },
+      "0.25": {
+        "mean": 0.8044323835368612,
+        "std": 0.0544091113951211
+      },
+      "0.5": {
+        "mean": 0.8044776119402985,
+        "std": 0.04799959005831057
+      },
+      "1.0": {
+        "mean": 0.8104477611940298,
+        "std": 0.052265407595347535
+      },
+      "2.0": {
+        "mean": 0.8014473089099955,
+        "std": 0.05291916482416553
+      }
+    },
+    "best_alpha": 1.0,
+    "test": {
+      "accuracy": 0.8690476190476191,
+      "macro_f1": 0.8736526366715046,
+      "per_class": {
+        "diy": {
+          "precision": 0.8181818181818182,
+          "recall": 0.84375,
+          "f1": 0.8307692307692308,
+          "support": 32
+        },
+        "landlord": {
+          "precision": 0.88,
+          "recall": 0.7857142857142857,
+          "f1": 0.830188679245283,
+          "support": 28
+        },
+        "restock": {
+          "precision": 0.9230769230769231,
+          "recall": 1.0,
+          "f1": 0.9600000000000001,
+          "support": 24
+        }
+      },
+      "confusion": {
+        "diy": {
+          "diy": 27,
+          "landlord": 3,
+          "restock": 2
+        },
+        "landlord": {
+          "diy": 6,
+          "landlord": 22,
+          "restock": 0
+        },
+        "restock": {
+          "diy": 0,
+          "landlord": 0,
+          "restock": 24
+        }
+      }
+    },
+    "baseline_majority": {
+      "class": "diy",
+      "accuracy": 0.38095238095238093
+    },
+    "confidence": [
+      {
+        "threshold": 0.0,
+        "coverage": 1.0,
+        "accuracy": 0.8690476190476191
+      },
+      {
+        "threshold": 0.5,
+        "coverage": 0.8571428571428571,
+        "accuracy": 0.9305555555555556
+      },
+      {
+        "threshold": 0.6,
+        "coverage": 0.7619047619047619,
+        "accuracy": 0.921875
+      },
+      {
+        "threshold": 0.7,
+        "coverage": 0.6428571428571429,
+        "accuracy": 0.9074074074074074
+      },
+      {
+        "threshold": 0.8,
+        "coverage": 0.4880952380952381,
+        "accuracy": 0.9512195121951219
+      },
+      {
+        "threshold": 0.9,
+        "coverage": 0.3333333333333333,
+        "accuracy": 0.9642857142857143
+      }
+    ],
+    "errors": [
+      {
+        "title": "Organize the shoe rack",
+        "true": "diy",
+        "pred": "restock"
+      },
+      {
+        "title": "Scrub the toilet bowl",
+        "true": "diy",
+        "pred": "restock"
+      },
+      {
+        "title": "Change the bedsheets",
+        "true": "diy",
+        "pred": "landlord"
+      },
+      {
+        "title": "Lagyan ng langis ang maingay na pinto",
+        "true": "diy",
+        "pred": "landlord"
+      },
+      {
+        "title": "Fix the slow internet by restarting the modem",
+        "true": "diy",
+        "pred": "landlord"
+      },
+      {
+        "title": "Barado at umaapaw ang inidoro",
+        "true": "landlord",
+        "pred": "diy"
+      },
+      {
+        "title": "Bed bugs in the double deck",
+        "true": "landlord",
+        "pred": "diy"
+      },
+      {
+        "title": "Lababo is cracked",
+        "true": "landlord",
+        "pred": "diy"
+      },
+      {
+        "title": "Natutuklap ang pintura",
+        "true": "landlord",
+        "pred": "diy"
+      },
+      {
+        "title": "Ceiling fan wobbling badly",
+        "true": "landlord",
+        "pred": "diy"
+      },
+      {
+        "title": "Surot sa kama",
+        "true": "landlord",
+        "pred": "diy"
+      }
+    ],
+    "top_words": {
+      "diy": [
+        "clean",
+        "linisin",
+        "wash",
+        "ref",
+        "wipe",
+        "ayusin",
+        "kitchen",
+        "basura"
+      ],
+      "landlord": [
+        "ask",
+        "landlord",
+        "admin",
+        "request",
+        "broken",
+        "about",
+        "sira",
+        "lock"
+      ],
+      "restock": [
+        "buy",
+        "bili",
+        "restock",
+        "ubos",
+        "paper",
+        "more",
+        "load",
+        "soap"
+      ]
+    }
+  },
+  "urgency": {
+    "train_size": 333,
+    "test_size": 84,
+    "cv": {
+      "0.1": {
+        "mean": 0.57037539574853,
+        "std": 0.050386633781686826
+      },
+      "0.25": {
+        "mean": 0.5733604703753957,
+        "std": 0.05558708784410305
+      },
+      "0.5": {
+        "mean": 0.5824061510628675,
+        "std": 0.044507047114257126
+      },
+      "1.0": {
+        "mean": 0.5884667571234735,
+        "std": 0.04205959440603125
+      },
+      "2.0": {
+        "mean": 0.5975124378109453,
+        "std": 0.03787062563523194
+      }
+    },
+    "best_alpha": 2.0,
+    "test": {
+      "accuracy": 0.5714285714285714,
+      "macro_f1": 0.5298850574712644,
+      "per_class": {
+        "low": {
+          "precision": 0.5769230769230769,
+          "recall": 0.8571428571428571,
+          "f1": 0.689655172413793,
+          "support": 35
+        },
+        "medium": {
+          "precision": 0.5294117647058824,
+          "recall": 0.32142857142857145,
+          "f1": 0.39999999999999997,
+          "support": 28
+        },
+        "urgent": {
+          "precision": 0.6,
+          "recall": 0.42857142857142855,
+          "f1": 0.5,
+          "support": 21
+        }
+      },
+      "confusion": {
+        "low": {
+          "low": 30,
+          "medium": 4,
+          "urgent": 1
+        },
+        "medium": {
+          "low": 14,
+          "medium": 9,
+          "urgent": 5
+        },
+        "urgent": {
+          "low": 8,
+          "medium": 4,
+          "urgent": 9
+        }
+      }
+    },
+    "baseline_majority": {
+      "class": "low",
+      "accuracy": 0.4166666666666667
+    },
+    "confidence": [
+      {
+        "threshold": 0.0,
+        "coverage": 1.0,
+        "accuracy": 0.5714285714285714
+      },
+      {
+        "threshold": 0.5,
+        "coverage": 0.5833333333333334,
+        "accuracy": 0.6938775510204082
+      },
+      {
+        "threshold": 0.6,
+        "coverage": 0.32142857142857145,
+        "accuracy": 0.8518518518518519
+      },
+      {
+        "threshold": 0.7,
+        "coverage": 0.15476190476190477,
+        "accuracy": 0.8461538461538461
+      },
+      {
+        "threshold": 0.8,
+        "coverage": 0.09523809523809523,
+        "accuracy": 0.875
+      },
+      {
+        "threshold": 0.9,
+        "coverage": 0.023809523809523808,
+        "accuracy": 1.0
+      }
+    ],
+    "errors": [
+      {
+        "title": "Sweep the living room",
+        "true": "low",
+        "pred": "urgent"
+      },
+      {
+        "title": "Buy cooking pot",
+        "true": "low",
+        "pred": "medium"
+      },
+      {
+        "title": "Tanggalin ang agiw",
+        "true": "low",
+        "pred": "medium"
+      },
+      {
+        "title": "Replace the shower curtain",
+        "true": "low",
+        "pred": "medium"
+      },
+      {
+        "title": "Label the food containers",
+        "true": "low",
+        "pred": "medium"
+      },
+      {
+        "title": "Bili ng gatas",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Restock detergent",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Closet door fell off the track",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Patay ang saksakan sa kwarto",
+        "true": "medium",
+        "pred": "urgent"
+      },
+      {
+        "title": "Bumili ng tubig na inumin",
+        "true": "medium",
+        "pred": "urgent"
+      },
+      {
+        "title": "Lost the gate key need duplicate",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "May daga sa kisame",
+        "true": "medium",
+        "pred": "urgent"
+      },
+      {
+        "title": "Mag grocery para sa linggo",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Take out the trash",
+        "true": "medium",
+        "pred": "urgent"
+      },
+      {
+        "title": "Bili ng bigas",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Rats in the kitchen ceiling",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Clean up after the party",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Clean the bathroom",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Bili ng sabon panlaba",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Maglaba ng damit",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Replace the kitchen bulb",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Bili ng gulay",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Stove knob is broken",
+        "true": "medium",
+        "pred": "urgent"
+      },
+      {
+        "title": "Buy toothpaste",
+        "true": "medium",
+        "pred": "low"
+      },
+      {
+        "title": "Buy medicine for sick housemate",
+        "true": "urgent",
+        "pred": "low"
+      },
+      {
+        "title": "Balcony railing is shaking",
+        "true": "urgent",
+        "pred": "low"
+      },
+      {
+        "title": "Exposed electrical wires in hallway",
+        "true": "urgent",
+        "pred": "low"
+      },
+      {
+        "title": "Out of drinking water",
+        "true": "urgent",
+        "pred": "medium"
+      },
+      {
+        "title": "Naiwang bukas ang kalan",
+        "true": "urgent",
+        "pred": "low"
+      },
+      {
+        "title": "Toilet will not flush at all and only one CR",
+        "true": "urgent",
+        "pred": "medium"
+      },
+      {
+        "title": "Circuit breaker keeps tripping",
+        "true": "urgent",
+        "pred": "medium"
+      },
+      {
+        "title": "Wala nang gas pang luto",
+        "true": "urgent",
+        "pred": "low"
+      },
+      {
+        "title": "Ang daming langgam sa lamesa",
+        "true": "urgent",
+        "pred": "low"
+      },
+      {
+        "title": "Ants all over the kitchen counter",
+        "true": "urgent",
+        "pred": "low"
+      },
+      {
+        "title": "Sewage smell coming from the drain",
+        "true": "urgent",
+        "pred": "medium"
+      },
+      {
+        "title": "Naiwang bukas ang gripo",
+        "true": "urgent",
+        "pred": "low"
+      }
+    ],
+    "top_words": {
+      "low": [
+        "ask",
+        "clean",
+        "new",
+        "buy",
+        "cabinet",
+        "request",
+        "linisin",
+        "wipe"
+      ],
+      "medium": [
+        "bili",
+        "bathroom",
+        "soap",
+        "hand",
+        "tomorrow",
+        "dishwashing",
+        "router",
+        "internet"
+      ],
+      "urgent": [
+        "no",
+        "ubos",
+        "leaking",
+        "overflowing",
+        "tank",
+        "smell",
+        "left",
+        "out"
+      ]
+    }
+  }
+}
