@@ -15,6 +15,7 @@ import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../shared/widgets/casama_wave_background.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../dashboard/main_navigation_shell.dart';
 import '../dashboard/widgets/casama_household_drawer.dart';
@@ -44,9 +45,8 @@ class ProfileScreen extends ConsumerWidget {
         : double.infinity;
 
     final primaryName = user.preferredName;
-    final displayName =
-        (user.fullName != null && user.fullName!.trim().isNotEmpty)
-        ? user.fullName!.trim()
+    final displayName = user.effectiveFullName.isNotEmpty
+        ? user.effectiveFullName
         : user.preferredName;
     final nicknameText =
         user.nickname != null && user.nickname!.trim().isNotEmpty
@@ -56,23 +56,32 @@ class ProfileScreen extends ConsumerWidget {
         ? '${DateFormat('MMM d, y').format(user.birthday!)}${user.computedAge != null ? ' (${user.computedAge} yrs)' : ''}'
         : 'Not specified';
 
+    final inWaveShell = CasamaWaveTabScope.maybeOf(context) != null;
+
     return Scaffold(
-      backgroundColor: pal.scaffoldBg,
+      backgroundColor: inWaveShell ? Colors.transparent : pal.scaffoldBg,
       body: CasamaAmbientCanvas(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.only(bottom: bottomInset + 104),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Stepped Forest Teal Wave Header
-              CasamaWaveHeader(
-                title: 'Profile',
-                subtitle: repo.hasActiveHousehold
-                    ? '${repo.currentHousehold.name} • Member'
-                    : 'No household yet',
-                showNotificationBell: true,
-                onMenuTap: () => _openDrawer(context),
-              ),
+        backgroundColor: inWaveShell ? Colors.transparent : null,
+        child: CasamaWaveScrollSync(
+          builder: (context, scrollController) => SingleChildScrollView(
+            controller: scrollController,
+            padding: EdgeInsets.only(bottom: bottomInset + 104),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. Stepped Forest Teal Wave Header
+                CasamaWaveHeaderSlot(
+                  extraHeight: 34.0,
+                  child: CasamaWaveHeader(
+                    title: 'Profile',
+                    subtitle: repo.hasActiveHousehold
+                        ? '${repo.currentHousehold.name} • Member'
+                        : 'No household yet',
+                    showNotificationBell: true,
+                    paintBackground: !inWaveShell,
+                    onMenuTap: () => _openDrawer(context),
+                  ),
+                ),
 
               Center(
                 child: ConstrainedBox(
@@ -175,8 +184,12 @@ class ProfileScreen extends ConsumerWidget {
                             const SizedBox(height: 3),
                             Text(
                               displayName != primaryName
-                                  ? '$displayName • ${user.handle} • ${repo.hasActiveHousehold ? repo.currentHousehold.name : 'No household yet'}'
-                                  : '${user.handle} • ${repo.hasActiveHousehold ? repo.currentHousehold.name : 'No household yet'}',
+                                  ? (repo.hasActiveHousehold
+                                        ? '$displayName • ${repo.currentHousehold.name}'
+                                        : displayName)
+                                  : (repo.hasActiveHousehold
+                                        ? repo.currentHousehold.name
+                                        : 'No household yet'),
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodySmall?.copyWith(
                                 fontSize: 13.5,
@@ -246,63 +259,19 @@ class ProfileScreen extends ConsumerWidget {
                                               ),
                                         ),
                                         const SizedBox(height: 2),
-                                        Wrap(
-                                          crossAxisAlignment:
-                                              WrapCrossAlignment.center,
-                                          spacing: 8,
-                                          runSpacing: 4,
-                                          children: [
-                                            Text(
-                                              repo.hasActiveHousehold
-                                                  ? '${repo.kasamaPoints} pts'
-                                                  : '0 pts',
-                                              style: theme
-                                                  .textTheme
-                                                  .titleLarge
-                                                  ?.tabular
-                                                  .copyWith(
-                                                    fontSize: 20,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: pal.textPrimary,
-                                                  ),
-                                            ),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 9,
-                                                    vertical: 3,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: repo.hasActiveHousehold
-                                                    ? pal.amberBg
-                                                    : pal.track,
-                                                borderRadius:
-                                                    CasamaSpacing.roundedPill,
-                                                border: Border.all(
-                                                  color: (repo.hasActiveHousehold
-                                                          ? pal.amberFg
-                                                          : pal.textMuted)
-                                                      .withValues(alpha: 0.35),
-                                                ),
+                                        Text(
+                                          repo.hasActiveHousehold
+                                              ? '${repo.kasamaPoints} pts'
+                                              : '0 pts',
+                                          style: theme
+                                              .textTheme
+                                              .titleLarge
+                                              ?.tabular
+                                              .copyWith(
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.w700,
+                                                color: pal.textPrimary,
                                               ),
-                                              child: Text(
-                                                repo.hasActiveHousehold
-                                                    ? 'Gold Tier'
-                                                    : 'No household yet',
-                                                style: theme
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      fontSize: 10.5,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: repo.hasActiveHousehold
-                                                          ? pal.amberFg
-                                                          : pal.textSecondary,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
                                         ),
                                         const SizedBox(height: 3),
                                         Text(
@@ -393,11 +362,6 @@ class ProfileScreen extends ConsumerWidget {
                                   _InfoRow(
                                     label: 'Birthday',
                                     value: birthdayText,
-                                  ),
-                                  Divider(height: 1, color: pal.divider),
-                                  _InfoRow(
-                                    label: 'Handle',
-                                    value: user.handle,
                                     isLast: true,
                                   ),
                                 ],
@@ -468,6 +432,7 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

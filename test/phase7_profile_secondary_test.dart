@@ -47,7 +47,9 @@ void main() {
       expect(find.text('Profile'), findsOneWidget);
       expect(find.byType(CasMascotView), findsOneWidget);
       expect(find.text('Good Kasama Points'), findsOneWidget);
-      expect(find.text('Gold Tier'), findsOneWidget);
+      expect(find.text('Gold Tier'), findsNothing);
+      expect(find.text('Handle'), findsNothing);
+      expect(find.textContaining('@'), findsNothing);
 
       // Removed legacy rows must not appear on ProfileScreen
       expect(find.text('My Household'), findsNothing);
@@ -119,6 +121,7 @@ void main() {
       expect(find.text('+10 to +14 pts'), findsOneWidget);
       expect(find.text('Task Roulette bonus (chosen housemate)'), findsOneWidget);
       expect(find.text('+4 bonus pts'), findsOneWidget);
+      expect(find.text("Receive a housemate's parcel (once settled)"), findsOneWidget);
       expect(find.text("Find & return a housemate's lost item"), findsOneWidget);
       expect(find.text('+5 pts'), findsNWidgets(2));
       expect(find.text('Post a found item claimed by a housemate'), findsOneWidget);
@@ -152,9 +155,25 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Settings'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Image &&
+              w.image is AssetImage &&
+              (w.image as AssetImage).assetName ==
+                  'assets/images/cas/migo_settings.png',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Residency'), findsOneWidget);
+      expect(find.text('Manage Account'), findsNothing);
+      expect(find.text('Presence & Status Sharing'), findsNothing);
+      expect(find.text('Account Security & Two-Factor'), findsNothing);
+      expect(find.text('About Casama'), findsNothing);
+      expect(find.text('Reset Offline Cache'), findsNothing);
       await tester.tap(find.text('Dark'));
       await tester.pumpAndSettle();
-      expect(find.byType(Switch), findsOneWidget);
+      expect(find.byType(Switch), findsNothing);
       expect(find.text('Notification Settings'), findsNothing);
       expect(find.text('Household Updates'), findsNothing);
       expect(find.text('Parcel & Delivery Alerts'), findsNothing);
@@ -190,16 +209,41 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Image &&
+              w.image is AssetImage &&
+              (w.image as AssetImage).assetName ==
+                  'assets/images/cas/migo_terms.png',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Household Harmony'), findsOneWidget);
+      expect(find.text('Household Tasks & Task Roulette'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Lost & Found Board'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Lost & Found Board'), findsOneWidget);
+      expect(find.text('Shared Belongings & Borrowing'), findsNothing);
       expect(find.text('I Understand & Agree'), findsNothing);
 
       await tester.tap(find.text('Privacy'));
       await tester.pumpAndSettle();
       expect(find.text('Zero Background GPS Tracking'), findsOneWidget);
+      expect(find.textContaining('Home / Out'), findsOneWidget);
+      expect(find.textContaining('In, Out, Away'), findsNothing);
 
       await tester.tap(find.text('Permissions'));
       await tester.pumpAndSettle();
       expect(find.text('Camera & Photo Library'), findsOneWidget);
+      expect(find.text('In-App Notifications'), findsOneWidget);
+      expect(find.text('Built-in'), findsOneWidget);
+      expect(find.text('Local Session & Preferences'), findsOneWidget);
+      expect(find.text('Push Notifications'), findsNothing);
+      expect(find.text('Local Storage & Offline Cache'), findsNothing);
 
       // TermsConsentScreen at 390x844
       final repo = MockRepository()..login();

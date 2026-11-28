@@ -19,6 +19,11 @@ enum CasPose {
   lostFound,
   lostFoundEmpty,
   drawer,
+  inviteKey,
+  cameraBehindCasnaps,
+  settings,
+  permissions,
+  terms,
 }
 
 typedef CasMascotPose = CasPose;
@@ -78,6 +83,16 @@ class CasMascotView extends StatelessWidget {
         return 'assets/images/cas/migo_lost_found_empty.png';
       case CasPose.drawer:
         return 'assets/images/cas/migo_drawer.png';
+      case CasPose.inviteKey:
+        return 'assets/images/cas/migo_invite_key.png';
+      case CasPose.cameraBehindCasnaps:
+        return 'assets/images/cas/migo_camera_behind_CASnaps.png';
+      case CasPose.settings:
+        return 'assets/images/cas/migo_settings.png';
+      case CasPose.permissions:
+        return 'assets/images/cas/migo_permissions.png';
+      case CasPose.terms:
+        return 'assets/images/cas/migo_terms.png';
     }
   }
 

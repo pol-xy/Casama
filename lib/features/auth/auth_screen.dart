@@ -31,7 +31,7 @@ class AuthScreen extends ConsumerStatefulWidget {
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   late int _activeTab;
 
-  // Login controllers (empty by default; One-Tap Demo Login handles demo)
+  // Login controllers
   final _loginFormKey = GlobalKey<FormState>();
   final _loginEmailController = TextEditingController();
   final _loginPasswordController = TextEditingController();
@@ -204,31 +204,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           context,
           isEmailNotConfirmed
               ? 'Your email is not verified yet. Please confirm it or resend the verification email below.'
-              : 'Could not sign in. Check your email and password, or configure Demo Login.',
+              : 'Could not sign in. Please check your email and password.',
           icon: isEmailNotConfirmed
               ? Icons.mark_email_unread_outlined
               : Icons.error_outline_rounded,
         );
-      }
-    }
-  }
-
-  Future<void> _handleDemoLogin() async {
-    setState(() => _isLoginLoading = true);
-    try {
-      final repo = ref.read(repositoryProvider);
-      await repo.signInWithDemoAccount();
-      if (mounted) {
-        setState(() => _isLoginLoading = false);
-        context.go(resolveAuthenticatedDestination(repo.currentUser));
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoginLoading = false);
-        final msg = e is StateError
-            ? e.message
-            : 'Demo login failed. Verify SUPABASE_DEMO_EMAIL and SUPABASE_DEMO_PASSWORD.';
-        showCasamaToast(context, msg, icon: Icons.info_outline_rounded);
       }
     }
   }
@@ -666,30 +646,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             onPressed: _handleLogin,
             isLoading: _isLoginLoading,
             height: 52,
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: CasamaSpacing.md),
-            child: Row(
-              children: [
-                Expanded(child: Divider(color: pal.border)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    'OR',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: pal.textSecondary,
-                    ),
-                  ),
-                ),
-                Expanded(child: Divider(color: pal.border)),
-              ],
-            ),
-          ),
-          CasamaButton(
-            label: 'One-Tap Demo Login',
-            style: CasamaButtonStyle.secondary,
-            onPressed: _isLoginLoading ? null : _handleDemoLogin,
-            height: 50,
           ),
         ],
       ),

@@ -81,7 +81,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Tell Us About You'), findsOneWidget);
-      expect(find.text('Full Name'), findsOneWidget);
+      expect(find.text('First Name'), findsOneWidget);
+      expect(find.text('Last Name'), findsOneWidget);
+      expect(find.text('Full Name'), findsNothing);
       expect(find.text('Nickname'), findsOneWidget);
       expect(find.text('Birthday'), findsOneWidget);
       expect(find.text('Skip Profile for Now'), findsNothing);
@@ -371,9 +373,11 @@ void main() {
         await tester.tap(find.text('Add Housemate'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Find User'), findsOneWidget);
-        expect(find.text('Invite Code'), findsOneWidget);
-        expect(find.text('Pending'), findsOneWidget);
+        expect(find.text('Join Code for Casa 204'), findsOneWidget);
+        expect(find.text('CASA204'), findsOneWidget);
+        expect(find.text('Find User'), findsNothing);
+        expect(find.text('Pending'), findsNothing);
+        expect(find.text('Copy Invitation Message'), findsNothing);
       },
     );
 
@@ -415,7 +419,14 @@ void main() {
         await tester.tap(find.text('Edit Profile'));
         await tester.pumpAndSettle();
         expect(find.text('Edit Profile'), findsWidgets);
+        expect(find.text('Remove Picture'), findsNothing);
+        await tester.tap(
+          find.byKey(const Key('edit_profile_avatar_menu_trigger')),
+        );
+        await tester.pumpAndSettle();
         expect(find.text('Remove Picture'), findsOneWidget);
+        await tester.tapAt(const Offset(10, 10));
+        await tester.pumpAndSettle();
         await tester.tap(find.byIcon(Icons.close));
         await tester.pumpAndSettle();
       },
@@ -441,12 +452,13 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // 4 Active Sections (Notification Settings removed)
+        // 3 Active Sections (Notification Settings and About Casama removed)
         expect(find.text('Account Settings'), findsOneWidget);
+        expect(find.text('Residency'), findsOneWidget);
         expect(find.text('Appearance'), findsOneWidget);
         expect(find.text('Notification Settings'), findsNothing);
         expect(find.text('Privacy and Security'), findsOneWidget);
-        expect(find.text('About Casama'), findsOneWidget);
+        expect(find.text('About Casama'), findsNothing);
 
         // Theme options
         expect(find.text('Light'), findsWidgets);
@@ -469,17 +481,25 @@ void main() {
       expect(repo.isHousemateAuthorized('ria'), true);
     });
 
-    test('F2. Duplicate reward prevention: Receiving same parcel multiple times is rejected', () {
+    test('F2. Duplicate reward prevention: Receiving and settling same parcel multiple times awards +5 pts once', () async {
       final repo = MockRepository();
       final initialPoints = repo.kasamaPoints;
 
-      // First claim succeeds and awards +5
+      // First claim awards 0 pts immediately
       repo.receiveParcel('p1');
+      expect(repo.kasamaPoints, initialPoints);
+
+      // Duplicate claim is idempotent
+      repo.receiveParcel('p1');
+      expect(repo.kasamaPoints, initialPoints);
+
+      // Settling awards +5 pts once
+      await repo.settleParcelClaim('p1');
       expect(repo.kasamaPoints, initialPoints + 5);
 
-      // Attempting to receive again is idempotent and does not award duplicate points
+      // Attempting to settle again is idempotent and does not award duplicate points
       final historyCountBefore = repo.pointHistory.length;
-      repo.receiveParcel('p1');
+      await repo.settleParcelClaim('p1');
       expect(repo.kasamaPoints, initialPoints + 5); // Unchanged
       expect(
         repo.pointHistory.length,
@@ -487,22 +507,13 @@ void main() {
       ); // No duplicate ledger entry
     });
 
-    test('F3. Duplicate invitation prevention: Sending duplicate invite is rejected', () {
+    test('F3. Duplicate nickname prevention: Updating to a taken nickname is rejected', () async {
       final repo = MockRepository();
+      repo.seedTakenNicknamesForTest(['Clarar']);
 
-      // First invite to Clara succeeds
-      final firstInvite = repo.sendInvitation(
-        inviteeEmailOrHandle: '@clarar',
-        inviteeName: 'Clara Reyes',
-      );
-      expect(firstInvite, true);
-
-      // Second invite to Clara returns false (rejected)
-      final duplicateInvite = repo.sendInvitation(
-        inviteeEmailOrHandle: '@clarar',
-        inviteeName: 'Clara Reyes',
-      );
-      expect(duplicateInvite, false);
+      final error = await repo.updateProfile(nickname: 'clarar');
+      expect(error, 'That nickname is already taken. Please choose another.');
+      expect(repo.currentUser.nickname, 'JP');
     });
 
     // -------------------------------------------------------------------------
@@ -545,6 +556,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('J&T Express'), findsOneWidget);
+        await tester.tap(find.text('Upcoming'));
+        await tester.pumpAndSettle();
         expect(find.text('Flash Express'), findsOneWidget);
 
         // 2. Lost & Found Board
@@ -588,7 +601,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('3 Open Tasks'), findsOneWidget);
         expect(find.text('16 pts'), findsOneWidget);
-        expect(find.text('Across ongoing tasks'), findsOneWidget);
+        expect(find.text('Available to you'), findsOneWidget);
         expect(find.text('Leaking Faucet'), findsOneWidget);
         expect(find.text('Buy Drinking Water'), findsOneWidget);
         expect(find.text('Defrost Freezer'), findsOneWidget);

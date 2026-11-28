@@ -332,7 +332,6 @@ void main() {
         'completed_by_name': 'JP',
         'completed_at': '2026-11-26T10:00:00Z',
         'created_at': '2026-11-26T08:00:00Z',
-        'due_date': '2026-11-27T08:00:00Z',
       });
       expect(task.createdBy, 'u2');
       expect(task.createdByName, 'Maria');
@@ -341,9 +340,9 @@ void main() {
       expect(task.completedById, 'u1');
       expect(task.completedByName, 'JP');
       expect(task.completedAt, isNotNull);
-      expect(task.dueDate, isNotNull);
       final taskJson = task.toJson();
       expect(taskJson.containsKey('assignee_id'), isFalse);
+      expect(taskJson.containsKey('due_date'), isFalse);
       expect(taskJson['created_by'], 'u2');
       expect(taskJson['completed_by'], 'u1');
       expect(taskJson['completed_at'], isNotNull);
@@ -396,29 +395,6 @@ void main() {
       expect(chatJson.containsKey('invite_space_name'), isFalse);
       expect(chatJson.containsKey('media_url'), isFalse);
     });
-
-    testWidgets(
-      'AuthScreen One-Tap Demo Login without configured credentials shows error toast and stays on AuthScreen',
-      (tester) async {
-        await tester.pumpWidget(
-          ProviderScope(
-            child: MaterialApp(
-              theme: CasamaTheme.lightTheme,
-              home: const AuthScreen(initialTabIndex: 1),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.text('One-Tap Demo Login'), findsOneWidget);
-        await tester.ensureVisible(find.text('One-Tap Demo Login'));
-        await tester.tap(find.text('One-Tap Demo Login'));
-        await tester.pumpAndSettle();
-
-        expect(find.textContaining('Demo login is not configured'), findsOneWidget);
-        expect(find.text('Welcome back'), findsOneWidget);
-      },
-    );
 
     testWidgets(
       'AuthScreen reveals Resend Verification Email on email_not_confirmed, enforces 60s cooldown, handles rate limits, and hides when email cleared',
@@ -573,53 +549,47 @@ void main() {
     );
 
     test(
-      'UserProfile name join/split, handle helpers, and buildProfileUpdateMap avoid handle collisions',
+      'UserProfile name join/split, buildProfileUpdateMap, and duplicate nickname detection',
       () {
         expect(UserProfile.joinFullName('  Clara ', ' Reyes '), 'Clara Reyes');
         final split = UserProfile.splitFullName('Jon Paul Berana');
         expect(split.firstName, 'Jon');
         expect(split.lastName, 'Paul Berana');
 
-        expect(UserProfile.isPlaceholderHandle(''), isTrue);
-        expect(UserProfile.isPlaceholderHandle('@member'), isTrue);
-        expect(UserProfile.isPlaceholderHandle('@clara_a1b2c3'), isFalse);
-
-        final fallback = UserProfile.buildFallbackHandle(
-          preferred: 'Clara Reyes!',
-          userId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-        );
-        expect(fallback, '@clarareyes_a1b2c3');
-
-        final retry = UserProfile.buildCollisionRetryHandle(
-          baseHandle: fallback,
-          randomSuffix: '9F2E',
-        );
-        expect(retry, '@clarareyes_a1b2c3_9f2e');
-
-        final preservedMap = SupabaseRepository.buildProfileUpdateMap(
+        final updateMap = SupabaseRepository.buildProfileUpdateMap(
           displayName: 'Clara Reyes',
-          explicitHandle: '',
-          existingHandle: '@clara_existing',
-          fullName: 'Clara Reyes',
+          firstName: 'Clara',
+          lastName: 'Reyes',
           nickname: 'Clar',
           birthday: DateTime(2001, 5, 14),
           hasConsentedTerms: true,
           hasCompletedOnboarding: false,
         );
-        expect(preservedMap['handle'], '@clara_existing');
-        expect(preservedMap['birthday'], '2001-05-14');
+        expect(updateMap['first_name'], 'Clara');
+        expect(updateMap['last_name'], 'Reyes');
+        expect(updateMap['full_name'], 'Clara Reyes');
+        expect(updateMap['birthday'], '2001-05-14');
+        expect(updateMap.containsKey('handle'), isFalse);
 
-        final omittedBlankMap = SupabaseRepository.buildProfileUpdateMap(
-          displayName: 'Clara Reyes',
-          explicitHandle: '   ',
-          existingHandle: '',
-          fullName: 'Clara Reyes',
-          nickname: 'Clar',
-          birthday: DateTime(2001, 5, 14),
-          hasConsentedTerms: true,
-          hasCompletedOnboarding: false,
+        expect(
+          SupabaseRepository.isDuplicateNicknameException(
+            const PostgrestException(
+              message:
+                  'duplicate key value violates unique constraint "uq_profiles_nickname_lower"',
+              code: '23505',
+            ),
+          ),
+          isTrue,
         );
-        expect(omittedBlankMap.containsKey('handle'), isFalse);
+        expect(
+          SupabaseRepository.isDuplicateNicknameException(
+            const PostgrestException(
+              message: 'other constraint',
+              code: '23505',
+            ),
+          ),
+          isFalse,
+        );
       },
     );
 
@@ -629,7 +599,6 @@ void main() {
         const incompleteUser = UserProfile(
           id: 'u-1',
           displayName: 'Housemate',
-          handle: '',
           fullName: 'Clara Reyes',
           nickname: 'Clar',
           hasConsentedTerms: true,
@@ -681,7 +650,6 @@ void main() {
         final completeUser = UserProfile(
           id: 'u-1',
           displayName: 'Clara Reyes',
-          handle: '@clara_u1',
           fullName: 'Clara Reyes',
           nickname: 'Clar',
           birthday: DateTime(2001, 5, 14),

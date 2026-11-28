@@ -98,7 +98,7 @@ class _DevicePermissionsScreenState
           context.go(widget.isOnboarding ? '/household-setup' : '/settings');
         }
       },
-      mascotPose: CasPose.standing,
+      mascotPose: CasPose.permissions,
       mascotAlignment: Alignment.bottomRight,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

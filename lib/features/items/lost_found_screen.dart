@@ -13,6 +13,7 @@ import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
+import '../../shared/widgets/casama_inline_user_badge.dart';
 import '../../shared/widgets/casama_lost_found_icon.dart';
 import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_wave_header.dart';
@@ -91,7 +92,7 @@ class _LostFoundScreenState extends ConsumerState<LostFoundScreen> {
               ],
             ),
             const Expanded(
-              child: ItemsBoardView(bottomPadding: 100),
+              child: ItemsBoardView(bottomPadding: 104),
             ),
           ],
         ),
@@ -179,6 +180,64 @@ class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
       err ?? 'Claimed "${foundItem.title}"! $finder earned +2 pts.',
       icon: Icons.check_circle_outline_rounded,
     );
+  }
+
+  Future<void> _confirmAndDeleteItem(LostFoundItem item) async {
+    final pal = context.palette;
+    final isLost = item.type == ItemType.lost;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Delete item post?'),
+        content: Text(
+          isLost
+              ? 'This will permanently remove "${item.title}" and any linked find submissions.'
+              : 'This will permanently remove "${item.title}" from Lost & Found.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            key: const Key('item_confirm_delete_button'),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: pal.dangerFg),
+            child: const Text(
+              'Delete',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final repo = ref.read(repositoryProvider);
+      if (isLost) {
+        await repo.deleteLostItem(item.id);
+      } else {
+        await repo.deleteFoundItem(item.id);
+      }
+      if (!mounted) return;
+      if (_expandedItemId == item.id) {
+        setState(() => _expandedItemId = null);
+      }
+      showCasamaToast(
+        context,
+        'Item post deleted',
+        icon: Icons.delete_outline_rounded,
+      );
+    } catch (_) {
+      if (mounted) {
+        showCasamaToast(
+          context,
+          'Could not delete item post. Please try again.',
+          icon: Icons.error_outline_rounded,
+        );
+      }
+    }
   }
 
   @override
@@ -438,6 +497,7 @@ class _ItemsBoardViewState extends ConsumerState<ItemsBoardView> {
                             onRejectFind: _handleRejectFind,
                             onClaimStandaloneFound: () =>
                                 _handleClaimStandaloneFound(item),
+                            onDelete: () => _confirmAndDeleteItem(item),
                           ),
                           const SizedBox(height: CasamaSpacing.xs),
                         ],
@@ -567,6 +627,7 @@ class _ExpandableItemCard extends ConsumerWidget {
   final ValueChanged<LostFoundItem> onAcceptFind;
   final ValueChanged<LostFoundItem> onRejectFind;
   final VoidCallback onClaimStandaloneFound;
+  final VoidCallback onDelete;
 
   const _ExpandableItemCard({
     required this.item,
@@ -580,6 +641,7 @@ class _ExpandableItemCard extends ConsumerWidget {
     required this.onAcceptFind,
     required this.onRejectFind,
     required this.onClaimStandaloneFound,
+    required this.onDelete,
   });
 
   @override
@@ -591,14 +653,32 @@ class _ExpandableItemCard extends ConsumerWidget {
       item.reportedBy,
       fallback: item.reportedByName,
     );
+    final reporterLabel = repo.resolveHousemateName(
+      item.reportedBy,
+      fallback: item.reportedByName,
+      useYouForCurrentUser: true,
+    );
+    final reporterAvatarUrl = repo.resolveHousemateAvatarUrl(item.reportedBy);
     final finderName = repo.resolveHousemateName(
       item.foundById,
       fallback: item.foundByName ?? 'Housemate',
     );
+    final finderLabel = repo.resolveHousemateName(
+      item.foundById,
+      fallback: item.foundByName ?? 'Housemate',
+      useYouForCurrentUser: true,
+    );
+    final finderAvatarUrl = repo.resolveHousemateAvatarUrl(item.foundById);
     final claimerName = repo.resolveHousemateName(
       item.claimedById,
       fallback: item.claimedByName ?? 'Housemate',
     );
+    final claimerLabel = repo.resolveHousemateName(
+      item.claimedById,
+      fallback: item.claimedByName ?? 'Housemate',
+      useYouForCurrentUser: true,
+    );
+    final claimerAvatarUrl = repo.resolveHousemateAvatarUrl(item.claimedById);
     final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
     final Duration animDuration = reduceMotion
         ? Duration.zero
@@ -607,6 +687,9 @@ class _ExpandableItemCard extends ConsumerWidget {
     final isLost = item.type == ItemType.lost;
     final isResolvedTab = tab == _ItemSubTab.resolved;
     final isOwnerOrFinder = item.reportedBy == currentUserId;
+    final isCreator = isLost
+        ? item.ownerId == currentUserId
+        : item.finderId == currentUserId;
     final isResolved = item.isResolved;
     final pendingFinds = linkedFinds
         .where((f) => f.status == ItemStatus.pending)
@@ -623,9 +706,13 @@ class _ExpandableItemCard extends ConsumerWidget {
     ).format(item.returnedAt ?? item.claimedAt ?? item.createdAt);
     final metaLine = isResolvedTab
         ? (isLost
-              ? 'Lost by $reporterName • Resolved $resolvedShortDate'
-              : 'Found by $reporterName • Resolved $resolvedShortDate')
-        : 'By $reporterName$locSuffix • $shortDate';
+              ? 'Lost by $reporterLabel • Resolved $resolvedShortDate'
+              : 'Found by $reporterLabel • Resolved $resolvedShortDate')
+        : 'By $reporterLabel$locSuffix • $shortDate';
+    final metaStyle = theme.textTheme.bodySmall?.copyWith(
+      fontSize: 12,
+      color: pal.textSecondary,
+    );
 
     final (String pillLabel, ChipVariant pillVariant, Color? customBg, Color? customFg) =
         _statusPill(pal, isLost, pendingFinds.length, isResolvedTab: isResolvedTab);
@@ -714,13 +801,24 @@ class _ExpandableItemCard extends ConsumerWidget {
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
-                                  metaLine,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    fontSize: 12,
-                                    color: pal.textSecondary,
+                                CasamaInlineUserBadge(
+                                  avatarKey: ValueKey(
+                                    'item_reporter_avatar_${item.id}',
+                                  ),
+                                  prefix: isResolvedTab
+                                      ? (isLost ? 'Lost by ' : 'Found by ')
+                                      : 'By ',
+                                  displayName: reporterLabel,
+                                  avatarName: reporterName,
+                                  avatarUrl: reporterAvatarUrl,
+                                  suffix: isResolvedTab
+                                      ? ' • Resolved $resolvedShortDate'
+                                      : '$locSuffix • $shortDate',
+                                  avatarSize: 16,
+                                  baseStyle: metaStyle,
+                                  nameStyle: metaStyle?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: pal.textPrimary,
                                   ),
                                 ),
                               ],
@@ -763,9 +861,14 @@ class _ExpandableItemCard extends ConsumerWidget {
                       pal,
                       theme,
                       isLost: isLost,
+                      isCreator: isCreator,
                       hasPhoto: hasPhoto,
                       reporterName: reporterName,
+                      reporterLabel: reporterLabel,
+                      reporterAvatarUrl: reporterAvatarUrl,
                       claimerName: claimerName,
+                      claimerLabel: claimerLabel,
+                      claimerAvatarUrl: claimerAvatarUrl,
                     )
                   : _buildExpandedBody(
                       context,
@@ -773,9 +876,14 @@ class _ExpandableItemCard extends ConsumerWidget {
                       theme,
                       isLost: isLost,
                       isOwnerOrFinder: isOwnerOrFinder,
+                      isCreator: isCreator,
                       hasPhoto: hasPhoto,
                       finderName: finderName,
+                      finderLabel: finderLabel,
+                      finderAvatarUrl: finderAvatarUrl,
                       claimerName: claimerName,
+                      claimerLabel: claimerLabel,
+                      claimerAvatarUrl: claimerAvatarUrl,
                     ),
           ] else
             AnimatedSize(
@@ -792,9 +900,14 @@ class _ExpandableItemCard extends ConsumerWidget {
                               pal,
                               theme,
                               isLost: isLost,
+                              isCreator: isCreator,
                               hasPhoto: hasPhoto,
                               reporterName: reporterName,
+                              reporterLabel: reporterLabel,
+                              reporterAvatarUrl: reporterAvatarUrl,
                               claimerName: claimerName,
+                              claimerLabel: claimerLabel,
+                              claimerAvatarUrl: claimerAvatarUrl,
                             )
                           : _buildExpandedBody(
                               context,
@@ -802,9 +915,14 @@ class _ExpandableItemCard extends ConsumerWidget {
                               theme,
                               isLost: isLost,
                               isOwnerOrFinder: isOwnerOrFinder,
+                              isCreator: isCreator,
                               hasPhoto: hasPhoto,
                               finderName: finderName,
+                              finderLabel: finderLabel,
+                              finderAvatarUrl: finderAvatarUrl,
                               claimerName: claimerName,
+                              claimerLabel: claimerLabel,
+                              claimerAvatarUrl: claimerAvatarUrl,
                             ))
                     : const SizedBox.shrink(),
               ),
@@ -850,9 +968,14 @@ class _ExpandableItemCard extends ConsumerWidget {
     ThemeData theme, {
     required bool isLost,
     required bool isOwnerOrFinder,
+    required bool isCreator,
     required bool hasPhoto,
     required String finderName,
+    required String finderLabel,
+    required String? finderAvatarUrl,
     required String claimerName,
+    required String claimerLabel,
+    required String? claimerAvatarUrl,
   }) {
     final desc = item.description?.trim() ?? '';
     final loc = item.location?.trim() ?? '';
@@ -866,6 +989,28 @@ class _ExpandableItemCard extends ConsumerWidget {
     final viewerHasPending = linkedFinds.any(
       (f) => f.reportedBy == currentUserId && f.status == ItemStatus.pending,
     );
+
+    final deleteButton = isCreator
+        ? Semantics(
+            button: true,
+            label: 'Delete item',
+            child: IconButton(
+              key: ValueKey('item_delete_btn_${item.id}'),
+              tooltip: 'Delete item',
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                size: 20,
+                color: pal.dangerFg.withValues(alpha: 0.8),
+              ),
+              constraints: const BoxConstraints(
+                minWidth: CasamaSpacing.minTouchTarget,
+                minHeight: CasamaSpacing.minTouchTarget,
+              ),
+              padding: EdgeInsets.zero,
+              onPressed: onDelete,
+            ),
+          )
+        : null;
 
     return Padding(
       padding: const EdgeInsets.only(top: 10),
@@ -954,28 +1099,61 @@ class _ExpandableItemCard extends ConsumerWidget {
                   ),
                 ),
             ] else if (!item.isResolved && isOwnerOrFinder) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _ActionPillButton(
-                  label: 'Found It Myself',
-                  icon: Icons.done_all_rounded,
-                  bg: pal.track,
-                  fg: pal.textPrimary,
-                  borderColor: pal.border,
-                  onTap: onResolveOwnLost,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  ?deleteButton,
+                  _ActionPillButton(
+                    label: 'Found It Myself',
+                    icon: Icons.done_all_rounded,
+                    bg: pal.track,
+                    fg: pal.textPrimary,
+                    borderColor: pal.border,
+                    onTap: onResolveOwnLost,
+                  ),
+                ],
               ),
             ] else if (item.isResolved) ...[
               _ResolutionCallout(
                 pal: pal,
                 theme: theme,
-                text: item.foundByName != null &&
+                content: item.foundByName != null &&
                         item.foundByName!.trim().isNotEmpty
-                    ? isInteractionLost && item.foundById != currentUserId
-                          ? 'Resolved by $finderName'
-                          : 'Returned by $finderName • +5 pts awarded'
-                    : 'Resolved by owner (0 pts)',
+                    ? CasamaInlineUserBadge(
+                        prefix: isInteractionLost &&
+                                item.foundById != currentUserId
+                            ? 'Resolved by '
+                            : 'Returned by ',
+                        displayName: finderLabel,
+                        avatarName: finderName,
+                        avatarUrl: finderAvatarUrl,
+                        suffix: isInteractionLost &&
+                                item.foundById != currentUserId
+                            ? null
+                            : ' • +5 pts awarded',
+                        avatarSize: 16,
+                        baseStyle: theme.textTheme.labelMedium?.copyWith(
+                          color: pal.successFg,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        nameStyle: theme.textTheme.labelMedium?.copyWith(
+                          color: pal.successFg,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        maxLines: 2,
+                      )
+                    : Text(
+                        'Resolved by owner (0 pts)',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: pal.successFg,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
               ),
+              if (deleteButton != null) ...[
+                const SizedBox(height: 6),
+                Align(alignment: Alignment.centerLeft, child: deleteButton),
+              ],
             ],
           ] else ...[
             // Standalone Found Item
@@ -991,21 +1169,52 @@ class _ExpandableItemCard extends ConsumerWidget {
                 ),
               )
             else if (!item.isResolved && isOwnerOrFinder)
-              Text(
-                'Posted by you • Waiting for a housemate to claim',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: pal.textSecondary,
-                  fontStyle: FontStyle.italic,
-                ),
+              Row(
+                children: [
+                  if (deleteButton != null) ...[
+                    deleteButton,
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      'Posted by you • Waiting for a housemate to claim',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: pal.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
               )
-            else if (item.isResolved)
+            else if (item.isResolved) ...[
               _ResolutionCallout(
                 pal: pal,
                 theme: theme,
-                text: item.claimedById == currentUserId
-                    ? 'You claimed this item • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)}'
-                    : 'Claimed by $claimerName • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)} • +2 pts earned',
+                content: CasamaInlineUserBadge(
+                  prefix: 'Claimed by ',
+                  displayName: claimerLabel,
+                  avatarName: claimerName,
+                  avatarUrl: claimerAvatarUrl,
+                  suffix: item.claimedById == currentUserId
+                      ? ' • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)}'
+                      : ' • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)} • +2 pts earned',
+                  avatarSize: 16,
+                  baseStyle: theme.textTheme.labelMedium?.copyWith(
+                    color: pal.successFg,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  nameStyle: theme.textTheme.labelMedium?.copyWith(
+                    color: pal.successFg,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 2,
+                ),
               ),
+              if (deleteButton != null) ...[
+                const SizedBox(height: 6),
+                Align(alignment: Alignment.centerLeft, child: deleteButton),
+              ],
+            ],
           ],
 
           // Chronological linked-find history timeline
@@ -1042,14 +1251,23 @@ class _ExpandableItemCard extends ConsumerWidget {
     CasamaPalette pal,
     ThemeData theme, {
     required bool isLost,
+    required bool isCreator,
     required bool hasPhoto,
     required String reporterName,
+    required String reporterLabel,
+    required String? reporterAvatarUrl,
     required String claimerName,
+    required String claimerLabel,
+    required String? claimerAvatarUrl,
   }) {
     final desc = item.description?.trim() ?? '';
     final loc = item.location?.trim() ?? '';
     final isSelfResolved =
         isLost && item.resolvedFoundItemId == null && item.foundById == null;
+    final milestoneStyle = theme.textTheme.labelMedium?.copyWith(
+      color: pal.textPrimary,
+      fontWeight: FontWeight.w600,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(top: 10),
@@ -1133,8 +1351,17 @@ class _ExpandableItemCard extends ConsumerWidget {
           const SizedBox(height: 8),
           if (isLost) ...[
             _ResolutionMilestoneRow(
-              title:
-                  '$reporterName reported item lost • ${_formatShortDateTime(item.createdAt)}',
+              titleWidget: CasamaInlineUserBadge(
+                displayName: reporterLabel,
+                avatarName: reporterName,
+                avatarUrl: reporterAvatarUrl,
+                suffix:
+                    ' reported item lost • ${_formatShortDateTime(item.createdAt)}',
+                avatarSize: 16,
+                baseStyle: milestoneStyle,
+                nameStyle: milestoneStyle?.copyWith(fontWeight: FontWeight.w700),
+                maxLines: 2,
+              ),
               dotColor: pal.forestTeal,
               isLast: linkedFinds.isEmpty && !isSelfResolved,
             ),
@@ -1143,18 +1370,46 @@ class _ExpandableItemCard extends ConsumerWidget {
                 submission: linkedFinds[i],
                 canReview: false,
                 isLast: !isSelfResolved && i == linkedFinds.length - 1,
-                confirmedByLabel:
+                confirmedByWidget:
                     (linkedFinds[i].id == item.resolvedFoundItemId ||
                             linkedFinds[i].status == ItemStatus.resolved)
-                        ? 'Confirmed by $reporterName • ${_formatShortDateTime(item.returnedAt ?? linkedFinds[i].returnedAt ?? linkedFinds[i].createdAt)}'
+                        ? CasamaInlineUserBadge(
+                            prefix: 'Confirmed by ',
+                            displayName: reporterLabel,
+                            avatarName: reporterName,
+                            avatarUrl: reporterAvatarUrl,
+                            suffix:
+                                ' • ${_formatShortDateTime(item.returnedAt ?? linkedFinds[i].returnedAt ?? linkedFinds[i].createdAt)}',
+                            avatarSize: 15,
+                            baseStyle: theme.textTheme.labelSmall?.copyWith(
+                              color: pal.successFg,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11.5,
+                            ),
+                            nameStyle: theme.textTheme.labelSmall?.copyWith(
+                              color: pal.successFg,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11.5,
+                            ),
+                            maxLines: 2,
+                          )
                         : null,
                 onAccept: () {},
                 onReject: () {},
               ),
             if (isSelfResolved)
               _ResolutionMilestoneRow(
-                title:
-                    '$reporterName found it themselves • ${_formatShortDateTime(item.returnedAt ?? item.createdAt)}',
+                titleWidget: CasamaInlineUserBadge(
+                  displayName: reporterLabel,
+                  avatarName: reporterName,
+                  avatarUrl: reporterAvatarUrl,
+                  suffix:
+                      ' found it themselves • ${_formatShortDateTime(item.returnedAt ?? item.createdAt)}',
+                  avatarSize: 16,
+                  baseStyle: milestoneStyle,
+                  nameStyle: milestoneStyle?.copyWith(fontWeight: FontWeight.w700),
+                  maxLines: 2,
+                ),
                 badgeText: 'Self-resolved • 0 pts',
                 badgeBg: pal.neutralBg,
                 badgeFg: pal.neutralFg,
@@ -1163,20 +1418,64 @@ class _ExpandableItemCard extends ConsumerWidget {
               ),
           ] else ...[
             _ResolutionMilestoneRow(
-              title:
-                  '$reporterName posted found item • ${_formatShortDateTime(item.createdAt)}',
+              titleWidget: CasamaInlineUserBadge(
+                displayName: reporterLabel,
+                avatarName: reporterName,
+                avatarUrl: reporterAvatarUrl,
+                suffix:
+                    ' posted found item • ${_formatShortDateTime(item.createdAt)}',
+                avatarSize: 16,
+                baseStyle: milestoneStyle,
+                nameStyle: milestoneStyle?.copyWith(fontWeight: FontWeight.w700),
+                maxLines: 2,
+              ),
               subtitle: loc.isNotEmpty ? 'Found at: $loc' : null,
               dotColor: pal.forestTeal,
               isLast: false,
             ),
             _ResolutionMilestoneRow(
-              title:
-                  'Claimed by $claimerName ("That\'s Mine") • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)}',
-              badgeText: '+2 pts to $reporterName',
+              titleWidget: CasamaInlineUserBadge(
+                prefix: 'Claimed by ',
+                displayName: claimerLabel,
+                avatarName: claimerName,
+                avatarUrl: claimerAvatarUrl,
+                suffix:
+                    ' ("That\'s Mine") • ${_formatShortDateTime(item.claimedAt ?? item.returnedAt ?? item.createdAt)}',
+                avatarSize: 16,
+                baseStyle: milestoneStyle,
+                nameStyle: milestoneStyle?.copyWith(fontWeight: FontWeight.w700),
+                maxLines: 2,
+              ),
+              badgeText: '+2 pts to $reporterLabel',
               badgeBg: pal.successBg,
               badgeFg: pal.successFg,
               dotColor: pal.successFg,
               isLast: true,
+            ),
+          ],
+          if (isCreator) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Semantics(
+                button: true,
+                label: 'Delete item',
+                child: IconButton(
+                  key: ValueKey('item_delete_btn_${item.id}'),
+                  tooltip: 'Delete item',
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    size: 20,
+                    color: pal.dangerFg.withValues(alpha: 0.8),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: CasamaSpacing.minTouchTarget,
+                    minHeight: CasamaSpacing.minTouchTarget,
+                  ),
+                  padding: EdgeInsets.zero,
+                  onPressed: onDelete,
+                ),
+              ),
             ),
           ],
         ],
@@ -1188,12 +1487,12 @@ class _ExpandableItemCard extends ConsumerWidget {
 class _ResolutionCallout extends StatelessWidget {
   final CasamaPalette pal;
   final ThemeData theme;
-  final String text;
+  final Widget content;
 
   const _ResolutionCallout({
     required this.pal,
     required this.theme,
-    required this.text,
+    required this.content,
   });
 
   @override
@@ -1208,15 +1507,7 @@ class _ResolutionCallout extends StatelessWidget {
         children: [
           Icon(Icons.verified_rounded, size: 16, color: pal.successFg),
           const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: pal.successFg,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
+          Expanded(child: content),
         ],
       ),
     );
@@ -1224,7 +1515,7 @@ class _ResolutionCallout extends StatelessWidget {
 }
 
 class _ResolutionMilestoneRow extends StatelessWidget {
-  final String title;
+  final Widget titleWidget;
   final String? subtitle;
   final String? badgeText;
   final Color? badgeBg;
@@ -1233,7 +1524,7 @@ class _ResolutionMilestoneRow extends StatelessWidget {
   final bool isLast;
 
   const _ResolutionMilestoneRow({
-    required this.title,
+    required this.titleWidget,
     this.subtitle,
     this.badgeText,
     this.badgeBg,
@@ -1284,13 +1575,7 @@ class _ResolutionMilestoneRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: pal.textPrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  titleWidget,
                   if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
@@ -1324,7 +1609,7 @@ class _TimelineEntryRow extends ConsumerWidget {
   final LostFoundItem submission;
   final bool canReview;
   final bool isLast;
-  final String? confirmedByLabel;
+  final Widget? confirmedByWidget;
   final VoidCallback onAccept;
   final VoidCallback onReject;
 
@@ -1332,7 +1617,7 @@ class _TimelineEntryRow extends ConsumerWidget {
     required this.submission,
     required this.canReview,
     required this.isLast,
-    this.confirmedByLabel,
+    this.confirmedByWidget,
     required this.onAccept,
     required this.onReject,
   });
@@ -1345,6 +1630,14 @@ class _TimelineEntryRow extends ConsumerWidget {
     final subReporterName = repo.resolveHousemateName(
       submission.reportedBy,
       fallback: submission.reportedByName,
+    );
+    final subReporterLabel = repo.resolveHousemateName(
+      submission.reportedBy,
+      fallback: submission.reportedByName,
+      useYouForCurrentUser: true,
+    );
+    final subReporterAvatarUrl = repo.resolveHousemateAvatarUrl(
+      submission.reportedBy,
     );
     final hasThumb =
         submission.imageUrl != null && submission.imageUrl!.trim().isNotEmpty;
@@ -1417,11 +1710,20 @@ class _TimelineEntryRow extends ConsumerWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          '$subReporterName • ${_formatShortDateTime(submission.createdAt)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelMedium?.copyWith(
+                        child: CasamaInlineUserBadge(
+                          avatarKey: ValueKey(
+                            'item_submission_avatar_${submission.id}',
+                          ),
+                          displayName: subReporterLabel,
+                          avatarName: subReporterName,
+                          avatarUrl: subReporterAvatarUrl,
+                          suffix: ' • ${_formatShortDateTime(submission.createdAt)}',
+                          avatarSize: 16,
+                          baseStyle: theme.textTheme.labelMedium?.copyWith(
+                            color: pal.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          nameStyle: theme.textTheme.labelMedium?.copyWith(
                             color: pal.textPrimary,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1469,16 +1771,9 @@ class _TimelineEntryRow extends ConsumerWidget {
                       ),
                     ),
                   ],
-                  if (confirmedByLabel != null) ...[
+                  if (confirmedByWidget != null) ...[
                     const SizedBox(height: 4),
-                    Text(
-                      confirmedByLabel!,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: pal.successFg,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 11.5,
-                      ),
-                    ),
+                    confirmedByWidget!,
                   ],
                   if (hasThumb) ...[
                     const SizedBox(height: 6),

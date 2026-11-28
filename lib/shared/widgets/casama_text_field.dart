@@ -20,6 +20,7 @@ class CasamaTextField extends StatefulWidget {
   final Iterable<String>? autofillHints;
   final List<TextInputFormatter>? inputFormatters;
   final String? Function(String?)? validator;
+  final String? forceErrorText;
   final int maxLines;
   final void Function(String)? onChanged;
   final bool readOnly;
@@ -44,6 +45,7 @@ class CasamaTextField extends StatefulWidget {
     this.autofillHints,
     this.inputFormatters,
     this.validator,
+    this.forceErrorText,
     this.maxLines = 1,
     this.onChanged,
     this.readOnly = false,
@@ -110,6 +112,7 @@ class _CasamaTextFieldState extends State<CasamaTextField> {
             autofillHints: widget.autofillHints,
             inputFormatters: widget.inputFormatters,
             validator: widget.validator,
+            forceErrorText: widget.forceErrorText,
             maxLines: widget.isPassword ? 1 : widget.maxLines,
             onChanged: widget.onChanged,
             readOnly: widget.readOnly,

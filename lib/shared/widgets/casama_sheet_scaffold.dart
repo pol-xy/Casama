@@ -22,6 +22,7 @@ Future<T?> showCasamaSheet<T>(
   Color? iconColor,
   Color? sheetBackgroundColor,
   bool darkSurfaceOverride = false,
+  bool scrollable = true,
 }) {
   assert(icon != null || iconWidget != null);
   final reduced = CasamaMotion.reduceMotion(context);
@@ -44,6 +45,7 @@ Future<T?> showCasamaSheet<T>(
         iconColor: iconColor,
         sheetBackgroundColor: sheetBackgroundColor,
         darkSurfaceOverride: darkSurfaceOverride,
+        scrollable: scrollable,
         builder: builder,
       );
     },
@@ -81,6 +83,7 @@ class _CasamaSheetHost extends StatelessWidget {
   final Color? iconColor;
   final Color? sheetBackgroundColor;
   final bool darkSurfaceOverride;
+  final bool scrollable;
   final Widget Function(BuildContext sheetContext) builder;
 
   const _CasamaSheetHost({
@@ -94,6 +97,7 @@ class _CasamaSheetHost extends StatelessWidget {
     this.iconColor,
     this.sheetBackgroundColor,
     this.darkSurfaceOverride = false,
+    this.scrollable = true,
   });
 
   @override
@@ -253,15 +257,17 @@ class _CasamaSheetHost extends StatelessWidget {
                     ),
                   ),
                   Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(
-                        CasamaSpacing.lg,
-                        CasamaSpacing.md,
-                        CasamaSpacing.lg,
-                        CasamaSpacing.xl,
-                      ),
-                      child: builder(context),
-                    ),
+                    child: scrollable
+                        ? SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(
+                              CasamaSpacing.lg,
+                              CasamaSpacing.md,
+                              CasamaSpacing.lg,
+                              CasamaSpacing.xl,
+                            ),
+                            child: builder(context),
+                          )
+                        : builder(context),
                   ),
                 ],
               ),

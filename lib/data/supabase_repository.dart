@@ -32,7 +32,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   UserProfile _currentUser = const UserProfile(
     id: '',
     displayName: 'Housemate',
-    handle: '@housemate',
   );
   Household _currentHousehold = const Household(
     id: '',
@@ -69,7 +68,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   List<HouseholdNotificationItem> _notifications = [];
   NotificationPreferences _notificationPreferences =
       const NotificationPreferences();
-  final List<HouseholdInvitation> _invitations = [];
   static const Duration quickSnapReactionDebounce = Duration(
     milliseconds: 1200,
   );
@@ -81,8 +79,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   final Map<String, Timer> _reactionFlushTimers = {};
   final Set<String> _flushingSnapIds = {};
   final Map<String, Future<void>> _inFlightFlushFutures = {};
-  List<UserProfile> _cachedUserSearch = [];
-  String _lastSearchQuery = '';
   RepositoryActionError? _pendingError;
 
   SupabaseRepository(this._client) {
@@ -268,9 +264,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       _notificationPreferences;
 
   @override
-  List<HouseholdInvitation> get invitations => List.unmodifiable(_invitations);
-
-  @override
   List<QuickSnap> get quickSnaps => List.unmodifiable(_quickSnaps);
 
   @override
@@ -327,42 +320,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     return _resolveMemberByKey(contactKey) != null;
   }
 
-  @override
-  List<UserProfile> searchUsers(String query) {
-    final clean = query.trim();
-    if (clean.isEmpty) {
-      _lastSearchQuery = '';
-      _cachedUserSearch = [];
-      return const [];
-    }
-    if (clean != _lastSearchQuery && _client != null && isAuthenticated) {
-      _lastSearchQuery = clean;
-      unawaited(_refreshUserSearch(clean));
-    }
-    return List.unmodifiable(_cachedUserSearch);
-  }
-
-  Future<void> _refreshUserSearch(String query) async {
-    final client = _client;
-    if (client == null) return;
-    try {
-      final memberIds = _members.map((m) => m.profile.id).toSet();
-      final res = await client
-          .from('profiles')
-          .select()
-          .or('handle.ilike.%$query%,display_name.ilike.%$query%')
-          .limit(20);
-      final parsed = (res as List<dynamic>)
-          .map((e) => UserProfile.fromJson(e as Map<String, dynamic>))
-          .where((p) => !memberIds.contains(p.id) && p.id != _currentUser.id)
-          .toList();
-      _cachedUserSearch = parsed;
-      _safeNotify();
-    } catch (e) {
-      debugPrint('Supabase searchUsers error: $e');
-    }
-  }
-
   // =========================================================================
   // AUTH, SESSION & PROFILE
   // =========================================================================
@@ -404,14 +361,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final client = _requireClient();
     final trimmedEmail = email.trim();
     final prefix = trimmedEmail.split('@').first;
-    final defaultHandle = UserProfile.buildFallbackHandle(
-      preferred: prefix,
-      userId: _uuid.v4(),
-    );
     final res = await client.auth.signUp(
       email: trimmedEmail,
       password: password,
-      data: {'full_name': prefix, 'handle': defaultHandle},
+      data: {'full_name': prefix},
     );
     final user = res.user;
     if (res.session != null && user != null) {
@@ -427,19 +380,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     await client.auth.resend(
       type: OtpType.signup,
       email: email.trim(),
-    );
-  }
-
-  @override
-  Future<void> signInWithDemoAccount() async {
-    if (!SupabaseConfig.isConfigured || !SupabaseConfig.hasDemoCredentials) {
-      throw StateError(
-        'Demo login is not configured. Set SUPABASE_DEMO_EMAIL and SUPABASE_DEMO_PASSWORD via --dart-define or .env.',
-      );
-    }
-    await signInWithPassword(
-      email: SupabaseConfig.demoEmail,
-      password: SupabaseConfig.demoPassword,
     );
   }
 
@@ -466,11 +406,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         }),
       );
     } else {
-      unawaited(
-        signInWithDemoAccount().catchError((Object e) {
-          _recordError(e.toString(), error: e);
-        }),
-      );
+      _recordError('Email and password are required to sign in.');
     }
   }
 
@@ -547,7 +483,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     _inFlightFlushFutures.clear();
     _serverQuickSnaps = [];
     _quickSnaps = [];
-    _cachedUserSearch = [];
   }
 
   void _upsertUserHousehold(Household household, {bool moveToFront = false}) {
@@ -634,7 +569,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     _currentUser = const UserProfile(
       id: '',
       displayName: 'Housemate',
-      handle: '@housemate',
     );
     _currentHousehold = const Household(
       id: '',
@@ -664,41 +598,24 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         ? (authUser.userMetadata!['full_name'] as String).trim()
         : emailPrefix;
 
+    final nameParts = UserProfile.splitFullName(displayName);
     final payload = <String, dynamic>{
       'id': authUser.id,
       'display_name': displayName,
+      'first_name': nameParts.firstName.isNotEmpty ? nameParts.firstName : null,
+      'last_name': nameParts.lastName.isNotEmpty ? nameParts.lastName : null,
       'full_name': displayName,
-      'handle': UserProfile.buildFallbackHandle(
-        preferred: emailPrefix,
-        userId: authUser.id,
-      ),
       'avatar_url': authUser.userMetadata?['avatar_url'],
       'has_consented_terms': false,
       'has_completed_onboarding': false,
     };
 
-    try {
-      final inserted = await client
-          .from('profiles')
-          .upsert(payload, onConflict: 'id')
-          .select()
-          .single();
-      return UserProfile.fromJson(inserted);
-    } on PostgrestException catch (e) {
-      if (e.code == '23505') {
-        payload['handle'] = UserProfile.buildCollisionRetryHandle(
-          baseHandle: payload['handle'] as String,
-          randomSuffix: _uuid.v4().substring(0, 4),
-        );
-        final inserted = await client
-            .from('profiles')
-            .upsert(payload, onConflict: 'id')
-            .select()
-            .single();
-        return UserProfile.fromJson(inserted);
-      }
-      rethrow;
-    }
+    final inserted = await client
+        .from('profiles')
+        .upsert(payload, onConflict: 'id')
+        .select()
+        .single();
+    return UserProfile.fromJson(inserted);
   }
 
   Future<void> _hydrateAuthenticatedUser(User authUser) {
@@ -761,9 +678,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @override
-  void updateProfile({
+  Future<String?> updateProfile({
     String? displayName,
-    String? handle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -774,20 +692,19 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     bool clearNickname = false,
     bool clearBirthday = false,
   }) {
-    unawaited(
-      _updateProfileAsync(
-        displayName: displayName,
-        handle: handle,
-        fullName: fullName,
-        nickname: nickname,
-        birthday: birthday,
-        avatarUrl: avatarUrl,
-        hasConsentedTerms: hasConsentedTerms,
-        hasCompletedOnboarding: hasCompletedOnboarding,
-        clearAvatar: clearAvatar,
-        clearNickname: clearNickname,
-        clearBirthday: clearBirthday,
-      ),
+    return _updateProfileAsync(
+      displayName: displayName,
+      firstName: firstName,
+      lastName: lastName,
+      fullName: fullName,
+      nickname: nickname,
+      birthday: birthday,
+      avatarUrl: avatarUrl,
+      hasConsentedTerms: hasConsentedTerms,
+      hasCompletedOnboarding: hasCompletedOnboarding,
+      clearAvatar: clearAvatar,
+      clearNickname: clearNickname,
+      clearBirthday: clearBirthday,
     );
   }
 
@@ -805,10 +722,20 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @visibleForTesting
+  static bool isDuplicateNicknameException(Object error) {
+    if (error is! PostgrestException || error.code != '23505') return false;
+    final combined =
+        '${error.message} ${error.details ?? ''} ${error.hint ?? ''}'
+            .toLowerCase();
+    return combined.contains('uq_profiles_nickname_lower') ||
+        combined.contains('nickname');
+  }
+
+  @visibleForTesting
   static Map<String, dynamic> buildProfileUpdateMap({
     required String displayName,
-    String? explicitHandle,
-    String? existingHandle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -816,19 +743,28 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required bool hasConsentedTerms,
     required bool hasCompletedOnboarding,
   }) {
-    final trimmedExplicit = explicitHandle?.trim();
-    final trimmedExisting = existingHandle?.trim();
-    final resolvedHandle =
-        (trimmedExplicit != null && trimmedExplicit.isNotEmpty)
-            ? trimmedExplicit
-            : (trimmedExisting != null && trimmedExisting.isNotEmpty
-                ? trimmedExisting
-                : null);
+    final trimmedFirst = firstName?.trim();
+    final trimmedLast = lastName?.trim();
+    final normalizedFirst =
+        (trimmedFirst != null && trimmedFirst.isNotEmpty) ? trimmedFirst : null;
+    final normalizedLast =
+        (trimmedLast != null && trimmedLast.isNotEmpty) ? trimmedLast : null;
+    final joined = UserProfile.joinFullName(
+      normalizedFirst ?? '',
+      normalizedLast ?? '',
+    );
+    final trimmedFull = fullName?.trim();
+    final effectiveFull = joined.isNotEmpty
+        ? joined
+        : ((trimmedFull != null && trimmedFull.isNotEmpty)
+            ? trimmedFull
+            : null);
 
     return <String, dynamic>{
       'display_name': displayName,
-      'handle': ?resolvedHandle,
-      'full_name': fullName,
+      'first_name': normalizedFirst,
+      'last_name': normalizedLast,
+      'full_name': effectiveFull,
       'nickname': nickname,
       'birthday': UserProfile.formatDateOnly(birthday),
       'avatar_url': avatarUrl,
@@ -837,9 +773,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     };
   }
 
-  Future<void> _updateProfileAsync({
+  Future<String?> _updateProfileAsync({
     String? displayName,
-    String? handle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -851,20 +788,43 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     bool clearBirthday = false,
   }) async {
     final prevUser = _currentUser;
-    final effectiveFullName = fullName ?? _currentUser.fullName;
-    final effectiveDisplayName = displayName ??
-        (fullName != null && fullName.trim().isNotEmpty
-            ? fullName.trim()
+    final String? effectiveFirstName;
+    final String? effectiveLastName;
+    if (firstName != null || lastName != null) {
+      final f = (firstName ?? _currentUser.firstName ?? '').trim();
+      final l = (lastName ?? _currentUser.lastName ?? '').trim();
+      effectiveFirstName = f.isNotEmpty ? f : null;
+      effectiveLastName = l.isNotEmpty ? l : null;
+    } else if (fullName != null && fullName.trim().isNotEmpty) {
+      final parts = UserProfile.splitFullName(fullName);
+      effectiveFirstName =
+          parts.firstName.isNotEmpty ? parts.firstName : null;
+      effectiveLastName = parts.lastName.isNotEmpty ? parts.lastName : null;
+    } else {
+      effectiveFirstName = _currentUser.firstName;
+      effectiveLastName = _currentUser.lastName;
+    }
+
+    final joinedName = UserProfile.joinFullName(
+      effectiveFirstName ?? '',
+      effectiveLastName ?? '',
+    );
+    final effectiveFullName = joinedName.isNotEmpty
+        ? joinedName
+        : (fullName?.trim().isNotEmpty == true
+            ? fullName!.trim()
+            : _currentUser.fullName);
+    final effectiveDisplayName = displayName?.trim().isNotEmpty == true
+        ? displayName!.trim()
+        : (effectiveFullName != null && effectiveFullName.trim().isNotEmpty
+            ? effectiveFullName.trim()
             : _currentUser.displayName);
+    final trimmedNickname = nickname?.trim();
     final effectiveNickname = clearNickname
         ? null
-        : (nickname ?? _currentUser.nickname);
-    final trimmedExplicitHandle = handle?.trim();
-    final existingHandle = _currentUser.handle.trim();
-    var effectiveHandle =
-        (trimmedExplicitHandle != null && trimmedExplicitHandle.isNotEmpty)
-            ? trimmedExplicitHandle
-            : existingHandle;
+        : ((trimmedNickname != null && trimmedNickname.isNotEmpty)
+            ? trimmedNickname
+            : (nickname != null ? null : _currentUser.nickname));
     final normalizedBirthday = birthday != null
         ? DateTime(birthday.year, birthday.month, birthday.day)
         : null;
@@ -879,24 +839,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final effectiveHasCompletedOnboarding =
         hasCompletedOnboarding ?? _currentUser.hasCompletedOnboarding;
 
-    _currentUser = UserProfile(
-      id: _currentUser.id,
-      displayName: effectiveDisplayName,
-      handle: effectiveHandle,
-      fullName: effectiveFullName,
-      nickname: effectiveNickname,
-      birthday: effectiveBirthday,
-      avatarUrl: effectiveAvatarUrl,
-      hasConsentedTerms: effectiveHasConsentedTerms,
-      hasCompletedOnboarding: effectiveHasCompletedOnboarding,
-    );
-    _syncCurrentUserInMembers(_currentUser);
-    _safeNotify();
-
     final client = _client;
     if (client == null || _currentUser.id.isEmpty) {
       _recordError('Sign in to update your profile.');
-      return;
+      return 'Sign in to update your profile.';
     }
 
     try {
@@ -912,8 +858,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
       final updates = buildProfileUpdateMap(
         displayName: effectiveDisplayName,
-        explicitHandle: trimmedExplicitHandle,
-        existingHandle: existingHandle,
+        firstName: effectiveFirstName,
+        lastName: effectiveLastName,
         fullName: effectiveFullName,
         nickname: effectiveNickname,
         birthday: effectiveBirthday,
@@ -922,37 +868,16 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         hasCompletedOnboarding: effectiveHasCompletedOnboarding,
       );
 
-      try {
-        await client
-            .from('profiles')
-            .update(updates)
-            .eq('id', _currentUser.id);
-      } on PostgrestException catch (e) {
-        final isHandleCollision =
-            e.code == '23505' &&
-            (e.message.contains('profiles_handle_key') ||
-                e.message.contains('handle'));
-        if (!isHandleCollision) rethrow;
-
-        final retryHandle = UserProfile.buildCollisionRetryHandle(
-          baseHandle:
-              (updates['handle'] as String?) ??
-              effectiveNickname ??
-              effectiveDisplayName,
-          randomSuffix: _uuid.v4().substring(0, 4),
-        );
-        updates['handle'] = retryHandle;
-        effectiveHandle = retryHandle;
-        await client
-            .from('profiles')
-            .update(updates)
-            .eq('id', _currentUser.id);
-      }
+      await client
+          .from('profiles')
+          .update(updates)
+          .eq('id', _currentUser.id);
 
       _currentUser = UserProfile(
         id: _currentUser.id,
         displayName: effectiveDisplayName,
-        handle: effectiveHandle,
+        firstName: effectiveFirstName,
+        lastName: effectiveLastName,
         fullName: effectiveFullName,
         nickname: effectiveNickname,
         birthday: effectiveBirthday,
@@ -962,27 +887,27 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       );
       _syncCurrentUserInMembers(_currentUser);
       _safeNotify();
+      return null;
+    } on PostgrestException catch (e) {
+      _currentUser = prevUser;
+      _syncCurrentUserInMembers(prevUser);
+      if (isDuplicateNicknameException(e)) {
+        return CasamaRepository.duplicateNicknameMessage;
+      }
+      debugPrint('SupabaseRepository updateProfile error: $e');
+      return 'Failed to save profile changes. Please try again.';
     } catch (e) {
       _currentUser = prevUser;
       _syncCurrentUserInMembers(prevUser);
-      _recordError('Failed to save profile changes.', error: e);
+      debugPrint('SupabaseRepository updateProfile error: $e');
+      return 'Failed to save profile changes. Please try again.';
     }
   }
 
   @override
   void recordTermsConsent() {
     final prev = _currentUser;
-    _currentUser = UserProfile(
-      id: _currentUser.id,
-      displayName: _currentUser.displayName,
-      handle: _currentUser.handle,
-      fullName: _currentUser.fullName,
-      nickname: _currentUser.nickname,
-      birthday: _currentUser.birthday,
-      avatarUrl: _currentUser.avatarUrl,
-      hasConsentedTerms: true,
-      hasCompletedOnboarding: _currentUser.hasCompletedOnboarding,
-    );
+    _currentUser = _currentUser.copyWith(hasConsentedTerms: true);
     _safeNotify();
 
     final client = _client;
@@ -1003,17 +928,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   @override
   void completeOnboardingTutorial() {
     final prev = _currentUser;
-    _currentUser = UserProfile(
-      id: _currentUser.id,
-      displayName: _currentUser.displayName,
-      handle: _currentUser.handle,
-      fullName: _currentUser.fullName,
-      nickname: _currentUser.nickname,
-      birthday: _currentUser.birthday,
-      avatarUrl: _currentUser.avatarUrl,
-      hasConsentedTerms: _currentUser.hasConsentedTerms,
-      hasCompletedOnboarding: true,
-    );
+    _currentUser = _currentUser.copyWith(hasCompletedOnboarding: true);
     _safeNotify();
 
     final client = _client;
@@ -1234,16 +1149,12 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           .order('created_at', ascending: false)
           .limit(200);
 
-      // 2. Parcels + Availability + Claims
+      // 2. Parcels + Claims
       final parcelsFuture = client
           .from('parcels')
           .select()
           .eq('household_id', householdId)
           .order('expected_arrival', ascending: true);
-      final availFuture = client
-          .from('parcel_availability')
-          .select()
-          .eq('household_id', householdId);
       final claimsFuture = client
           .from('parcel_claims')
           .select()
@@ -1307,7 +1218,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         membersFuture,
         presenceFuture,
         parcelsFuture,
-        availFuture,
         claimsFuture,
         tasksFuture,
         rouletteFuture,
@@ -1322,16 +1232,15 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       final membersRes = results[0] as List<dynamic>;
       final presenceRes = results[1] as List<dynamic>;
       final parcelsRes = results[2] as List<dynamic>;
-      final availRes = results[3] as List<dynamic>;
-      final claimsRes = results[4] as List<dynamic>;
-      final tasksRes = results[5] as List<dynamic>;
-      final rouletteRes = results[6] as List<dynamic>;
-      final lostRes = results[7] as List<dynamic>;
-      final foundRes = results[8] as List<dynamic>;
-      final snapsRes = results[9] as List<dynamic>;
-      final pointsRes = results[10] as List<dynamic>;
-      final notifRes = results[11] as List<dynamic>;
-      final convRes = results[12] as List<dynamic>;
+      final claimsRes = results[3] as List<dynamic>;
+      final tasksRes = results[4] as List<dynamic>;
+      final rouletteRes = results[5] as List<dynamic>;
+      final lostRes = results[6] as List<dynamic>;
+      final foundRes = results[7] as List<dynamic>;
+      final snapsRes = results[8] as List<dynamic>;
+      final pointsRes = results[9] as List<dynamic>;
+      final notifRes = results[10] as List<dynamic>;
+      final convRes = results[11] as List<dynamic>;
 
       // Build profile lookup
       final profileMap = <String, UserProfile>{};
@@ -1366,22 +1275,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       _currentHousehold = _currentHousehold.copyWith(memberCount: _members.length);
       _upsertUserHousehold(_currentHousehold);
 
-      // Parcels + Availability + Claims
-      final availByParcel = <String, List<String>>{};
-      final unavailCountByParcel = <String, int>{};
-      for (final row in availRes) {
-        final map = row as Map<String, dynamic>;
-        final pid = map['parcel_id'] as String? ?? '';
-        final uid = map['user_id'] as String? ?? '';
-        final isAvail = map['is_available'] as bool? ?? false;
-        if (pid.isEmpty) continue;
-        if (isAvail) {
-          final name = profileMap[uid]?.effectiveGreetingName ?? 'Housemate';
-          availByParcel.putIfAbsent(pid, () => []).add(name);
-        } else {
-          unavailCountByParcel[pid] = (unavailCountByParcel[pid] ?? 0) + 1;
-        }
-      }
+      // Parcels + Claims
       final claimByParcel = <String, Map<String, dynamic>>{};
       for (final row in claimsRes) {
         final map = row as Map<String, dynamic>;
@@ -1396,10 +1290,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         final receiverId = claim?['receiver_id'] as String?;
         map['buyer_name'] =
             profileMap[buyerId]?.preferredName ?? 'Housemate';
-        map['available_members'] = availByParcel[pid] ?? const <String>[];
-        map['is_all_unavailable'] =
-            _members.isNotEmpty &&
-            (unavailCountByParcel[pid] ?? 0) >= _members.length;
         map['cod_settled'] = claim?['settled'] as bool? ?? false;
         map['claimed_by_id'] = receiverId;
         map['claimed_by_name'] = receiverId != null
@@ -1504,7 +1394,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         return LeaderboardStanding(
           userId: p.id,
           displayName: p.preferredName,
-          handle: p.handle,
           avatarUrl: p.avatarUrl,
           points: pointsByUser[p.id] ?? 0,
           isCurrentUser: p.id == userId,
@@ -1811,7 +1700,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       'household_members',
       'presence_events',
       'parcels',
-      'parcel_availability',
       'parcel_claims',
       'maintenance_tasks',
       'chore_roulette_records',
@@ -2114,12 +2002,14 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       throw ArgumentError('COD parcels require an amount greater than 0.');
     }
 
+    final normalizedNotes =
+        notes == null ? current.notes : (notes.trim().isEmpty ? null : notes.trim());
     final updates = <String, dynamic>{
       'courier': courier ?? current.courier,
       'expected_arrival': toSupabaseUtcIso(arrival ?? current.expectedArrival),
       'payment_type': nextPay == ParcelPaymentType.cod ? 'cod' : 'paid',
       'cod_amount': nextCod,
-      'notes': notes ?? current.notes,
+      'notes': normalizedNotes,
       'status': (status ?? current.status).name,
     };
     await client.from('parcels').update(updates).eq('id', parcelId);
@@ -2133,38 +2023,29 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @override
-  void toggleParcelAvailability(String parcelId) {
-    unawaited(_toggleParcelAvailabilityAsync(parcelId));
-  }
+  Future<void> deleteParcel(String parcelId) async {
+    final client = _requireClient();
+    final prevParcels = List<ParcelItem>.from(_parcels);
+    final prevNotifications = List<HouseholdNotificationItem>.from(_notifications);
 
-  Future<void> _toggleParcelAvailabilityAsync(String parcelId) async {
-    final client = _client;
-    if (client == null || _currentHousehold.id.isEmpty || _currentUser.id.isEmpty) {
-      _recordError('Join a household to update availability.');
-      return;
-    }
-
-    final idx = _parcels.indexWhere((p) => p.id == parcelId);
-    final myName = _currentUser.effectiveGreetingName;
-    final currentlyAvailable = idx != -1 &&
-        _parcels[idx].availableMemberNames.contains(myName);
-    final nextAvailable = !currentlyAvailable;
+    _parcels = _parcels.where((p) => p.id != parcelId).toList();
+    _notifications = _notifications
+        .where(
+          (n) => !n.matchesEntity(entityType: 'parcel', entityId: parcelId),
+        )
+        .toList();
+    _safeNotify();
 
     try {
-      await client.from('parcel_availability').upsert(
-        {
-          'household_id': _currentHousehold.id,
-          'parcel_id': parcelId,
-          'user_id': _currentUser.id,
-          'is_available': nextAvailable,
-          'updated_at': nowSupabaseUtcIso(),
-        },
-        onConflict: 'parcel_id,user_id',
-      );
+      await client.from('parcels').delete().eq('id', parcelId);
       await _fetchHouseholdData();
       _safeNotify();
     } catch (e) {
-      _recordError('Could not update parcel availability.', error: e);
+      _parcels = prevParcels;
+      _notifications = prevNotifications;
+      _recordError('Could not delete parcel.', error: e);
+      _safeNotify();
+      rethrow;
     }
   }
 
@@ -2210,15 +2091,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           .update({'status': 'received'})
           .eq('id', parcelId);
 
-      if (!isSelfClaim && parcel.buyerId.isNotEmpty) {
-        await _awardPoints(
-          userId: _currentUser.id,
-          actionType: 'parcel_received',
-          points: 5,
-          referenceId: parcelId,
-        );
-      }
-
       await _fetchHouseholdData();
       _safeNotify();
     } catch (e) {
@@ -2233,13 +2105,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   @override
   Future<void> settleParcelClaim(String parcelId) async {
     final client = _requireClient();
-    await client
-        .from('parcel_claims')
-        .update({
-          'settled': true,
-          'settled_at': nowSupabaseUtcIso(),
-        })
-        .eq('parcel_id', parcelId);
+    await client.rpc(
+      'settle_parcel_claim',
+      params: {'p_parcel_id': parcelId},
+    );
     await _fetchHouseholdData();
     _safeNotify();
   }
@@ -2254,7 +2123,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required TaskCategory category,
     required TaskUrgency urgency,
     String? description,
-    DateTime? dueDate,
   }) {
     unawaited(
       _addTaskAsync(
@@ -2262,7 +2130,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         category: category,
         urgency: urgency,
         description: description,
-        dueDate: dueDate,
       ),
     );
   }
@@ -2272,7 +2139,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required TaskCategory category,
     required TaskUrgency urgency,
     String? description,
-    DateTime? dueDate,
   }) async {
     final client = _client;
     if (client == null || _currentHousehold.id.isEmpty || _currentUser.id.isEmpty) {
@@ -2293,7 +2159,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       createdBy: _currentUser.id,
       createdByName: _currentUser.preferredName,
       createdAt: DateTime.now(),
-      dueDate: dueDate,
     );
 
     final prev = List<MaintenanceTask>.from(_tasks);
@@ -2309,7 +2174,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         'category': category.dbValue,
         'urgency': urgency.name,
         'status': 'open',
-        'due_date': toSupabaseUtcIsoOrNull(dueDate),
         'created_by': _currentUser.id,
       });
     } catch (e) {
@@ -2405,6 +2269,36 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       _tasks = prev;
       _rouletteRecords = prevRoulette;
       _recordError('Could not update task.', error: e);
+    }
+  }
+
+  @override
+  Future<void> deleteTask(String taskId) async {
+    final client = _requireClient();
+    final prevTasks = List<MaintenanceTask>.from(_tasks);
+    final prevRoulette = List<ChoreRouletteRecord>.from(_rouletteRecords);
+    final prevNotifications = List<HouseholdNotificationItem>.from(_notifications);
+
+    _tasks = _tasks.where((t) => t.id != taskId).toList();
+    _rouletteRecords = _rouletteRecords
+        .where((r) => r.taskId != taskId)
+        .toList();
+    _notifications = _notifications
+        .where((n) => !n.matchesEntity(entityType: 'task', entityId: taskId))
+        .toList();
+    _safeNotify();
+
+    try {
+      await client.from('maintenance_tasks').delete().eq('id', taskId);
+      await _fetchHouseholdData();
+      _safeNotify();
+    } catch (e) {
+      _tasks = prevTasks;
+      _rouletteRecords = prevRoulette;
+      _notifications = prevNotifications;
+      _recordError('Could not delete task.', error: e);
+      _safeNotify();
+      rethrow;
     }
   }
 
@@ -2734,6 +2628,70 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       const msg = 'Could not claim this found item.';
       _recordError(msg, error: e);
       return msg;
+    }
+  }
+
+  @override
+  Future<void> deleteLostItem(String lostItemId) async {
+    final client = _requireClient();
+    final prevItems = List<LostFoundItem>.from(_items);
+    final prevNotifications = List<HouseholdNotificationItem>.from(_notifications);
+    final linkedIds = _items
+        .where((i) => i.lostItemId == lostItemId)
+        .map((i) => i.id)
+        .toSet();
+
+    _items = _items
+        .where((i) => i.id != lostItemId && i.lostItemId != lostItemId)
+        .toList();
+    _notifications = _notifications
+        .where(
+          (n) =>
+              !n.matchesEntity(entityType: 'lost_item', entityId: lostItemId) &&
+              !linkedIds.any(
+                (fid) => n.matchesEntity(entityType: 'found_item', entityId: fid),
+              ),
+        )
+        .toList();
+    _safeNotify();
+
+    try {
+      await client.from('lost_items').delete().eq('id', lostItemId);
+      await _fetchHouseholdData();
+      _safeNotify();
+    } catch (e) {
+      _items = prevItems;
+      _notifications = prevNotifications;
+      _recordError('Could not delete item.', error: e);
+      _safeNotify();
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteFoundItem(String foundItemId) async {
+    final client = _requireClient();
+    final prevItems = List<LostFoundItem>.from(_items);
+    final prevNotifications = List<HouseholdNotificationItem>.from(_notifications);
+
+    _items = _items.where((i) => i.id != foundItemId).toList();
+    _notifications = _notifications
+        .where(
+          (n) => !n.matchesEntity(entityType: 'found_item', entityId: foundItemId),
+        )
+        .toList();
+    _safeNotify();
+
+    try {
+      await client.from('found_items').delete().eq('id', foundItemId);
+      await _fetchHouseholdData();
+      _safeNotify();
+    } catch (e) {
+      _items = prevItems;
+      _notifications = prevNotifications;
+      _recordError('Could not delete item.', error: e);
+      _safeNotify();
+      rethrow;
     }
   }
 
@@ -3170,13 +3128,29 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final client = _client;
     if (client != null && _currentUser.id.isNotEmpty) {
       unawaited(
-        client
-            .from('notifications')
-            .update({'read_at': toSupabaseUtcIso(now)})
-            .eq('id', notificationId)
-            .eq('user_id', _currentUser.id)
-            .isFilter('read_at', null),
+        _markNotificationAsReadAsync(
+          client: client,
+          notificationId: notificationId,
+          readAt: now,
+        ),
       );
+    }
+  }
+
+  Future<void> _markNotificationAsReadAsync({
+    required SupabaseClient client,
+    required String notificationId,
+    required DateTime readAt,
+  }) async {
+    try {
+      await client
+          .from('notifications')
+          .update({'read_at': toSupabaseUtcIso(readAt)})
+          .eq('id', notificationId)
+          .eq('user_id', _currentUser.id)
+          .isFilter('read_at', null);
+    } catch (e, st) {
+      debugPrint('Supabase markNotificationAsRead error: $e\n$st');
     }
   }
 
@@ -3191,13 +3165,24 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final client = _client;
     if (client != null && _currentUser.id.isNotEmpty && _currentHousehold.id.isNotEmpty) {
       unawaited(
-        client
-            .from('notifications')
-            .update({'read_at': toSupabaseUtcIso(now)})
-            .eq('household_id', _currentHousehold.id)
-            .eq('user_id', _currentUser.id)
-            .isFilter('read_at', null),
+        _markAllNotificationsAsReadAsync(client: client, readAt: now),
       );
+    }
+  }
+
+  Future<void> _markAllNotificationsAsReadAsync({
+    required SupabaseClient client,
+    required DateTime readAt,
+  }) async {
+    try {
+      await client
+          .from('notifications')
+          .update({'read_at': toSupabaseUtcIso(readAt)})
+          .eq('household_id', _currentHousehold.id)
+          .eq('user_id', _currentUser.id)
+          .isFilter('read_at', null);
+    } catch (e, st) {
+      debugPrint('Supabase markAllNotificationsAsRead error: $e\n$st');
     }
   }
 
@@ -3929,23 +3914,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     }
   }
 
-  // =========================================================================
-  // INVITATIONS
-  // =========================================================================
-
-  @override
-  bool sendInvitation({
-    required String inviteeEmailOrHandle,
-    String? inviteeName,
-  }) =>
-      false;
-
-  @override
-  bool acceptInvitation(String invitationId) => false;
-
-  @override
-  bool declineInvitation(String invitationId) => false;
-
   @override
   void resetMembersForNewUserTest() {}
 
@@ -3959,7 +3927,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     for (final m in _members) {
       final p = m.profile;
       if (p.id.toLowerCase() == clean ||
-          p.handle.toLowerCase() == clean ||
           p.preferredName.toLowerCase() == clean ||
           (p.nickname?.trim().toLowerCase() == clean) ||
           (p.fullName?.trim().toLowerCase() == clean) ||

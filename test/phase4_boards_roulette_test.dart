@@ -83,7 +83,7 @@ void main() {
       expect(find.text('Lost'), findsOneWidget);
       expect(find.text('Found'), findsOneWidget);
       expect(find.text('Resolved'), findsOneWidget);
-      expect(find.byType(CasamaLostFoundIcon), findsNWidgets(2));
+      expect(find.byType(CasamaLostFoundIcon), findsNWidgets(3));
       expect(find.byIcon(Icons.sell_outlined), findsNothing);
       expectHeaderOrder('Lost & Found');
       expect(tester.takeException(), isNull);
@@ -268,21 +268,21 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_spun_by_pill_t1')),
-          matching: find.textContaining('Spun by You', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Spun by You')),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_chosen_pill_t1')),
-          matching: find.textContaining('Chosen: Maria', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Chosen: Maria')),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_chosen_pill_t2')),
-          matching: find.textContaining('Chosen: You', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Chosen: You')),
         ),
         findsOneWidget,
       );
@@ -298,14 +298,14 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_spun_by_pill_t1')),
-          matching: find.textContaining('Spun by JP', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Spun by JP')),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_chosen_pill_t1')),
-          matching: find.textContaining('Chosen: You', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Chosen: You')),
         ),
         findsOneWidget,
       );
@@ -470,13 +470,13 @@ void main() {
   );
 
   testWidgets(
-    'ParcelsBoardView auto-settles own parcel (0 points -> History) and keeps housemate claim unsettled (+5 points -> History after settle)',
+    'ParcelsBoardView auto-settles own parcel (0 points -> History) and keeps housemate claim unsettled (0 pts on claim, +5 pts -> History after settle)',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final repo = MockRepository()..login();
       repo.addParcel(
         courier: 'LBC',
-        arrival: DateTime.now(),
+        arrival: DateTime.now().subtract(const Duration(minutes: 5)),
         paymentType: ParcelPaymentType.cod,
         codAmount: 420,
         notes: 'Own parcel test',
@@ -494,41 +494,256 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 3 subtabs exist
+      // 4 subtabs exist
       expect(find.text('My Parcels'), findsOneWidget);
+      expect(find.text('Today'), findsOneWidget);
       expect(find.text('Upcoming'), findsOneWidget);
       expect(find.text('History'), findsOneWidget);
 
-      // Claim own parcel from Upcoming -> 0 points awarded, no celebration dialog, auto-settled
+      // Expand and claim own parcel (LBC) from Today -> 0 points awarded, no celebration dialog, auto-settled
+      await tester.tap(find.text('LBC'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('I Got It').first);
       await tester.pumpAndSettle();
       expect(find.text('+5 Good Kasama Points!'), findsNothing);
       expect(repo.kasamaPoints, initialPoints);
       expect(find.text('Own parcel test'), findsNothing);
 
-      // Claim housemate parcel ('p1') from Upcoming -> +5 points awarded, stays unsettled in Upcoming
+      // Expand and claim housemate parcel ('p1', J&T Express) from Today -> 0 points immediately, no celebration dialog, stays unsettled in Today
+      await tester.tap(find.text('J&T Express'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('I Got It').first);
       await tester.pumpAndSettle();
-      expect(find.text('+5 Good Kasama Points!'), findsOneWidget);
-      expect(repo.kasamaPoints, initialPoints + 5);
-      await tester.tap(find.text('Awesome!'));
-      await tester.pumpAndSettle();
+      expect(find.text('+5 Good Kasama Points!'), findsNothing);
+      expect(repo.kasamaPoints, initialPoints);
 
+      // Re-expand p1 to verify Claimed by ... • Unsettled pill
+      await tester.tap(find.text('J&T Express'));
+      await tester.pumpAndSettle();
       expect(
-        find.textContaining('Claimed by ${repo.currentUser.preferredName} • Unsettled'),
+        find.bySemanticsLabel(RegExp('Claimed by You • Unsettled')),
         findsOneWidget,
       );
 
       // Switch to History -> own parcel is already Settled; housemate parcel not there yet
       await tester.tap(find.text('History'));
       await tester.pumpAndSettle();
-      expect(find.text('Own parcel test'), findsOneWidget);
+      expect(find.text('LBC'), findsOneWidget);
       expect(find.text('Settled'), findsOneWidget);
+      await tester.tap(find.text('LBC'));
+      await tester.pumpAndSettle();
+      expect(find.text('Own parcel test'), findsOneWidget);
 
-      // Settle housemate parcel -> appears in History as well
+      // Settle housemate parcel -> awards +5 pts and appears in History as well
       await repo.settleParcelClaim('p1');
       await tester.pumpAndSettle();
-      expect(find.text('Settled'), findsNWidgets(2));
+      expect(repo.kasamaPoints, initialPoints + 5);
+      expect(find.text('Settled'), findsAtLeastNWidgets(2));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'BoardsScreen full-page scroll: hero visible & sticky pill bar hidden at offset 0, sticky bar appears when scrolled past hero and hides when scrolled back up',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final repo = MockRepository()..login();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp(
+            theme: CasamaTheme.lightTheme,
+            home: const BoardsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Initial load: full hero visible, sticky bar hidden & ignoring
+      expect(find.byType(CasamaWaveHeader), findsOneWidget);
+      final stickyFinder = find.byKey(const Key('boards_sticky_pill_bar'));
+      expect(stickyFinder, findsOneWidget);
+
+      final offstageWidget = tester.widget<Offstage>(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.byType(Offstage),
+        ),
+      );
+      expect(offstageWidget.offstage, isTrue);
+
+      final initialOpacity = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.byType(AnimatedOpacity, skipOffstage: false),
+          skipOffstage: false,
+        ),
+      );
+      expect(initialOpacity.opacity, 0.0);
+
+      final initialIgnore = tester.widget<IgnorePointer>(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.byType(IgnorePointer, skipOffstage: false),
+          skipOffstage: false,
+        ).first,
+      );
+      expect(initialIgnore.ignoring, isTrue);
+
+      // Summary card is visible and below the hero header (not clipped at top)
+      final summaryFinder = find.byType(CasamaPeekingSummaryBar);
+      expect(summaryFinder, findsOneWidget);
+      expect(
+        tester.getTopLeft(summaryFinder).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(find.byType(CasamaWaveHeader)).dy - 4),
+      );
+
+      // 2. Scroll down past hero header
+      await tester.drag(find.byType(NestedScrollView), const Offset(0, -320));
+      await tester.pumpAndSettle();
+
+      final shownOpacity = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.byType(AnimatedOpacity),
+        ),
+      );
+      expect(shownOpacity.opacity, 1.0);
+
+      final shownIgnore = tester.widget<IgnorePointer>(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.byType(IgnorePointer),
+        ).first,
+      );
+      expect(shownIgnore.ignoring, isFalse);
+
+      // Scroll back up -> sticky bar hides again
+      await tester.drag(find.byType(NestedScrollView), const Offset(0, 320));
+      await tester.pumpAndSettle();
+
+      final hiddenAgainOpacity = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.byType(AnimatedOpacity, skipOffstage: false),
+          skipOffstage: false,
+        ),
+      );
+      expect(hiddenAgainOpacity.opacity, 0.0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'BoardsScreen sticky pill bar switches active board and updates background watermark icon',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final repo = MockRepository()..login();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MaterialApp(
+            theme: CasamaTheme.lightTheme,
+            home: const BoardsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Initially on Parcels -> watermark_0
+      expect(find.byKey(const ValueKey('watermark_0')), findsOneWidget);
+
+      // Scroll down to reveal sticky pill bar
+      await tester.drag(find.byType(NestedScrollView), const Offset(0, -320));
+      await tester.pumpAndSettle();
+
+      final stickyFinder = find.byKey(const Key('boards_sticky_pill_bar'));
+      await tester.tap(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.bySemanticsLabel('Tasks board'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add task'), findsOneWidget);
+      expect(find.byKey(const ValueKey('watermark_1')), findsOneWidget);
+
+      await tester.tap(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.bySemanticsLabel('Items board'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Report item'), findsOneWidget);
+      expect(find.byKey(const ValueKey('watermark_2')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'BoardsScreen sticky pill bar & watermark work cleanly in Dark theme with reduced motion',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final repo = MockRepository()..login();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(390, 844),
+              disableAnimations: true,
+            ),
+            child: MaterialApp(
+              theme: CasamaTheme.lightTheme,
+              darkTheme: CasamaTheme.darkTheme,
+              themeMode: ThemeMode.dark,
+              home: const BoardsScreen(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.byType(NestedScrollView), const Offset(0, -320));
+      await tester.pumpAndSettle();
+
+      final stickyFinder = find.byKey(const Key('boards_sticky_pill_bar'));
+      final opacity = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.byType(AnimatedOpacity),
+        ),
+      );
+      expect(opacity.opacity, 1.0);
+      expect(opacity.duration, Duration.zero);
+
+      await tester.tap(
+        find.descendant(
+          of: stickyFinder,
+          matching: find.bySemanticsLabel('Tasks board'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('watermark_1')), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

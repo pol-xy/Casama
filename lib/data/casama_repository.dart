@@ -7,6 +7,9 @@ import 'models.dart';
 /// Implemented by [SupabaseRepository] (live cloud runtime)
 /// and [MockRepository] (explicit test overrides).
 abstract class CasamaRepository extends ChangeNotifier {
+  static const String duplicateNicknameMessage =
+      'That nickname is already taken. Please choose another.';
+
   // Authentication & Household
   bool get isAuthenticated;
   bool get hasActiveHousehold;
@@ -34,7 +37,6 @@ abstract class CasamaRepository extends ChangeNotifier {
   List<LeaderboardStanding> get leaderboardStandings;
   List<HouseholdNotificationItem> get notifications;
   NotificationPreferences get notificationPreferences;
-  List<HouseholdInvitation> get invitations;
   List<QuickSnap> get quickSnaps;
   QuickSnap? get latestQuickSnap;
   int get quickSnapStreak;
@@ -46,7 +48,6 @@ abstract class CasamaRepository extends ChangeNotifier {
   List<ChatMessage> getDirectMessages(String contactKey);
   int getDirectUnreadCount(String contactKey);
   bool isHousemateAuthorized(String contactKey);
-  List<UserProfile> searchUsers(String query);
 
   // Auth & Profile operations
   Future<void> restoreSession();
@@ -59,15 +60,15 @@ abstract class CasamaRepository extends ChangeNotifier {
     required String password,
   });
   Future<void> resendSignupVerificationEmail(String email);
-  Future<void> signInWithDemoAccount();
   Future<void> signOut();
 
   void login({String? email, String? password});
   void register({required String email, required String password});
   void logout();
-  void updateProfile({
+  Future<String?> updateProfile({
     String? displayName,
-    String? handle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -116,7 +117,7 @@ abstract class CasamaRepository extends ChangeNotifier {
   });
   Future<void> cancelParcel(String parcelId);
   Future<void> settleParcelClaim(String parcelId);
-  void toggleParcelAvailability(String parcelId);
+  Future<void> deleteParcel(String parcelId);
 
   // Maintenance & Tasks
   void completeTask(String taskId);
@@ -126,8 +127,8 @@ abstract class CasamaRepository extends ChangeNotifier {
     required TaskCategory category,
     required TaskUrgency urgency,
     String? description,
-    DateTime? dueDate,
   });
+  Future<void> deleteTask(String taskId);
 
   // Task Roulette
   Future<ChoreRouletteRecord> spinTaskRoulette(
@@ -156,6 +157,8 @@ abstract class CasamaRepository extends ChangeNotifier {
   Future<String?> rejectLostItemFind(String foundItemId);
   Future<String?> resolveOwnLostItem(String lostItemId);
   Future<String?> claimStandaloneFoundItem(String foundItemId);
+  Future<void> deleteLostItem(String lostItemId);
+  Future<void> deleteFoundItem(String foundItemId);
 
   // Chat & Messaging
   void markGroupChatAsRead();
@@ -220,13 +223,7 @@ abstract class CasamaRepository extends ChangeNotifier {
   Future<void> updateHousematesAgendaStatus(String invitationId, String status);
   Future<void> deleteHousematesAgendaInvitation(String invitationId);
 
-  // Household Invitations
-  bool sendInvitation({
-    required String inviteeEmailOrHandle,
-    String? inviteeName,
-  });
-  bool acceptInvitation(String invitationId);
-  bool declineInvitation(String invitationId);
+  // Household Management
   void resetMembersForNewUserTest();
 
   // QuickSnap Locket
@@ -270,5 +267,19 @@ extension CasamaRepositoryNameX on CasamaRepository {
       return fb;
     }
     return 'Housemate';
+  }
+
+  /// Resolves a housemate's live avatar URL by [userId] from [currentUser]
+  /// and active [members]. Returns `null` if not found.
+  String? resolveHousemateAvatarUrl(String? userId) {
+    final cleanId = userId?.trim() ?? '';
+    if (cleanId.isEmpty) return null;
+    if (cleanId == currentUser.id) return currentUser.avatarUrl;
+    for (final member in members) {
+      if (member.profile.id == cleanId) {
+        return member.profile.avatarUrl;
+      }
+    }
+    return null;
   }
 }

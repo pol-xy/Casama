@@ -6,6 +6,7 @@ import '../../../core/constants/colors.dart';
 import '../../../core/constants/dimensions.dart';
 import '../../../core/motion/casama_motion.dart';
 import '../../../shared/widgets/cas_mascot_view.dart';
+import '../../../shared/widgets/casama_wave_background.dart';
 import '../../../shared/widgets/casama_wave_header.dart';
 
 /// Shared `starting.html` split-tone Forest-Teal-to-Warm-Cream wave header with
@@ -72,7 +73,8 @@ class CasamaAuthShell extends StatelessWidget {
                             deep: pal.headerDeep,
                             mid: pal.headerMid,
                             bottomFill: pal.authScaffoldBg,
-                            ornament: pal.headerOrnament,
+                            safeTop: topInset,
+                            isDark: context.isDark,
                             flipWave: isLeftMascot,
                           ),
                         ),
@@ -248,14 +250,16 @@ class _AuthWavePainter extends CustomPainter {
   final Color deep;
   final Color mid;
   final Color bottomFill;
-  final Color ornament;
+  final double safeTop;
+  final bool isDark;
   final bool flipWave;
 
   const _AuthWavePainter({
     required this.deep,
     required this.mid,
     required this.bottomFill,
-    required this.ornament,
+    required this.safeTop,
+    required this.isDark,
     this.flipWave = false,
   });
 
@@ -302,18 +306,15 @@ class _AuthWavePainter extends CustomPainter {
       ..close();
     canvas.drawPath(frontWave, Paint()..color = deep);
 
-    // Delicate Warm Ochre geometric rings
-    final ringCenter = Offset(w - 46, 52);
-    final ringPaint = Paint()
-      ..color = ornament
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawCircle(ringCenter, 22, ringPaint);
-    canvas.drawCircle(
-      ringCenter + const Offset(-18, 16),
-      3,
-      Paint()..color = ornament,
+    // Lighter-teal concentric rings clipped inside the primary teal wave
+    canvas.save();
+    canvas.clipPath(frontWave);
+    CasamaHeaderRings.paint(
+      canvas,
+      Offset(w - 40, safeTop + 34),
+      CasamaHeaderRings.paintsFor(isDark: isDark),
     );
+    canvas.restore();
   }
 
   @override
@@ -321,7 +322,8 @@ class _AuthWavePainter extends CustomPainter {
     return oldDelegate.deep != deep ||
         oldDelegate.mid != mid ||
         oldDelegate.bottomFill != bottomFill ||
-        oldDelegate.ornament != ornament ||
+        oldDelegate.safeTop != safeTop ||
+        oldDelegate.isDark != isDark ||
         oldDelegate.flipWave != flipWave;
   }
 }

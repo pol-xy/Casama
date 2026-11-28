@@ -6,7 +6,8 @@ import '../core/utils/date_time_utils.dart';
 class UserProfile {
   final String id;
   final String displayName;
-  final String handle;
+  final String? firstName;
+  final String? lastName;
   final String? fullName;
   final String? nickname;
   final DateTime? birthday;
@@ -17,7 +18,8 @@ class UserProfile {
   const UserProfile({
     required this.id,
     required this.displayName,
-    required this.handle,
+    this.firstName,
+    this.lastName,
     this.fullName,
     this.nickname,
     this.birthday,
@@ -45,12 +47,39 @@ class UserProfile {
     return age >= 0 ? age : null;
   }
 
-  /// Canonical UI name: nickname -> fullName -> displayName -> 'Housemate'.
+  /// Synced full name from [firstName] + [lastName], falling back to [fullName].
+  String get effectiveFullName {
+    final joined = joinFullName(firstName ?? '', lastName ?? '');
+    if (joined.isNotEmpty) return joined;
+    return (fullName ?? '').trim();
+  }
+
+  /// Resolves trimmed `(firstName, lastName)` parts from explicit fields,
+  /// falling back to splitting [fullName] (and optionally [displayName]).
+  ({String firstName, String lastName}) resolveNameParts({
+    bool fallbackToDisplayName = false,
+  }) {
+    final first = (firstName ?? '').trim();
+    final last = (lastName ?? '').trim();
+    if (first.isNotEmpty || last.isNotEmpty) {
+      return (firstName: first, lastName: last);
+    }
+    final full = (fullName ?? '').trim();
+    if (full.isNotEmpty) {
+      return splitFullName(full);
+    }
+    if (fallbackToDisplayName && displayName.trim().isNotEmpty) {
+      return splitFullName(displayName);
+    }
+    return (firstName: '', lastName: '');
+  }
+
+  /// Canonical UI name: nickname -> effectiveFullName -> displayName -> 'Housemate'.
   String get preferredName {
     final nick = nickname?.trim();
     if (nick != null && nick.isNotEmpty) return nick;
-    final full = fullName?.trim();
-    if (full != null && full.isNotEmpty) return full;
+    final full = effectiveFullName;
+    if (full.isNotEmpty) return full;
     final disp = displayName.trim();
     if (disp.isNotEmpty) return disp;
     return 'Housemate';
@@ -60,6 +89,10 @@ class UserProfile {
   String get effectiveGreetingName {
     if (nickname != null && nickname!.trim().isNotEmpty) {
       return nickname!.trim();
+    }
+    final first = firstName?.trim();
+    if (first != null && first.isNotEmpty) {
+      return first;
     }
     if (fullName != null && fullName!.trim().isNotEmpty) {
       return fullName!.trim().split(' ').first;
@@ -86,7 +119,7 @@ class UserProfile {
   }
 
   bool get hasCompleteRequiredProfile =>
-      (fullName ?? '').trim().isNotEmpty &&
+      effectiveFullName.isNotEmpty &&
       (nickname ?? '').trim().isNotEmpty &&
       birthday != null &&
       hasConsentedTerms;
@@ -110,46 +143,55 @@ class UserProfile {
     );
   }
 
-  static bool isPlaceholderHandle(String? handle) {
-    final trimmed = (handle ?? '').trim().toLowerCase();
-    return trimmed.isEmpty || trimmed == '@' || trimmed == '@member';
-  }
-
-  static String buildFallbackHandle({
-    String? preferred,
-    required String userId,
+  UserProfile copyWith({
+    String? id,
+    String? displayName,
+    String? firstName,
+    String? lastName,
+    String? fullName,
+    String? nickname,
+    DateTime? birthday,
+    String? avatarUrl,
+    bool? hasConsentedTerms,
+    bool? hasCompletedOnboarding,
+    bool clearNickname = false,
+    bool clearBirthday = false,
+    bool clearAvatar = false,
   }) {
-    final cleanPreferred =
-        (preferred ?? '').replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '').toLowerCase();
-    final base = cleanPreferred.isEmpty ? 'member' : cleanPreferred;
-    final cleanId = userId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
-    final suffix = cleanId.length >= 6
-        ? cleanId.substring(0, 6)
-        : (cleanId.isEmpty ? 'user' : cleanId);
-    return '@${base}_$suffix';
-  }
-
-  static String buildCollisionRetryHandle({
-    required String baseHandle,
-    required String randomSuffix,
-  }) {
-    final cleanBase = baseHandle
-        .replaceFirst(RegExp(r'^@+'), '')
-        .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '')
-        .toLowerCase();
-    final prefix = cleanBase.isEmpty ? 'member' : cleanBase;
-    final cleanSuffix =
-        randomSuffix.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
-    final suffix = cleanSuffix.isEmpty ? '1a2b' : cleanSuffix;
-    return '@${prefix}_$suffix';
+    return UserProfile(
+      id: id ?? this.id,
+      displayName: displayName ?? this.displayName,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
+      fullName: fullName ?? this.fullName,
+      nickname: clearNickname ? null : (nickname ?? this.nickname),
+      birthday: clearBirthday ? null : (birthday ?? this.birthday),
+      avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
+      hasConsentedTerms: hasConsentedTerms ?? this.hasConsentedTerms,
+      hasCompletedOnboarding:
+          hasCompletedOnboarding ?? this.hasCompletedOnboarding,
+    );
   }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
+    final rawFirst = (json['first_name'] as String?)?.trim();
+    final rawLast = (json['last_name'] as String?)?.trim();
+    final firstName =
+        (rawFirst != null && rawFirst.isNotEmpty) ? rawFirst : null;
+    final lastName =
+        (rawLast != null && rawLast.isNotEmpty) ? rawLast : null;
+    final rawFull = (json['full_name'] as String?)?.trim();
+    final joined = joinFullName(firstName ?? '', lastName ?? '');
+    final fullName = joined.isNotEmpty
+        ? joined
+        : ((rawFull != null && rawFull.isNotEmpty) ? rawFull : null);
+
     return UserProfile(
       id: json['id'] as String,
       displayName: json['display_name'] as String? ?? 'Housemate',
-      handle: (json['handle'] as String?)?.trim() ?? '',
-      fullName: json['full_name'] as String?,
+      firstName: firstName,
+      lastName: lastName,
+      fullName: fullName,
       nickname: json['nickname'] as String?,
       birthday: parseDateOnly(json['birthday'] ?? json['birth_date']),
       avatarUrl: json['avatar_url'] as String?,
@@ -159,17 +201,21 @@ class UserProfile {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'display_name': displayName,
-    'handle': handle,
-    'full_name': fullName,
-    'nickname': nickname,
-    'birthday': formatDateOnly(birthday),
-    'avatar_url': avatarUrl,
-    'has_consented_terms': hasConsentedTerms,
-    'has_completed_onboarding': hasCompletedOnboarding,
-  };
+  Map<String, dynamic> toJson() {
+    final syncedFull = effectiveFullName;
+    return {
+      'id': id,
+      'display_name': displayName,
+      'first_name': firstName,
+      'last_name': lastName,
+      'full_name': syncedFull.isNotEmpty ? syncedFull : fullName,
+      'nickname': nickname,
+      'birthday': formatDateOnly(birthday),
+      'avatar_url': avatarUrl,
+      'has_consented_terms': hasConsentedTerms,
+      'has_completed_onboarding': hasCompletedOnboarding,
+    };
+  }
 }
 
 class Household {
@@ -231,30 +277,6 @@ class Household {
   };
 }
 
-enum InvitationStatus { pending, accepted, declined }
-
-class HouseholdInvitation {
-  final String id;
-  final String householdId;
-  final String householdName;
-  final String inviterName;
-  final String inviteeEmailOrHandle;
-  final String? inviteeName;
-  final InvitationStatus status;
-  final DateTime createdAt;
-
-  const HouseholdInvitation({
-    required this.id,
-    required this.householdId,
-    required this.householdName,
-    required this.inviterName,
-    required this.inviteeEmailOrHandle,
-    this.inviteeName,
-    this.status = InvitationStatus.pending,
-    required this.createdAt,
-  });
-}
-
 class MemberPresence {
   final UserProfile profile;
   final bool isHome;
@@ -306,7 +328,7 @@ extension ParcelStatusX on ParcelStatus {
       case ParcelStatus.expected:
         return 'Expected';
       case ParcelStatus.arrived:
-        return 'Arriving Now';
+        return 'Scheduled Today';
       case ParcelStatus.received:
         return 'Received';
       case ParcelStatus.cancelled:
@@ -327,8 +349,6 @@ class ParcelItem {
   final String currency;
   final ParcelStatus status;
   final String? notes;
-  final List<String> availableMemberNames;
-  final bool isAllUnavailable;
 
   const ParcelItem({
     required this.id,
@@ -342,8 +362,6 @@ class ParcelItem {
     this.currency = 'PHP',
     required this.status,
     this.notes,
-    this.availableMemberNames = const [],
-    this.isAllUnavailable = false,
     this.codSettled = false,
     this.claimedById,
     this.claimedByName,
@@ -393,11 +411,6 @@ class ParcelItem {
       currency: json['currency'] as String? ?? 'PHP',
       status: parseStatus(json['status'] as String?),
       notes: json['notes'] as String?,
-      availableMemberNames: (json['available_members'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
-      isAllUnavailable: json['is_all_unavailable'] as bool? ?? false,
       codSettled: json['cod_settled'] as bool? ?? false,
       claimedById: json['claimed_by_id'] as String?,
       claimedByName: json['claimed_by_name'] as String?,
@@ -717,7 +730,6 @@ class MaintenanceTask {
   final String? completedByName;
   final DateTime? completedAt;
   final DateTime createdAt;
-  final DateTime? dueDate;
 
   const MaintenanceTask({
     required this.id,
@@ -733,7 +745,6 @@ class MaintenanceTask {
     this.completedByName,
     this.completedAt,
     required this.createdAt,
-    this.dueDate,
   });
 
   static int computePoints(TaskCategory category, TaskUrgency urgency) =>
@@ -777,7 +788,6 @@ class MaintenanceTask {
     String? completedById,
     String? completedByName,
     DateTime? completedAt,
-    DateTime? dueDate,
     bool clearCompleted = false,
   }) {
     return MaintenanceTask(
@@ -798,7 +808,6 @@ class MaintenanceTask {
           : (completedByName ?? this.completedByName),
       completedAt: clearCompleted ? null : (completedAt ?? this.completedAt),
       createdAt: createdAt,
-      dueDate: dueDate ?? this.dueDate,
     );
   }
 
@@ -840,7 +849,6 @@ class MaintenanceTask {
       completedByName: json['completed_by_name'] as String?,
       completedAt: parseSupabaseTimestampOrNull(json['completed_at']),
       createdAt: parseSupabaseTimestamp(json['created_at']),
-      dueDate: parseSupabaseTimestampOrNull(json['due_date']),
     );
   }
 
@@ -856,7 +864,6 @@ class MaintenanceTask {
     'completed_by': completedById,
     'completed_at': toSupabaseUtcIsoOrNull(completedAt),
     'created_at': toSupabaseUtcIso(createdAt),
-    'due_date': toSupabaseUtcIsoOrNull(dueDate),
   };
 }
 
@@ -1605,7 +1612,6 @@ class RepositoryActionError {
 class LeaderboardStanding {
   final String userId;
   final String displayName;
-  final String handle;
   final String? avatarUrl;
   final int points;
   final bool isCurrentUser;
@@ -1613,7 +1619,6 @@ class LeaderboardStanding {
   const LeaderboardStanding({
     required this.userId,
     required this.displayName,
-    required this.handle,
     this.avatarUrl,
     required this.points,
     this.isCurrentUser = false,

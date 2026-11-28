@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
+import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
@@ -29,8 +30,10 @@ class OptionalProfileScreen extends ConsumerStatefulWidget {
 
 class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _fullNameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _nicknameController = TextEditingController();
+  final _lastNameFocus = FocusNode();
   final _nicknameFocus = FocusNode();
   late final TapGestureRecognizer _termsTap;
 
@@ -38,9 +41,11 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
   int? _birthDay;
   int? _birthYear;
   String? _birthdayError;
+  String? _nicknameError;
 
   String? _selectedAvatar;
   bool _isPickingImage = false;
+  bool _isSaving = false;
   bool _agreedToTerms = false;
   String? _termsError;
 
@@ -49,8 +54,12 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
     super.initState();
     _termsTap = TapGestureRecognizer()..onTap = _openTermsReader;
     final user = ref.read(repositoryProvider).currentUser;
-    if (user.fullName != null && user.fullName!.trim().isNotEmpty) {
-      _fullNameController.text = user.fullName!.trim();
+    final parts = user.resolveNameParts(fallbackToDisplayName: false);
+    if (parts.firstName.isNotEmpty) {
+      _firstNameController.text = parts.firstName;
+    }
+    if (parts.lastName.isNotEmpty) {
+      _lastNameController.text = parts.lastName;
     }
     if (user.nickname != null && user.nickname!.trim().isNotEmpty) {
       _nicknameController.text = user.nickname!.trim();
@@ -108,8 +117,10 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
   @override
   void dispose() {
     _termsTap.dispose();
-    _fullNameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _nicknameController.dispose();
+    _lastNameFocus.dispose();
     _nicknameFocus.dispose();
     super.dispose();
   }
@@ -178,7 +189,8 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
     }
   }
 
-  void _saveAndContinue() {
+  Future<void> _saveAndContinue() async {
+    setState(() => _nicknameError = null);
     final formValid = _formKey.currentState?.validate() ?? false;
     final birthDate = _birthDate;
     String? nextBirthdayError;
@@ -201,10 +213,15 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
       return;
     }
 
-    final fullName = _fullNameController.text.trim();
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final fullName = UserProfile.joinFullName(firstName, lastName);
     final nickname = _nicknameController.text.trim();
 
-    ref.read(repositoryProvider).updateProfile(
+    setState(() => _isSaving = true);
+    final error = await ref.read(repositoryProvider).updateProfile(
+      firstName: firstName,
+      lastName: lastName,
       fullName: fullName,
       displayName: fullName,
       nickname: nickname,
@@ -213,6 +230,16 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
       hasConsentedTerms: true,
     );
 
+    if (!mounted) return;
+    if (error != null) {
+      setState(() {
+        _isSaving = false;
+        _nicknameError = error;
+      });
+      return;
+    }
+
+    setState(() => _isSaving = false);
     GoRouter.maybeOf(context)?.push('/household-setup');
   }
 
@@ -257,9 +284,13 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
                       CasamaAvatar(
                         avatarUrl: _selectedAvatar,
                         radius: 44,
-                        name: _fullNameController.text.trim().isNotEmpty
-                            ? _fullNameController.text.trim()
-                            : 'Casama',
+                        name: () {
+                          final joined = UserProfile.joinFullName(
+                            _firstNameController.text,
+                            _lastNameController.text,
+                          );
+                          return joined.isNotEmpty ? joined : 'Casama';
+                        }(),
                         showEditBadge: true,
                         onTap: _openCameraCapture,
                         borderWidth: 2,
@@ -341,7 +372,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
                     selectedAvatar: _selectedAvatar,
                     onSelected: (next) =>
                         setState(() => _selectedAvatar = next),
-                    alignment: WrapAlignment.center,
+                    horizontalScroll: true,
                     avatarRadius: 18,
                     toggleDeselect: true,
                   ),
@@ -351,15 +382,33 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
             const SizedBox(height: CasamaSpacing.lg),
 
             CasamaTextField(
-              controller: _fullNameController,
-              label: 'Full Name',
-              hint: 'e.g., Jon Paul Berana',
+              controller: _firstNameController,
+              label: 'First Name',
+              hint: 'e.g., Juan',
               prefixIcon: Icons.badge_outlined,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.name],
+              autofillHints: const [AutofillHints.givenName],
               validator: (v) => v == null || v.trim().isEmpty
-                  ? 'Please enter your full name'
+                  ? 'Please enter your first name'
+                  : null,
+              onChanged: (_) => setState(() {}),
+              onFieldSubmitted: (_) =>
+                  FocusScope.of(context).requestFocus(_lastNameFocus),
+            ),
+            const SizedBox(height: CasamaSpacing.md),
+
+            CasamaTextField(
+              controller: _lastNameController,
+              label: 'Last Name',
+              hint: 'e.g., Dela Cruz',
+              prefixIcon: Icons.badge_outlined,
+              focusNode: _lastNameFocus,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.familyName],
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'Please enter your last name'
                   : null,
               onChanged: (_) => setState(() {}),
               onFieldSubmitted: (_) =>
@@ -375,6 +424,12 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
               focusNode: _nicknameFocus,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.done,
+              forceErrorText: _nicknameError,
+              onChanged: (_) {
+                if (_nicknameError != null) {
+                  setState(() => _nicknameError = null);
+                }
+              },
               validator: (v) => v == null || v.trim().isEmpty
                   ? 'Please enter your nickname'
                   : null,
@@ -508,7 +563,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
               label: 'Save & Continue',
               isPill: true,
               height: 50,
-              onPressed: _saveAndContinue,
+              onPressed: _isSaving ? null : _saveAndContinue,
             ),
           ],
         ),

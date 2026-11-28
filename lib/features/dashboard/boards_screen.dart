@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_lost_found_icon.dart';
+import '../../shared/widgets/casama_wave_background.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../items/lost_found_screen.dart';
 import '../items/widgets/report_item_sheet.dart';
@@ -32,8 +35,12 @@ class BoardsScreen extends ConsumerStatefulWidget {
 
 class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   late final PageController _pageController;
+  late final ScrollController _outerScrollController;
   late int _activeTab;
   ValueListenable<int>? _shellBoardListenable;
+  CasamaWaveTabScope? _waveScope;
+  double _heroHeaderHeight = 220.0;
+  bool _showStickyBar = false;
 
   static const _tabs = [
     _BoardTabMeta(
@@ -69,11 +76,32 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
     super.initState();
     _activeTab = widget.initialTab.clamp(0, 2);
     _pageController = PageController(initialPage: _activeTab);
+    _outerScrollController = ScrollController();
+    _outerScrollController.addListener(_handleScrollUpdate);
+  }
+
+  void _handleScrollUpdate() {
+    if (!_outerScrollController.hasClients) return;
+    final pos = _outerScrollController.position;
+    final offset = pos.pixels;
+    var waveOffset = offset;
+    if (pos.hasContentDimensions &&
+        pos.maxScrollExtent > 0 &&
+        offset >= pos.maxScrollExtent - 0.5) {
+      waveOffset += kBoardsCollapsedWaveExtra;
+    }
+    _waveScope?.reportScroll(waveOffset);
+    final threshold = (_heroHeaderHeight - 48.0).clamp(0.0, double.infinity);
+    final shouldShow = offset > threshold;
+    if (shouldShow != _showStickyBar && mounted) {
+      setState(() => _showStickyBar = shouldShow);
+    }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _waveScope = CasamaWaveTabScope.maybeOf(context);
     final scope = CasamaShellScope.maybeOf(context);
     final nextListenable = scope?.boardTabListenable;
     if (nextListenable != _shellBoardListenable) {
@@ -102,6 +130,8 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
 
   @override
   void dispose() {
+    _outerScrollController.removeListener(_handleScrollUpdate);
+    _outerScrollController.dispose();
     _shellBoardListenable?.removeListener(_handleExternalBoardChange);
     _pageController.dispose();
     super.dispose();
@@ -170,46 +200,81 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
     final meta = _tabs[_activeTab.clamp(0, _tabs.length - 1)];
     final inShell = CasamaShellScope.maybeOf(context) != null;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    final fabBottomOffset = inShell ? 84.0 + bottomInset : 20.0 + bottomInset;
-    final bodyBottomPadding = inShell ? 156.0 + bottomInset : 96.0 + bottomInset;
+    final topInset = MediaQuery.paddingOf(context).top;
+    // When inside MainNavigationShell (extendBody: true), MediaQuery.paddingOf(context).bottom
+    // already includes the docked bottom navigation bar height. Adding 84.0 on top of it
+    // double-counts the nav bar and floats the FAB too high.
+    final fabBottomOffset = inShell ? 12.0 + bottomInset : 20.0 + bottomInset;
+    final bodyBottomPadding = inShell ? 80.0 + bottomInset : 104.0 + bottomInset;
+
+    final inWaveShell = _waveScope != null;
 
     return Scaffold(
-      backgroundColor: pal.scaffoldBg,
+      backgroundColor: inWaveShell ? Colors.transparent : pal.scaffoldBg,
       body: CasamaAmbientCanvas(
+        backgroundColor: inWaveShell ? Colors.transparent : null,
         child: Stack(
           children: [
-            Column(
-              children: [
-                CasamaWaveHeader(
-                  title: meta.headerTitle,
-                  subtitle: repo.hasActiveHousehold
-                      ? '${repo.currentHousehold.name} • ${meta.headerSubtitle}'
-                      : 'No household yet • ${meta.headerSubtitle}',
-                  titleMascotPose: meta.mascotPose,
-                  extendedWave: true,
-                  compact: true,
-                  showNotificationBell: true,
-                  onMenuTap: _openDrawer,
-                  embeddedTabBar: _BoardsHeaderSwitcher(
-                    tabs: _tabs,
-                    activeIndex: _activeTab,
-                    onSelected: _selectTab,
-                  ),
-                ),
+            // Faint ambient board-icon watermark behind scrollable content
+            _BoardsWatermarkIcon(
+              activeTab: _activeTab,
+              safeAreaTop: topInset,
+            ),
 
-                Expanded(
-                  child: PageView(
-                    controller: _pageController,
-                    physics: const ClampingScrollPhysics(),
-                    onPageChanged: _onPageChanged,
-                    children: [
-                      ParcelsBoardView(bottomPadding: bodyBottomPadding),
-                      TasksBoardView(bottomPadding: bodyBottomPadding),
-                      ItemsBoardView(bottomPadding: bodyBottomPadding),
-                    ],
+            // Full-page smooth scroll: unpinned hero header + PageView body
+            NestedScrollView(
+              controller: _outerScrollController,
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                SliverToBoxAdapter(
+                  child: _MeasureSize(
+                    onChange: (size) {
+                      _waveScope?.reportHeaderHeight(size.height);
+                      if (size.height > 0 &&
+                          (_heroHeaderHeight - size.height).abs() > 0.5) {
+                        setState(() {
+                          _heroHeaderHeight = size.height;
+                        });
+                        _handleScrollUpdate();
+                      }
+                    },
+                    child: CasamaWaveHeader(
+                      title: meta.headerTitle,
+                      subtitle: repo.hasActiveHousehold
+                          ? '${repo.currentHousehold.name} • ${meta.headerSubtitle}'
+                          : 'No household yet • ${meta.headerSubtitle}',
+                      titleMascotPose: meta.mascotPose,
+                      extendedWave: true,
+                      compact: true,
+                      showNotificationBell: true,
+                      paintBackground: !inWaveShell,
+                      onMenuTap: _openDrawer,
+                      embeddedTabBar: _BoardsHeaderSwitcher(
+                        tabs: _tabs,
+                        activeIndex: _activeTab,
+                        onSelected: _selectTab,
+                      ),
+                    ),
                   ),
                 ),
               ],
+              body: PageView(
+                controller: _pageController,
+                physics: const ClampingScrollPhysics(),
+                onPageChanged: _onPageChanged,
+                children: [
+                  ParcelsBoardView(bottomPadding: bodyBottomPadding),
+                  TasksBoardView(bottomPadding: bodyBottomPadding),
+                  ItemsBoardView(bottomPadding: bodyBottomPadding),
+                ],
+              ),
+            ),
+
+            // Compact frosted sticky pill bar revealed after hero scrolls off-screen
+            _BoardsStickyPillBar(
+              visible: _showStickyBar,
+              tabs: _tabs,
+              activeIndex: _activeTab,
+              onSelected: _selectTab,
             ),
 
             // Contextual Morphing Board FAB (320ms spring overshoot)
@@ -345,4 +410,181 @@ class _BoardTabMeta {
     this.useLostFoundIcon = false,
     required this.mascotPose,
   });
+}
+
+class _BoardsStickyPillBar extends StatefulWidget {
+  final bool visible;
+  final List<_BoardTabMeta> tabs;
+  final int activeIndex;
+  final ValueChanged<int> onSelected;
+
+  const _BoardsStickyPillBar({
+    required this.visible,
+    required this.tabs,
+    required this.activeIndex,
+    required this.onSelected,
+  });
+
+  @override
+  State<_BoardsStickyPillBar> createState() => _BoardsStickyPillBarState();
+}
+
+class _BoardsStickyPillBarState extends State<_BoardsStickyPillBar> {
+  late bool _offstage;
+
+  @override
+  void initState() {
+    super.initState();
+    _offstage = !widget.visible;
+  }
+
+  @override
+  void didUpdateWidget(covariant _BoardsStickyPillBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visible && _offstage) {
+      _offstage = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final topPad = MediaQuery.paddingOf(context).top;
+    final reduced = CasamaMotion.reduceMotion(context);
+    final dur = reduced ? Duration.zero : const Duration(milliseconds: 250);
+    final effectiveOffstage = reduced ? !widget.visible : _offstage;
+
+    return Positioned(
+      key: const Key('boards_sticky_pill_bar'),
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Offstage(
+        offstage: effectiveOffstage,
+        child: IgnorePointer(
+          ignoring: !widget.visible,
+          child: AnimatedSlide(
+            offset: widget.visible ? Offset.zero : const Offset(0, -1),
+            duration: dur,
+            curve: Curves.easeOut,
+            child: AnimatedOpacity(
+              opacity: widget.visible ? 1.0 : 0.0,
+              duration: dur,
+              curve: Curves.easeOut,
+              onEnd: () {
+                if (!widget.visible && !_offstage && mounted) {
+                  setState(() => _offstage = true);
+                }
+              },
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: pal.headerDeep.withValues(alpha: 0.94),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x1F000000),
+                          blurRadius: 16,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: EdgeInsets.fromLTRB(16, topPad + 10, 16, 10),
+                    child: _BoardsHeaderSwitcher(
+                      tabs: widget.tabs,
+                      activeIndex: widget.activeIndex,
+                      onSelected: widget.onSelected,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BoardsWatermarkIcon extends StatelessWidget {
+  final int activeTab;
+  final double safeAreaTop;
+
+  const _BoardsWatermarkIcon({
+    required this.activeTab,
+    required this.safeAreaTop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final reduced = CasamaMotion.reduceMotion(context);
+    final color = context.isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : pal.headerDeep.withValues(alpha: 0.05);
+
+    final Widget icon = switch (activeTab) {
+      0 => Icon(Icons.inventory_2_outlined, size: 148, color: color),
+      1 => Icon(Icons.checklist_rounded, size: 148, color: color),
+      _ => CasamaLostFoundIcon(size: 148, color: color),
+    };
+
+    return Positioned(
+      key: const Key('boards_watermark_icon'),
+      top: 110 + safeAreaTop,
+      right: -18,
+      child: IgnorePointer(
+        child: AnimatedSwitcher(
+          duration: reduced ? Duration.zero : const Duration(milliseconds: 250),
+          child: KeyedSubtree(
+            key: ValueKey('watermark_$activeTab'),
+            child: icon,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MeasureSize extends StatefulWidget {
+  final Widget child;
+  final ValueChanged<Size> onChange;
+
+  const _MeasureSize({required this.child, required this.onChange});
+
+  @override
+  State<_MeasureSize> createState() => _MeasureSizeState();
+}
+
+class _MeasureSizeState extends State<_MeasureSize> {
+  final _key = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _notify());
+  }
+
+  void _notify() {
+    final ctx = _key.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      widget.onChange(box.size);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _notify());
+        return true;
+      },
+      child: SizeChangedLayoutNotifier(
+        child: KeyedSubtree(key: _key, child: widget.child),
+      ),
+    );
+  }
 }

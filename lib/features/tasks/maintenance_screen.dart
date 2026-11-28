@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
+import '../../shared/widgets/casama_inline_user_badge.dart';
 import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../../shared/widgets/status_chip.dart';
@@ -86,7 +85,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
               ],
             ),
             const Expanded(
-              child: TasksBoardView(bottomPadding: 100),
+              child: TasksBoardView(bottomPadding: 104),
             ),
           ],
         ),
@@ -137,16 +136,54 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
     );
   }
 
-  String _resolveViewerName(
-    CasamaRepository repo,
-    String userId,
-    String fallbackName,
-  ) {
-    return repo.resolveHousemateName(
-      userId,
-      fallback: fallbackName,
-      useYouForCurrentUser: true,
+  Future<void> _confirmAndDeleteTask(MaintenanceTask task) async {
+    final pal = context.palette;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text(
+          'This will permanently remove "${task.title}" and any Task Roulette record.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            key: const Key('task_confirm_delete_button'),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: pal.dangerFg),
+            child: const Text(
+              'Delete',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
     );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await ref.read(repositoryProvider).deleteTask(task.id);
+      if (!mounted) return;
+      if (_expandedTaskId == task.id) {
+        setState(() => _expandedTaskId = null);
+      }
+      showCasamaToast(
+        context,
+        'Task deleted',
+        icon: Icons.delete_outline_rounded,
+      );
+    } catch (_) {
+      if (mounted) {
+        showCasamaToast(
+          context,
+          'Could not delete task. Please try again.',
+          icon: Icons.error_outline_rounded,
+        );
+      }
+    }
   }
 
   @override
@@ -193,15 +230,17 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
     final urgentCount = ongoingTasks
         .where((t) => t.urgency == TaskUrgency.urgent)
         .length;
-    final totalOngoingPoints = ongoingTasks.fold<int>(
-      0,
-      (sum, t) =>
-          sum +
-          t.rewardPointsForUser(
-            currentUserId,
-            rouletteRecord: rouletteByTaskId[t.id],
-          ),
-    );
+    final availablePoints = ongoingTasks
+        .where((t) => t.createdBy != currentUserId)
+        .fold<int>(
+          0,
+          (sum, t) =>
+              sum +
+              t.rewardPointsForUser(
+                currentUserId,
+                rouletteRecord: rouletteByTaskId[t.id],
+              ),
+        );
     final visibleTasks = _selectedSegment == 0 ? ongoingTasks : completedTasks;
     final emptyTitle = _selectedSegment == 0
         ? 'No ongoing tasks'
@@ -243,8 +282,8 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
                 ],
               ),
             ),
-            rightTitle: '$totalOngoingPoints pts',
-            rightSubtitle: 'Across ongoing tasks',
+            rightTitle: '$availablePoints pts',
+            rightSubtitle: 'Available to you',
             rightTitleColor: pal.forestTeal,
           ),
           const SizedBox(height: CasamaSpacing.xs),
@@ -312,38 +351,81 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
                           Builder(
                             builder: (_) {
                               final rouletteRecord = rouletteByTaskId[task.id];
-                              final spinnerLabel = rouletteRecord != null
-                                  ? _resolveViewerName(
-                                      repo,
-                                      rouletteRecord.spunByUserId,
-                                      rouletteRecord.spunByName,
-                                    )
-                                  : null;
-                              final chosenLabel = rouletteRecord != null
-                                  ? _resolveViewerName(
-                                      repo,
-                                      rouletteRecord.selectedUserId,
-                                      rouletteRecord.selectedUserName,
-                                    )
-                                  : null;
+                              final isOwnTask =
+                                  task.createdBy.isNotEmpty &&
+                                  task.createdBy == currentUserId;
+                              final isDone = task.status == TaskStatus.done;
+                              final canExpand = !isDone || isOwnTask;
                               return _TaskCard(
                                 task: task,
                                 uiCategory: overrides.resolveCategory(task),
                                 rouletteRecord: rouletteRecord,
-                                spinnerLabel: spinnerLabel,
-                                chosenLabel: chosenLabel,
                                 creatorLabel: repo.resolveHousemateName(
                                   task.createdBy,
                                   fallback: task.createdByName,
+                                  useYouForCurrentUser: true,
+                                ),
+                                creatorName: repo.resolveHousemateName(
+                                  task.createdBy,
+                                  fallback: task.createdByName,
+                                ),
+                                creatorAvatarUrl: repo.resolveHousemateAvatarUrl(
+                                  task.createdBy,
                                 ),
                                 completerLabel: repo.resolveHousemateName(
                                   task.completedById,
                                   fallback: task.completedByName ?? 'Housemate',
+                                  useYouForCurrentUser: true,
                                 ),
-                                isDone: task.status == TaskStatus.done,
-                                isOwnTask:
-                                    task.createdBy.isNotEmpty &&
-                                    task.createdBy == currentUserId,
+                                completerName: repo.resolveHousemateName(
+                                  task.completedById,
+                                  fallback: task.completedByName ?? 'Housemate',
+                                ),
+                                completerAvatarUrl: repo
+                                    .resolveHousemateAvatarUrl(
+                                      task.completedById,
+                                    ),
+                                spinnerLabel: rouletteRecord != null
+                                    ? repo.resolveHousemateName(
+                                        rouletteRecord.spunByUserId,
+                                        fallback: rouletteRecord.spunByName,
+                                        useYouForCurrentUser: true,
+                                      )
+                                    : null,
+                                spinnerName: rouletteRecord != null
+                                    ? repo.resolveHousemateName(
+                                        rouletteRecord.spunByUserId,
+                                        fallback: rouletteRecord.spunByName,
+                                      )
+                                    : null,
+                                spinnerAvatarUrl: rouletteRecord != null
+                                    ? repo.resolveHousemateAvatarUrl(
+                                        rouletteRecord.spunByUserId,
+                                      )
+                                    : null,
+                                chosenLabel: rouletteRecord != null
+                                    ? repo.resolveHousemateName(
+                                        rouletteRecord.selectedUserId,
+                                        fallback:
+                                            rouletteRecord.selectedUserName,
+                                        useYouForCurrentUser: true,
+                                      )
+                                    : null,
+                                chosenName: rouletteRecord != null
+                                    ? repo.resolveHousemateName(
+                                        rouletteRecord.selectedUserId,
+                                        fallback:
+                                            rouletteRecord.selectedUserName,
+                                      )
+                                    : null,
+                                chosenAvatarUrl: rouletteRecord != null
+                                    ? repo.resolveHousemateAvatarUrl(
+                                        rouletteRecord.selectedUserId,
+                                      )
+                                    : null,
+                                isDone: isDone,
+                                isOwnTask: isOwnTask,
+                                canExpand: canExpand,
                                 viewerRewardPoints: task.rewardPointsForUser(
                                   currentUserId,
                                   rouletteRecord: rouletteRecord,
@@ -353,20 +435,20 @@ class _TasksBoardViewState extends ConsumerState<TasksBoardView> {
                                   rouletteRecord: rouletteRecord,
                                 ),
                                 isExpanded:
-                                    task.status != TaskStatus.done &&
-                                    _expandedTaskId == task.id,
+                                    canExpand && _expandedTaskId == task.id,
                                 onToggleExpand: () {
-                                  if (task.status == TaskStatus.done) return;
+                                  if (!canExpand) return;
                                   setState(() {
                                     _expandedTaskId = _expandedTaskId == task.id
                                         ? null
                                         : task.id;
                                   });
                                 },
-                                onMarkDone: task.status == TaskStatus.done
+                                onMarkDone: isDone
                                     ? null
                                     : () => _completeTask(task),
                                 onSpin: () => _openRoulette(task),
+                                onDelete: () => _confirmAndDeleteTask(task),
                               );
                             },
                           ),
@@ -431,35 +513,55 @@ class _TaskCard extends StatelessWidget {
   final MaintenanceTask task;
   final CasamaTaskUiCategory uiCategory;
   final ChoreRouletteRecord? rouletteRecord;
-  final String? spinnerLabel;
-  final String? chosenLabel;
   final String creatorLabel;
+  final String creatorName;
+  final String? creatorAvatarUrl;
   final String completerLabel;
+  final String completerName;
+  final String? completerAvatarUrl;
+  final String? spinnerLabel;
+  final String? spinnerName;
+  final String? spinnerAvatarUrl;
+  final String? chosenLabel;
+  final String? chosenName;
+  final String? chosenAvatarUrl;
   final bool isDone;
   final bool isOwnTask;
+  final bool canExpand;
   final int viewerRewardPoints;
   final bool isViewerChosen;
   final bool isExpanded;
   final VoidCallback onToggleExpand;
   final VoidCallback? onMarkDone;
   final VoidCallback onSpin;
+  final VoidCallback onDelete;
 
   const _TaskCard({
     required this.task,
     required this.uiCategory,
     this.rouletteRecord,
-    this.spinnerLabel,
-    this.chosenLabel,
     required this.creatorLabel,
+    required this.creatorName,
+    this.creatorAvatarUrl,
     required this.completerLabel,
+    required this.completerName,
+    this.completerAvatarUrl,
+    this.spinnerLabel,
+    this.spinnerName,
+    this.spinnerAvatarUrl,
+    this.chosenLabel,
+    this.chosenName,
+    this.chosenAvatarUrl,
     required this.isDone,
     required this.isOwnTask,
+    required this.canExpand,
     required this.viewerRewardPoints,
     required this.isViewerChosen,
     required this.isExpanded,
     required this.onToggleExpand,
     required this.onMarkDone,
     required this.onSpin,
+    required this.onDelete,
   });
 
   @override
@@ -472,15 +574,9 @@ class _TaskCard extends StatelessWidget {
         : const Duration(milliseconds: 200);
 
     final (Color catBg, Color catFg) = uiCategory.badgeColors(pal);
-    final String subtitle;
-    if (isDone) {
-      subtitle = '${uiCategory.shortLabel} • Completed by $completerLabel';
-    } else {
-      final dueSuffix = task.dueDate != null
-          ? ' • Due ${DateFormat('MMM d').format(task.dueDate!)}'
-          : '';
-      subtitle = '${uiCategory.shortLabel} • By $creatorLabel$dueSuffix';
-    }
+    final semanticSubtitle = isDone
+        ? '${uiCategory.shortLabel} • Completed by $completerLabel'
+        : '${uiCategory.shortLabel} • By $creatorLabel';
 
     final (ChipVariant urgVariant, String urgLabel) = switch (task.urgency) {
       TaskUrgency.low => (ChipVariant.low, 'Low'),
@@ -488,13 +584,18 @@ class _TaskCard extends StatelessWidget {
       TaskUrgency.urgent => (ChipVariant.urgent, 'Urgent'),
     };
 
+    final metaStyle = theme.textTheme.bodySmall?.copyWith(
+      fontSize: 12,
+      color: pal.textSecondary,
+    );
+
     final headerContent = ConstrainedBox(
       constraints: const BoxConstraints(
         minHeight: CasamaSpacing.minTouchTarget,
       ),
       child: Row(
         children: [
-          if (!isDone) ...[
+          if (canExpand) ...[
             AnimatedRotation(
               turns: isExpanded ? 0.5 : 0.0,
               duration: animDuration,
@@ -533,13 +634,23 @@ class _TaskCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 12,
-                    color: pal.textSecondary,
+                CasamaInlineUserBadge(
+                  avatarKey: ValueKey(
+                    isDone
+                        ? 'task_completer_avatar_${task.id}'
+                        : 'task_creator_avatar_${task.id}',
+                  ),
+                  prefix: isDone
+                      ? '${uiCategory.shortLabel} • Completed by '
+                      : '${uiCategory.shortLabel} • By ',
+                  displayName: isDone ? completerLabel : creatorLabel,
+                  avatarName: isDone ? completerName : creatorName,
+                  avatarUrl: isDone ? completerAvatarUrl : creatorAvatarUrl,
+                  avatarSize: 16,
+                  baseStyle: metaStyle,
+                  nameStyle: metaStyle?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: pal.textPrimary,
                   ),
                 ),
               ],
@@ -556,7 +667,7 @@ class _TaskCard extends StatelessWidget {
 
     return CasamaCard(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      borderSide: !isDone && isExpanded
+      borderSide: canExpand && isExpanded
           ? BorderSide(
               color: pal.forestTeal.withValues(alpha: 0.45),
               width: 1.4,
@@ -565,11 +676,11 @@ class _TaskCard extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!isDone)
+          if (canExpand)
             Semantics(
               button: true,
               expanded: isExpanded,
-              label: '${task.title}, $subtitle',
+              label: '${task.title}, $semanticSubtitle',
               child: CasamaPressable(
                 onTap: onToggleExpand,
                 enableHaptic: false,
@@ -578,14 +689,14 @@ class _TaskCard extends StatelessWidget {
             )
           else
             Semantics(
-              label: '${task.title}, $subtitle',
+              label: '${task.title}, $semanticSubtitle',
               child: headerContent,
             ),
 
           const SizedBox(height: 8),
           _buildRouletteStatusStrip(context, pal, theme),
 
-          if (!isDone) ...[
+          if (canExpand) ...[
             if (reduceMotion) ...[
               if (isExpanded) _buildExpandedTray(pal),
             ] else
@@ -671,26 +782,25 @@ class _TaskCard extends StatelessWidget {
                 color: pal.forestTeal,
               ),
               const SizedBox(width: 5),
-              Text.rich(
-                TextSpan(
-                  style: theme.textTheme.labelSmall?.copyWith(
+              Flexible(
+                child: CasamaInlineUserBadge(
+                  avatarKey: ValueKey('task_spinner_avatar_${task.id}'),
+                  prefix: 'Spun by ',
+                  displayName: spinner,
+                  avatarName: spinnerName ?? spinner,
+                  avatarUrl: spinnerAvatarUrl,
+                  avatarSize: 16,
+                  baseStyle: theme.textTheme.labelSmall?.copyWith(
                     fontSize: 11.5,
                     color: pal.textSecondary,
                   ),
-                  children: [
-                    const TextSpan(text: 'Spun by '),
-                    TextSpan(
-                      text: spinner,
-                      style: TextStyle(
-                        fontWeight: isViewerSpinner
-                            ? FontWeight.w800
-                            : FontWeight.w600,
-                        color: isViewerSpinner
-                            ? pal.forestTeal
-                            : pal.textPrimary,
-                      ),
-                    ),
-                  ],
+                  nameStyle: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 11.5,
+                    fontWeight: isViewerSpinner
+                        ? FontWeight.w800
+                        : FontWeight.w600,
+                    color: isViewerSpinner ? pal.forestTeal : pal.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -710,26 +820,25 @@ class _TaskCard extends StatelessWidget {
                   : pal.border,
             ),
           ),
-          child: Text.rich(
-            TextSpan(
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontSize: 11.5,
-                color: pal.textSecondary,
-              ),
-              children: [
-                const TextSpan(text: 'Chosen: '),
-                TextSpan(
-                  text: chosen,
-                  style: TextStyle(
-                    fontWeight: isViewerChosenHighlight
-                        ? FontWeight.w800
-                        : FontWeight.w600,
-                    color: isViewerChosenHighlight
-                        ? pal.primaryCoral
-                        : pal.textPrimary,
-                  ),
-                ),
-              ],
+          child: CasamaInlineUserBadge(
+            avatarKey: ValueKey('task_chosen_avatar_${task.id}'),
+            prefix: 'Chosen: ',
+            displayName: chosen,
+            avatarName: chosenName ?? chosen,
+            avatarUrl: chosenAvatarUrl,
+            avatarSize: 16,
+            baseStyle: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 11.5,
+              color: pal.textSecondary,
+            ),
+            nameStyle: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 11.5,
+              fontWeight: isViewerChosenHighlight
+                  ? FontWeight.w800
+                  : FontWeight.w600,
+              color: isViewerChosenHighlight
+                  ? pal.primaryCoral
+                  : pal.textPrimary,
             ),
           ),
         ),
@@ -757,44 +866,75 @@ class _TaskCard extends StatelessWidget {
   Widget _buildExpandedTray(CasamaPalette pal) {
     final record = rouletteRecord;
     final showPointsBadge = !isOwnTask && viewerRewardPoints > 0;
+    final deleteBtn = isOwnTask
+        ? Semantics(
+            button: true,
+            label: 'Delete task',
+            child: IconButton(
+              key: ValueKey('task_delete_btn_${task.id}'),
+              tooltip: 'Delete task',
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                size: 20,
+                color: pal.dangerFg.withValues(alpha: 0.8),
+              ),
+              constraints: const BoxConstraints(
+                minWidth: CasamaSpacing.minTouchTarget,
+                minHeight: CasamaSpacing.minTouchTarget,
+              ),
+              padding: EdgeInsets.zero,
+              onPressed: onDelete,
+            ),
+          )
+        : null;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 0, 4),
+      padding: const EdgeInsets.fromLTRB(4, 8, 0, 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Divider(height: 1, color: pal.divider),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              if (record == null) ...[
+          if (isDone)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: deleteBtn ?? const SizedBox.shrink(),
+            )
+          else
+            Row(
+              children: [
+                if (deleteBtn != null) ...[
+                  deleteBtn,
+                  const SizedBox(width: 6),
+                ],
+                if (record == null) ...[
+                  Expanded(
+                    child: _TaskTrayButton(
+                      label: 'Spin',
+                      icon: Icons.casino_outlined,
+                      bg: pal.softBlush,
+                      fg: pal.primaryCoral,
+                      borderColor: pal.primaryCoral.withValues(alpha: 0.25),
+                      onTap: onSpin,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
+                  flex: 2,
                   child: _TaskTrayButton(
-                    label: 'Spin',
-                    icon: Icons.casino_outlined,
-                    bg: pal.softBlush,
-                    fg: pal.primaryCoral,
-                    borderColor: pal.primaryCoral.withValues(alpha: 0.25),
-                    onTap: onSpin,
+                    label: 'Mark as Done',
+                    trailingBadge: showPointsBadge
+                        ? '+$viewerRewardPoints pts'
+                        : null,
+                    icon: Icons.check_circle_outline_rounded,
+                    bg: pal.forestTeal,
+                    fg: pal.onForestTeal,
+                    onTap: onMarkDone ?? () {},
                   ),
                 ),
-                const SizedBox(width: 8),
               ],
-              Expanded(
-                flex: 2,
-                child: _TaskTrayButton(
-                  label: 'Mark as Done',
-                  trailingBadge: showPointsBadge
-                      ? '+$viewerRewardPoints pts'
-                      : null,
-                  icon: Icons.check_circle_outline_rounded,
-                  bg: pal.forestTeal,
-                  fg: pal.onForestTeal,
-                  onTap: onMarkDone ?? () {},
-                ),
-              ),
-            ],
-          ),
+            ),
         ],
       ),
     );

@@ -13,6 +13,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/models.dart';
 import '../../../data/repository_provider.dart';
 import '../../../shared/widgets/cas_mascot_view.dart';
+import '../../../shared/widgets/casama_wave_background.dart';
 import '../../household/create_household_sheet.dart';
 import '../../points/leaderboard_screen.dart';
 
@@ -284,7 +285,8 @@ class _CasamaHouseholdDrawerState extends ConsumerState<CasamaHouseholdDrawer> {
                         deep: pal.headerDeep,
                         mid: pal.headerMid,
                         bottomBg: drawerBg,
-                        ornament: pal.headerOrnament,
+                        safeTop: topPad,
+                        isDark: context.isDark,
                       ),
                     ),
                   ),
@@ -1083,13 +1085,15 @@ class _DrawerWaveHeaderPainter extends CustomPainter {
   final Color deep;
   final Color mid;
   final Color bottomBg;
-  final Color ornament;
+  final double safeTop;
+  final bool isDark;
 
   const _DrawerWaveHeaderPainter({
     required this.deep,
     required this.mid,
     required this.bottomBg,
-    required this.ornament,
+    required this.safeTop,
+    required this.isDark,
   });
 
   @override
@@ -1097,23 +1101,19 @@ class _DrawerWaveHeaderPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
 
+    canvas.clipRect(Offset.zero & size);
+
     // 1. Base Forest Teal fill
     canvas.drawRect(
       Rect.fromLTWH(0, 0, w, h),
       Paint()..color = deep,
     );
 
-    // 2. Subtle celestial gold orbital ornament
-    final center = Offset(w - 28, 36);
-    final ringPaint = Paint()
-      ..color = ornament
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.1;
-    canvas.drawCircle(center, 46, ringPaint);
-    canvas.drawCircle(
-      center,
-      28,
-      ringPaint..color = ornament.withValues(alpha: ornament.a * 0.65),
+    // 2. Subtle lighter-teal concentric rings
+    CasamaHeaderRings.paint(
+      canvas,
+      Offset(w - 40, safeTop + 40),
+      CasamaHeaderRings.paintsFor(isDark: isDark),
     );
 
     // 3. Soft sage wave accent
@@ -1140,6 +1140,7 @@ class _DrawerWaveHeaderPainter extends CustomPainter {
     return oldDelegate.deep != deep ||
         oldDelegate.mid != mid ||
         oldDelegate.bottomBg != bottomBg ||
-        oldDelegate.ornament != ornament;
+        oldDelegate.safeTop != safeTop ||
+        oldDelegate.isDark != isDark;
   }
 }

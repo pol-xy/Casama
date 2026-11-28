@@ -6,10 +6,12 @@ import '../../core/motion/casama_motion.dart';
 import '../../core/theme/app_theme.dart';
 import 'cas_mascot_view.dart';
 import 'casama_notifications_sheet.dart';
+import 'casama_wave_background.dart';
 
 /// Stepped Forest-Teal-to-Warm-Beige organic wave header matching
-/// `core_screens.html` & `casama-app-mockup.html`, with celestial gold rings,
-/// `48x48dp` circular utility controls, optional board tabs, and hero slots.
+/// `core_screens.html` & `casama-app-mockup.html`, with subtle lighter-teal
+/// concentric rings, `48x48dp` circular utility controls, optional board tabs,
+/// and hero slots.
 class CasamaWaveHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -22,8 +24,11 @@ class CasamaWaveHeader extends StatelessWidget {
   final Widget? embeddedTabBar;
   final Widget? bottomHero;
   final CasPose? titleMascotPose;
+  final double titleMascotSize;
   final bool extendedWave;
   final bool compact;
+  final double bottomPaddingOffset;
+  final bool paintBackground;
 
   const CasamaWaveHeader({
     super.key,
@@ -38,8 +43,11 @@ class CasamaWaveHeader extends StatelessWidget {
     this.embeddedTabBar,
     this.bottomHero,
     this.titleMascotPose,
+    this.titleMascotSize = 60,
     this.extendedWave = false,
     this.compact = false,
+    this.bottomPaddingOffset = 0,
+    this.paintBackground = true,
   });
 
   @override
@@ -48,25 +56,28 @@ class CasamaWaveHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final topPad = MediaQuery.paddingOf(context).top;
     final reduced = CasamaMotion.reduceMotion(context);
-    final double bottomPad = (extendedWave || embeddedTabBar != null)
-        ? 44
-        : (compact ? 26 : 38);
+    final double bottomPad = ((extendedWave || embeddedTabBar != null)
+            ? 44.0
+            : (compact ? 26.0 : 38.0)) +
+        bottomPaddingOffset;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // Stepped Organic Wave Canvas + Celestial Gold Ring
-        Positioned.fill(
-          child: CustomPaint(
-            painter: _SteppedWaveHeaderPainter(
-              deep: pal.headerDeep,
-              mid: pal.headerMid,
-              light: pal.headerLight,
-              bottomBg: pal.scaffoldBg,
-              ornament: pal.headerOrnament,
+        // Stepped Organic Wave Canvas + Lighter-Teal Concentric Rings
+        if (paintBackground)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _SteppedWaveHeaderPainter(
+                deep: pal.headerDeep,
+                mid: pal.headerMid,
+                light: pal.headerLight,
+                bottomBg: pal.scaffoldBg,
+                safeTop: topPad,
+                isDark: context.isDark,
+              ),
             ),
           ),
-        ),
         Padding(
           padding: EdgeInsets.fromLTRB(
             CasamaSpacing.md,
@@ -159,8 +170,8 @@ class CasamaWaveHeader extends StatelessWidget {
                   if (titleMascotPose != null) ...[
                     const SizedBox(width: 12),
                     SizedBox(
-                      width: 60,
-                      height: 60,
+                      width: titleMascotSize,
+                      height: titleMascotSize,
                       child: AnimatedSwitcher(
                         duration: reduced
                             ? Duration.zero
@@ -168,8 +179,8 @@ class CasamaWaveHeader extends StatelessWidget {
                         child: CasMascotView(
                           key: ValueKey(titleMascotPose),
                           pose: titleMascotPose!,
-                          width: 60,
-                          height: 60,
+                          width: titleMascotSize,
+                          height: titleMascotSize,
                         ),
                       ),
                     ),
@@ -380,14 +391,16 @@ class _SteppedWaveHeaderPainter extends CustomPainter {
   final Color mid;
   final Color light;
   final Color bottomBg;
-  final Color ornament;
+  final double safeTop;
+  final bool isDark;
 
   const _SteppedWaveHeaderPainter({
     required this.deep,
     required this.mid,
     required this.light,
     required this.bottomBg,
-    required this.ornament,
+    required this.safeTop,
+    required this.isDark,
   });
 
   @override
@@ -401,22 +414,11 @@ class _SteppedWaveHeaderPainter extends CustomPainter {
       Paint()..color = deep,
     );
 
-    // 2. Top-right celestial gold orbital ornament
-    final center = Offset(w - 36, 48);
-    final ringPaint = Paint()
-      ..color = ornament
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.25;
-    canvas.drawCircle(center, 44, ringPaint);
-    canvas.drawCircle(
-      center,
-      28,
-      ringPaint..color = ornament.withValues(alpha: ornament.a * 0.75),
-    );
-    canvas.drawCircle(
-      center + const Offset(-18, 22),
-      2.6,
-      Paint()..color = ornament,
+    // 2. Top-right lighter-teal concentric rings
+    CasamaHeaderRings.paint(
+      canvas,
+      CasamaHeaderRings.bellCenter(size, safeTop),
+      CasamaHeaderRings.paintsFor(isDark: isDark),
     );
 
     // 3. Wave Band 1: Muted Sage-Teal (#688C83)
@@ -453,7 +455,8 @@ class _SteppedWaveHeaderPainter extends CustomPainter {
         oldDelegate.mid != mid ||
         oldDelegate.light != light ||
         oldDelegate.bottomBg != bottomBg ||
-        oldDelegate.ornament != ornament;
+        oldDelegate.safeTop != safeTop ||
+        oldDelegate.isDark != isDark;
   }
 }
 

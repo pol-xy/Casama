@@ -16,7 +16,6 @@ import '../../features/chat/group_chat_screen.dart';
 import '../../features/dashboard/boards_screen.dart';
 import '../../features/dashboard/main_navigation_shell.dart';
 import 'casama_avatar.dart';
-import 'casama_button.dart';
 import 'casama_sheet_scaffold.dart';
 import 'casama_wave_header.dart';
 
@@ -28,14 +27,56 @@ class CasamaNotificationBellButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(repositoryProvider).unreadNotificationCount;
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final badgeLabel = unreadCount > 9 ? '9+' : '$unreadCount';
 
-    return CasamaCircleIconButton(
-      icon: Icons.notifications_none_rounded,
-      semanticLabel: unreadCount > 0
-          ? 'Notifications, $unreadCount unread'
-          : 'Notifications',
-      showDot: unreadCount > 0,
-      onTap: () => showCasamaNotificationsSheet(context),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        CasamaCircleIconButton(
+          icon: Icons.notifications_none_rounded,
+          semanticLabel: unreadCount > 0
+              ? 'Notifications, $unreadCount unread'
+              : 'Notifications',
+          showDot: false,
+          onTap: () => showCasamaNotificationsSheet(context),
+        ),
+        if (unreadCount > 0)
+          Positioned(
+            top: -2,
+            right: -2,
+            child: IgnorePointer(
+              child: ExcludeSemantics(
+                child: Container(
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: pal.coralFab,
+                    borderRadius: CasamaSpacing.roundedPill,
+                    border: Border.all(color: pal.surface, width: 1.5),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    badgeLabel,
+                    style: theme.textTheme.labelSmall?.tabular.copyWith(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.0,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -317,119 +358,355 @@ Future<void> showCasamaNotificationsSheet(BuildContext context) {
     context,
     icon: Icons.notifications_none_rounded,
     title: 'Notifications',
-    subtitle: 'Recent household updates',
-    builder: (sheetCtx) => Consumer(
+    subtitle: 'All caught up!',
+    scrollable: false,
+    subtitleBuilder: (_) => Consumer(
       builder: (ctx, ref, _) {
-        final pal = ctx.palette;
-        final theme = Theme.of(ctx);
-        final repo = ref.watch(repositoryProvider);
-        final items = repo.notifications
-            .where((n) => n.isSupportedNotification)
-            .toList();
-        final hasUnread = items.any((n) => n.readAt == null && !n.isRead);
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (items.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: CasamaSpacing.md),
-                child: Text(
-                  repo.hasActiveHousehold
-                      ? "You're all caught up! No new notifications."
-                      : 'Join a household to receive household alerts',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: pal.textSecondary,
-                  ),
-                ),
-              )
-            else
-              for (var i = 0; i < items.length; i++) ...[
-                if (i > 0) Divider(height: 16, color: pal.border),
-                Builder(
-                  builder: (_) {
-                    final item = items[i];
-                    final spec = _resolveNotificationSpec(item, pal);
-                    final actorProfile = _resolveNotificationActorProfile(
-                      repo,
-                      item,
-                    );
-                    final hasActorInfo =
-                        (item.actorId?.trim().isNotEmpty ?? false) ||
-                        (item.actorFallbackName?.trim().isNotEmpty ?? false);
-                    final fallbackName = hasActorInfo
-                        ? repo.resolveHousemateName(
-                            item.actorId,
-                            fallback: item.actorFallbackName ?? '',
-                          )
-                        : '';
-                    final Widget? leading = actorProfile != null
-                        ? CasamaAvatar(
-                            radius: 21,
-                            avatarUrl: actorProfile.avatarUrl,
-                            name: actorProfile.preferredName,
-                          )
-                        : (fallbackName.isNotEmpty
-                              ? CasamaAvatar(
-                                  radius: 21,
-                                  name: fallbackName,
-                                )
-                              : null);
-
-                    final _PointsBadgeData? pointsBadge = _resolvePointsBadge(
-                      repo,
-                      item,
-                      pal,
-                    );
-
-                    return _CasamaNotificationRow(
-                      leading: leading,
-                      icon: spec.icon,
-                      iconBg: spec.iconBg,
-                      iconColor: spec.iconColor,
-                      domainLabel: spec.domainLabel,
-                      title: item.displayTitle,
-                      subtitle: item.displaySubtitle,
-                      pointsBadge: pointsBadge,
-                      time: DateFormat('h:mm a').format(item.createdAt),
-                      isUnread: item.isUnread,
-                      pal: pal,
-                      theme: theme,
-                      onTap: () => _handleNotificationTap(
-                        context,
-                        sheetCtx,
-                        ref,
-                        item,
-                        spec,
-                      ),
-                    );
-                  },
-                ),
-              ],
-            const SizedBox(height: CasamaSpacing.md),
-            CasamaButton(
-              key: const ValueKey('casama_mark_all_read_button'),
-              label: 'Mark all read',
-              style: CasamaButtonStyle.secondary,
-              height: 48,
-              onPressed: hasUnread
-                  ? () {
-                      ref.read(repositoryProvider).markAllNotificationsAsRead();
-                      Navigator.of(sheetCtx).pop();
-                      showCasamaToast(
-                        context,
-                        'All notifications marked as read',
-                        icon: Icons.done_all_rounded,
-                      );
-                    }
-                  : null,
-            ),
-          ],
+        final unreadCount =
+            ref.watch(repositoryProvider).unreadNotificationCount;
+        return Text(
+          unreadCount == 0
+              ? 'All caught up!'
+              : '$unreadCount unread ${unreadCount == 1 ? 'update' : 'updates'}',
         );
       },
     ),
+    builder: (sheetCtx) => _NotificationsSheetBody(
+      hostContext: context,
+      sheetContext: sheetCtx,
+    ),
   );
+}
+
+class _NotificationsSheetBody extends ConsumerStatefulWidget {
+  final BuildContext hostContext;
+  final BuildContext sheetContext;
+
+  const _NotificationsSheetBody({
+    required this.hostContext,
+    required this.sheetContext,
+  });
+
+  @override
+  ConsumerState<_NotificationsSheetBody> createState() =>
+      _NotificationsSheetBodyState();
+}
+
+class _NotificationsSheetBodyState
+    extends ConsumerState<_NotificationsSheetBody> {
+  bool _showUnreadOnly = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final repo = ref.watch(repositoryProvider);
+    final items = repo.notifications
+        .where((n) => n.isSupportedNotification)
+        .toList();
+    final unreadCount = items.where((n) => n.isUnread).length;
+    final visibleItems = _showUnreadOnly
+        ? items.where((n) => n.isUnread).toList()
+        : items;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _NotificationFilterBar(
+          showUnreadOnly: _showUnreadOnly,
+          unreadCount: unreadCount,
+          hasUnread: unreadCount > 0,
+          pal: pal,
+          theme: theme,
+          onSelectAll: () => setState(() => _showUnreadOnly = false),
+          onSelectUnread: () => setState(() => _showUnreadOnly = true),
+          onMarkAllRead: unreadCount > 0
+              ? () {
+                  ref.read(repositoryProvider).markAllNotificationsAsRead();
+                  showCasamaToast(
+                    widget.hostContext,
+                    'All notifications marked as read',
+                    icon: Icons.done_all_rounded,
+                  );
+                }
+              : null,
+        ),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              CasamaSpacing.xl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (items.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: CasamaSpacing.lg,
+                    ),
+                    child: Text(
+                      repo.hasActiveHousehold
+                          ? "You're all caught up! No new notifications."
+                          : 'Join a household to receive household alerts',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: pal.textSecondary,
+                      ),
+                    ),
+                  )
+                else if (_showUnreadOnly && visibleItems.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: CasamaSpacing.lg,
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          "You're all caught up!",
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: pal.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'No unread notifications right now.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: pal.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  for (final item in visibleItems)
+                    _buildNotificationCard(
+                      context: context,
+                      pal: pal,
+                      theme: theme,
+                      repo: repo,
+                      item: item,
+                    ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotificationCard({
+    required BuildContext context,
+    required CasamaPalette pal,
+    required ThemeData theme,
+    required CasamaRepository repo,
+    required HouseholdNotificationItem item,
+  }) {
+    final spec = _resolveNotificationSpec(item, pal);
+    final actorProfile = _resolveNotificationActorProfile(repo, item);
+    final hasActorInfo =
+        (item.actorId?.trim().isNotEmpty ?? false) ||
+        (item.actorFallbackName?.trim().isNotEmpty ?? false);
+    final fallbackName = hasActorInfo
+        ? repo.resolveHousemateName(
+            item.actorId,
+            fallback: item.actorFallbackName ?? '',
+          )
+        : '';
+    final Widget? leading = actorProfile != null
+        ? CasamaAvatar(
+            radius: 21,
+            avatarUrl: actorProfile.avatarUrl,
+            name: actorProfile.preferredName,
+          )
+        : (fallbackName.isNotEmpty
+              ? CasamaAvatar(radius: 21, name: fallbackName)
+              : null);
+
+    final _PointsBadgeData? pointsBadge = _resolvePointsBadge(
+      repo,
+      item,
+      pal,
+    );
+
+    return _CasamaNotificationCard(
+      leading: leading,
+      icon: spec.icon,
+      iconBg: spec.iconBg,
+      iconColor: spec.iconColor,
+      domainLabel: spec.domainLabel,
+      title: item.displayTitle,
+      subtitle: item.displaySubtitle,
+      pointsBadge: pointsBadge,
+      time: DateFormat('h:mm a').format(item.createdAt),
+      isUnread: item.isUnread,
+      pal: pal,
+      theme: theme,
+      onTap: () => _handleNotificationTap(
+        widget.hostContext,
+        widget.sheetContext,
+        ref,
+        item,
+        spec,
+      ),
+    );
+  }
+}
+
+class _NotificationFilterBar extends StatelessWidget {
+  final bool showUnreadOnly;
+  final int unreadCount;
+  final bool hasUnread;
+  final CasamaPalette pal;
+  final ThemeData theme;
+  final VoidCallback onSelectAll;
+  final VoidCallback onSelectUnread;
+  final VoidCallback? onMarkAllRead;
+
+  const _NotificationFilterBar({
+    required this.showUnreadOnly,
+    required this.unreadCount,
+    required this.hasUnread,
+    required this.pal,
+    required this.theme,
+    required this.onSelectAll,
+    required this.onSelectUnread,
+    required this.onMarkAllRead,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final markAllInk = hasUnread
+        ? pal.headerDeep
+        : pal.textSecondary.withValues(alpha: 0.5);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: pal.divider, width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          _FilterPill(
+            key: const ValueKey('casama_notif_filter_all'),
+            label: 'All',
+            selected: !showUnreadOnly,
+            pal: pal,
+            theme: theme,
+            onTap: onSelectAll,
+          ),
+          const SizedBox(width: 8),
+          _FilterPill(
+            key: const ValueKey('casama_notif_filter_unread'),
+            label: 'Unread ($unreadCount)',
+            selected: showUnreadOnly,
+            pal: pal,
+            theme: theme,
+            onTap: onSelectUnread,
+          ),
+          const Spacer(),
+          Semantics(
+            key: const ValueKey('casama_mark_all_read_button'),
+            button: true,
+            enabled: hasUnread,
+            label: 'Mark all read',
+            child: CasamaPressable(
+              onTap: onMarkAllRead,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: CasamaSpacing.minTouchTarget,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.check_rounded,
+                        size: 15,
+                        color: markAllInk,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Mark all read',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: markAllInk,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterPill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final CasamaPalette pal;
+  final ThemeData theme;
+  final VoidCallback onTap;
+
+  const _FilterPill({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.pal,
+    required this.theme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: CasamaPressable(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: CasamaSpacing.minTouchTarget,
+          ),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: selected ? pal.headerDeep : pal.track,
+                borderRadius: CasamaSpacing.roundedPill,
+                border: selected
+                    ? null
+                    : Border.all(color: pal.border, width: 1),
+              ),
+              child: Text(
+                label,
+                style: theme.textTheme.labelMedium?.tabular.copyWith(
+                  color: selected ? Colors.white : pal.textSecondary,
+                  fontSize: 12.5,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _PointsBadgeData {
@@ -660,7 +937,7 @@ bool _isTaskSelfRequest(
   return false;
 }
 
-class _CasamaNotificationRow extends StatelessWidget {
+class _CasamaNotificationCard extends StatelessWidget {
   final Widget? leading;
   final IconData icon;
   final Color iconBg;
@@ -675,7 +952,7 @@ class _CasamaNotificationRow extends StatelessWidget {
   final ThemeData theme;
   final VoidCallback? onTap;
 
-  const _CasamaNotificationRow({
+  const _CasamaNotificationCard({
     this.leading,
     required this.icon,
     required this.iconBg,
@@ -693,123 +970,184 @@ class _CasamaNotificationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final row = ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: CasamaSpacing.minTouchTarget),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          leading ??
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-                child: Icon(icon, color: iconColor, size: 19),
-              ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: pal.textPrimary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    if (isUnread) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: pal.coralFab,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: pal.textSecondary,
+    final card = Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: isUnread ? pal.surface : pal.scaffoldBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isUnread
+              ? pal.headerDeep.withValues(alpha: 0.24)
+              : pal.border,
+          width: isUnread ? 1.2 : 1.0,
+        ),
+        boxShadow: isUnread
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: context.isDark ? 0.20 : 0.04,
                   ),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: iconBg,
-                        borderRadius: CasamaSpacing.roundedPill,
-                      ),
-                      child: Text(
-                        domainLabel,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: iconColor,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+              ]
+            : null,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: IntrinsicHeight(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: CasamaSpacing.minTouchTarget,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (isUnread) Container(width: 3, color: pal.coralFab),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      isUnread ? 11 : 14,
+                      14,
+                      14,
+                      14,
                     ),
-                    if (pointsBadge != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: pointsBadge!.bg,
-                          borderRadius: CasamaSpacing.roundedPill,
-                          border: Border.all(
-                            color: pointsBadge!.fg.withValues(alpha: 0.32),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        leading ??
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: iconBg,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(icon, color: iconColor, size: 19),
+                            ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      title,
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            color: isUnread
+                                                ? pal.textPrimary
+                                                : pal.textSecondary,
+                                            fontWeight: isUnread
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                          ),
+                                    ),
+                                  ),
+                                  if (isUnread) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      width: 7.5,
+                                      height: 7.5,
+                                      decoration: BoxDecoration(
+                                        color: pal.coralFab,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitle,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: isUnread
+                                      ? pal.textSecondary
+                                      : pal.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: iconBg,
+                                      borderRadius: CasamaSpacing.roundedPill,
+                                    ),
+                                    child: Text(
+                                      domainLabel,
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: iconColor,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                  if (pointsBadge != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: pointsBadge!.bg,
+                                        borderRadius: CasamaSpacing.roundedPill,
+                                        border: Border.all(
+                                          color: pointsBadge!.fg.withValues(
+                                            alpha: 0.32,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        pointsBadge!.label,
+                                        style: theme.textTheme.labelSmall?.tabular
+                                            .copyWith(
+                                              color: pointsBadge!.fg,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        child: Text(
-                          pointsBadge!.label,
-                          style: theme.textTheme.labelSmall?.tabular.copyWith(
-                            color: pointsBadge!.fg,
+                        const SizedBox(width: 8),
+                        Text(
+                          time,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: pal.textMuted,
                             fontSize: 11,
-                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            time,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: pal.textMuted,
-              fontSize: 11,
-            ),
-          ),
-        ],
+        ),
       ),
     );
 
-    if (onTap == null) return row;
+    if (onTap == null) return card;
 
     return Semantics(
       button: true,
       label: '$title. $subtitle',
-      child: CasamaPressable(onTap: onTap, child: row),
+      child: CasamaPressable(onTap: onTap, child: card),
     );
   }
 }
