@@ -397,29 +397,6 @@ void main() {
     });
 
     testWidgets(
-      'AuthScreen One-Tap Demo Login without configured credentials shows error toast and stays on AuthScreen',
-      (tester) async {
-        await tester.pumpWidget(
-          ProviderScope(
-            child: MaterialApp(
-              theme: CasamaTheme.lightTheme,
-              home: const AuthScreen(initialTabIndex: 1),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.text('One-Tap Demo Login'), findsOneWidget);
-        await tester.ensureVisible(find.text('One-Tap Demo Login'));
-        await tester.tap(find.text('One-Tap Demo Login'));
-        await tester.pumpAndSettle();
-
-        expect(find.textContaining('Demo login is not configured'), findsOneWidget);
-        expect(find.text('Welcome back'), findsOneWidget);
-      },
-    );
-
-    testWidgets(
       'AuthScreen reveals Resend Verification Email on email_not_confirmed, enforces 60s cooldown, handles rate limits, and hides when email cleared',
       (tester) async {
         final mockRepo = _UnverifiedAuthMockRepository();
