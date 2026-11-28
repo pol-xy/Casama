@@ -276,11 +276,11 @@ void main() {
 
       // Fill First Name, Last Name, taken Nickname, Birthday via calendar picker, and accept Terms
       await tester.enterText(
-        find.widgetWithText(TextField, 'e.g., Jon Paul'),
+        find.widgetWithText(TextField, 'e.g., Juan'),
         'Clara',
       );
       await tester.enterText(
-        find.widgetWithText(TextField, 'e.g., Berana'),
+        find.widgetWithText(TextField, 'e.g., Dela Cruz'),
         'Reyes',
       );
       await tester.enterText(

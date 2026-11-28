@@ -16,6 +16,7 @@ import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../shared/widgets/casama_wave_background.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../calendar/household_calendar_view.dart';
 import '../chat/chat_directory_screen.dart';
@@ -93,21 +94,29 @@ class DashboardScreen extends ConsumerWidget {
       }
     }
 
+    final inWaveShell = CasamaWaveTabScope.maybeOf(context) != null;
+
     return Scaffold(
-      backgroundColor: pal.scaffoldBg,
+      backgroundColor: inWaveShell ? Colors.transparent : pal.scaffoldBg,
       body: CasamaAmbientCanvas(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.only(bottom: bottomInset + 104),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Stepped Forest Teal Wave Header
-              CasamaWaveHeader(
-                title: 'Hello, ${repo.currentUser.preferredName}!',
-                subtitle: _getTimeBasedGreeting(),
-                showNotificationBell: true,
-                onMenuTap: () => _openDrawer(context),
-              ),
+        backgroundColor: inWaveShell ? Colors.transparent : null,
+        child: CasamaWaveScrollSync(
+          builder: (context, scrollController) => SingleChildScrollView(
+            controller: scrollController,
+            padding: EdgeInsets.only(bottom: bottomInset + 104),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. Stepped Forest Teal Wave Header
+                CasamaWaveHeaderSlot(
+                  child: CasamaWaveHeader(
+                    title: 'Hello, ${repo.currentUser.preferredName}!',
+                    subtitle: _getTimeBasedGreeting(),
+                    showNotificationBell: true,
+                    paintBackground: !inWaveShell,
+                    onMenuTap: () => _openDrawer(context),
+                  ),
+                ),
 
               // 2. Overlapping Split Hero (or No-Household Prompt)
               if (!repo.hasActiveHousehold)
@@ -200,6 +209,7 @@ class DashboardScreen extends ConsumerWidget {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

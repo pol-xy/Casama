@@ -12,6 +12,7 @@ import '../../../core/constants/dimensions.dart';
 import '../../../core/motion/casama_motion.dart';
 import '../../../data/models.dart';
 import '../../../shared/widgets/casama_avatar.dart';
+import '../../../shared/widgets/casama_wave_background.dart';
 import '../../../shared/widgets/casama_wave_header.dart';
 
 class CasamaAgendaStatusBadge extends StatelessWidget {
@@ -272,7 +273,8 @@ class CasamaChatThreadHeader extends StatelessWidget {
             painter: _ThreadHeaderPainter(
               deep: pal.headerDeep,
               mid: pal.headerMid,
-              ornament: pal.headerOrnament,
+              safeTop: topPad,
+              isDark: context.isDark,
             ),
           ),
         ),
@@ -344,19 +346,28 @@ class CasamaChatThreadHeader extends StatelessWidget {
 class _ThreadHeaderPainter extends CustomPainter {
   final Color deep;
   final Color mid;
-  final Color ornament;
+  final double safeTop;
+  final bool isDark;
 
   const _ThreadHeaderPainter({
     required this.deep,
     required this.mid,
-    required this.ornament,
+    required this.safeTop,
+    required this.isDark,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
       Paint()..color = deep,
+    );
+
+    CasamaHeaderRings.paint(
+      canvas,
+      Offset(size.width - 40, safeTop + 34),
+      CasamaHeaderRings.paintsFor(isDark: isDark),
     );
 
     final wave = Path()
@@ -373,25 +384,14 @@ class _ThreadHeaderPainter extends CustomPainter {
       ..lineTo(0, size.height)
       ..close();
     canvas.drawPath(wave, Paint()..color = mid.withValues(alpha: 0.45));
-
-    final center = Offset(size.width - 30, size.height * 0.35);
-    final ringPaint = Paint()
-      ..color = ornament
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawCircle(center, 34, ringPaint);
-    canvas.drawCircle(
-      center,
-      22,
-      ringPaint..color = ornament.withValues(alpha: ornament.a * 0.7),
-    );
   }
 
   @override
   bool shouldRepaint(covariant _ThreadHeaderPainter oldDelegate) =>
       oldDelegate.deep != deep ||
       oldDelegate.mid != mid ||
-      oldDelegate.ornament != ornament;
+      oldDelegate.safeTop != safeTop ||
+      oldDelegate.isDark != isDark;
 }
 
 /// Centered pill date divider (`Today`, `Yesterday`, or formatted date) inside chat threads.

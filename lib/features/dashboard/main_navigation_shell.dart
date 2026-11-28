@@ -10,6 +10,7 @@ import '../../core/theme/app_theme.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
+import '../../shared/widgets/casama_wave_background.dart';
 import '../chat/chat_directory_screen.dart';
 import '../profile/profile_screen.dart';
 import '../quicksnap/quicksnap_camera_screen.dart';
@@ -73,25 +74,47 @@ class MainNavigationShell extends ConsumerStatefulWidget {
       _MainNavigationShellState();
 }
 
-class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
+class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
+    with SingleTickerProviderStateMixin {
   late int _currentIndex;
+  late final CasamaWaveBackgroundController _wave;
   late final ValueNotifier<int> _boardTabNotifier;
   late final ValueNotifier<int> _chatAgendaFocusNotifier;
   late bool _isTourActive;
   int _tourStep = 0;
 
   late final List<Widget> _screens = [
-    const DashboardScreen(),
-    const BoardsScreen(),
+    CasamaWaveTabScope(
+      controller: _wave,
+      tabIndex: 0,
+      child: const DashboardScreen(),
+    ),
+    CasamaWaveTabScope(
+      controller: _wave,
+      tabIndex: 1,
+      child: const BoardsScreen(),
+    ),
     const SizedBox.shrink(), // Center CASnap camera slot placeholder
-    ChatDirectoryScreen(initialFocusAgendas: widget.initialFocusAgendas),
-    const ProfileScreen(),
+    CasamaWaveTabScope(
+      controller: _wave,
+      tabIndex: 3,
+      child: ChatDirectoryScreen(initialFocusAgendas: widget.initialFocusAgendas),
+    ),
+    CasamaWaveTabScope(
+      controller: _wave,
+      tabIndex: 4,
+      child: const ProfileScreen(),
+    ),
   ];
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex.clamp(0, 4);
+    _wave = CasamaWaveBackgroundController(
+      vsync: this,
+      initialTab: _currentIndex,
+    );
     _boardTabNotifier = ValueNotifier<int>(widget.initialBoardIndex.clamp(0, 2));
     _chatAgendaFocusNotifier =
         ValueNotifier<int>(widget.initialFocusAgendas ? 1 : 0);
@@ -111,10 +134,18 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _wave.reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _wave.updateSafeTop(MediaQuery.paddingOf(context).top);
+  }
+
+  @override
   void didUpdateWidget(covariant MainNavigationShell oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.initialIndex != oldWidget.initialIndex) {
       _currentIndex = widget.initialIndex.clamp(0, 4);
+      _syncWave();
     }
     if (widget.initialBoardIndex != oldWidget.initialBoardIndex) {
       _boardTabNotifier.value = widget.initialBoardIndex.clamp(0, 2);
@@ -126,9 +157,16 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
 
   @override
   void dispose() {
+    _wave.dispose();
     _boardTabNotifier.dispose();
     _chatAgendaFocusNotifier.dispose();
     super.dispose();
+  }
+
+  void _syncWave() {
+    if (_currentIndex != 2) {
+      _wave.selectTab(_currentIndex);
+    }
   }
 
   void _openQuickSnap() {
@@ -157,6 +195,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
           };
         }
       });
+      _syncWave();
     }
   }
 
@@ -166,6 +205,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       _currentIndex = 1;
       if (_isTourActive) _tourStep = 1;
     });
+    _syncWave();
   }
 
   void _openChatAgendas() {
@@ -174,6 +214,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       _currentIndex = 3;
       if (_isTourActive) _tourStep = 3;
     });
+    _syncWave();
   }
 
   void _openDrawer() {
@@ -190,6 +231,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       _isTourActive = false;
       _currentIndex = 0;
     });
+    _syncWave();
     GoRouter.maybeOf(context)?.go('/dashboard');
     showCasamaToast(
       context,
@@ -220,6 +262,9 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
           break;
       }
     });
+    if (step != 2) {
+      _syncWave();
+    }
   }
 
   @override
@@ -247,7 +292,25 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
         extendBody: true,
         body: Stack(
           children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    key: const Key('casama_wave_background'),
+                    painter: CasamaWaveBackgroundPainter(
+                      controller: _wave,
+                      colors: CasamaWaveColors.fromPalette(
+                        pal,
+                        isDark: context.isDark,
+                      ),
+                      safeTop: MediaQuery.paddingOf(context).top,
+                    ),
+                  ),
+                ),
+              ),
+            ),
             IndexedStack(index: _currentIndex, children: _screens),
+            _TourScrim(visible: _isTourActive),
             if (_isTourActive)
               Positioned(
                 left: CasamaSpacing.md,
@@ -320,14 +383,14 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
         color: pal.surface,
         borderRadius: CasamaSpacing.roundedCard,
         border: Border.all(
-          color: pal.primaryCoral.withValues(alpha: 0.35),
-          width: 1.5,
+          color: pal.primaryCoral.withValues(alpha: 0.45),
+          width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: context.isDark ? 0.45 : 0.14),
-            blurRadius: 18,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.52 : 0.22),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -428,6 +491,35 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TourScrim extends StatelessWidget {
+  final bool visible;
+
+  const _TourScrim({required this.visible});
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scrimColor = isDark
+        ? Colors.black.withValues(alpha: 0.52)
+        : Colors.black.withValues(alpha: 0.34);
+
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1.0 : 0.0,
+        duration: reduced ? Duration.zero : CasamaMotion.scrim,
+        curve: Curves.easeOut,
+        child: ColoredBox(
+          key: const Key('app_tour_scrim'),
+          color: scrimColor,
+          child: const SizedBox.expand(),
+        ),
       ),
     );
   }

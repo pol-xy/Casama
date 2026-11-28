@@ -15,6 +15,7 @@ import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../shared/widgets/casama_wave_background.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../dashboard/main_navigation_shell.dart';
 import '../dashboard/widgets/casama_household_drawer.dart';
@@ -55,23 +56,32 @@ class ProfileScreen extends ConsumerWidget {
         ? '${DateFormat('MMM d, y').format(user.birthday!)}${user.computedAge != null ? ' (${user.computedAge} yrs)' : ''}'
         : 'Not specified';
 
+    final inWaveShell = CasamaWaveTabScope.maybeOf(context) != null;
+
     return Scaffold(
-      backgroundColor: pal.scaffoldBg,
+      backgroundColor: inWaveShell ? Colors.transparent : pal.scaffoldBg,
       body: CasamaAmbientCanvas(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.only(bottom: bottomInset + 104),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Stepped Forest Teal Wave Header
-              CasamaWaveHeader(
-                title: 'Profile',
-                subtitle: repo.hasActiveHousehold
-                    ? '${repo.currentHousehold.name} • Member'
-                    : 'No household yet',
-                showNotificationBell: true,
-                onMenuTap: () => _openDrawer(context),
-              ),
+        backgroundColor: inWaveShell ? Colors.transparent : null,
+        child: CasamaWaveScrollSync(
+          builder: (context, scrollController) => SingleChildScrollView(
+            controller: scrollController,
+            padding: EdgeInsets.only(bottom: bottomInset + 104),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. Stepped Forest Teal Wave Header
+                CasamaWaveHeaderSlot(
+                  extraHeight: 34.0,
+                  child: CasamaWaveHeader(
+                    title: 'Profile',
+                    subtitle: repo.hasActiveHousehold
+                        ? '${repo.currentHousehold.name} • Member'
+                        : 'No household yet',
+                    showNotificationBell: true,
+                    paintBackground: !inWaveShell,
+                    onMenuTap: () => _openDrawer(context),
+                  ),
+                ),
 
               Center(
                 child: ConstrainedBox(
@@ -422,6 +432,7 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

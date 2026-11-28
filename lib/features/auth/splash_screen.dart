@@ -10,6 +10,7 @@ import '../../core/motion/casama_motion.dart';
 import '../../core/router/app_router.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
+import '../../shared/widgets/casama_wave_background.dart';
 import '../../shared/widgets/casama_button.dart';
 
 class SplashScreen extends ConsumerWidget {
@@ -53,7 +54,8 @@ class SplashScreen extends ConsumerWidget {
                               mid: pal.headerMid,
                               light: pal.headerLight,
                               surface: pal.scaffoldBg,
-                              ornament: pal.headerOrnament,
+                              safeTop: topInset,
+                              isDark: context.isDark,
                             ),
                           ),
                         ),
@@ -295,14 +297,16 @@ class _SplashTopPainter extends CustomPainter {
   final Color mid;
   final Color light;
   final Color surface;
-  final Color ornament;
+  final double safeTop;
+  final bool isDark;
 
   const _SplashTopPainter({
     required this.deep,
     required this.mid,
     required this.light,
     required this.surface,
-    required this.ornament,
+    required this.safeTop,
+    required this.isDark,
   });
 
   @override
@@ -312,14 +316,12 @@ class _SplashTopPainter extends CustomPainter {
 
     canvas.drawRect(Rect.fromLTWH(0, 0, w, h), Paint()..color = deep);
 
-    // Delicate gold ring ornament top-right
-    final ring = Paint()
-      ..color = ornament
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawCircle(Offset(w - 16, 22), 44, ring);
-    canvas.drawCircle(Offset(w - 16, 22), 24, ring);
-    canvas.drawCircle(Offset(w - 42, 48), 3, Paint()..color = ornament);
+    // Lighter-teal concentric rings top-right
+    CasamaHeaderRings.paint(
+      canvas,
+      Offset(w - 40, safeTop + 36),
+      CasamaHeaderRings.paintsFor(isDark: isDark),
+    );
 
     // Layered stepped waves near bottom
     final p1 = Path()
@@ -353,5 +355,6 @@ class _SplashTopPainter extends CustomPainter {
       oldDelegate.mid != mid ||
       oldDelegate.light != light ||
       oldDelegate.surface != surface ||
-      oldDelegate.ornament != ornament;
+      oldDelegate.safeTop != safeTop ||
+      oldDelegate.isDark != isDark;
 }

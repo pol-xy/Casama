@@ -17,6 +17,7 @@ import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
 import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
+import '../../shared/widgets/casama_wave_background.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../dashboard/main_navigation_shell.dart';
 import '../dashboard/widgets/casama_household_drawer.dart';
@@ -238,24 +239,32 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
         );
       });
 
+    final inWaveShell = CasamaWaveTabScope.maybeOf(context) != null;
+
     return Scaffold(
-      backgroundColor: pal.scaffoldBg,
+      backgroundColor: inWaveShell ? Colors.transparent : pal.scaffoldBg,
       body: CasamaAmbientCanvas(
-        child: SingleChildScrollView(
+        backgroundColor: inWaveShell ? Colors.transparent : null,
+        child: CasamaWaveScrollSync(
           controller: _scrollController,
-          padding: EdgeInsets.only(bottom: bottomInset + 104),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Stepped Forest Teal Wave Header
-              CasamaWaveHeader(
-                title: 'Chat',
-                subtitle: repo.hasActiveHousehold
-                    ? '${repo.currentHousehold.name} • ${members.length} members'
-                    : 'No household yet',
-                showNotificationBell: true,
-                onMenuTap: () => _openDrawer(context),
-              ),
+          builder: (context, scrollController) => SingleChildScrollView(
+            controller: scrollController,
+            padding: EdgeInsets.only(bottom: bottomInset + 104),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. Stepped Forest Teal Wave Header
+                CasamaWaveHeaderSlot(
+                  child: CasamaWaveHeader(
+                    title: 'Chat',
+                    subtitle: repo.hasActiveHousehold
+                        ? '${repo.currentHousehold.name} • ${members.length} members'
+                        : 'No household yet',
+                    showNotificationBell: true,
+                    paintBackground: !inWaveShell,
+                    onMenuTap: () => _openDrawer(context),
+                  ),
+                ),
 
               if (!repo.hasActiveHousehold)
                 Center(
@@ -875,6 +884,7 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

@@ -372,7 +372,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
                     selectedAvatar: _selectedAvatar,
                     onSelected: (next) =>
                         setState(() => _selectedAvatar = next),
-                    alignment: WrapAlignment.center,
+                    horizontalScroll: true,
                     avatarRadius: 18,
                     toggleDeselect: true,
                   ),
@@ -384,7 +384,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
             CasamaTextField(
               controller: _firstNameController,
               label: 'First Name',
-              hint: 'e.g., Jon Paul',
+              hint: 'e.g., Juan',
               prefixIcon: Icons.badge_outlined,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.next,
@@ -401,7 +401,7 @@ class _OptionalProfileScreenState extends ConsumerState<OptionalProfileScreen> {
             CasamaTextField(
               controller: _lastNameController,
               label: 'Last Name',
-              hint: 'e.g., Berana',
+              hint: 'e.g., Dela Cruz',
               prefixIcon: Icons.badge_outlined,
               focusNode: _lastNameFocus,
               textCapitalization: TextCapitalization.words,

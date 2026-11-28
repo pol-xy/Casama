@@ -10,6 +10,7 @@ import '../../core/motion/casama_motion.dart';
 import '../../data/repository_provider.dart';
 import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_lost_found_icon.dart';
+import '../../shared/widgets/casama_wave_background.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../items/lost_found_screen.dart';
 import '../items/widgets/report_item_sheet.dart';
@@ -37,6 +38,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   late final ScrollController _outerScrollController;
   late int _activeTab;
   ValueListenable<int>? _shellBoardListenable;
+  CasamaWaveTabScope? _waveScope;
   double _heroHeaderHeight = 220.0;
   bool _showStickyBar = false;
 
@@ -80,7 +82,15 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
 
   void _handleScrollUpdate() {
     if (!_outerScrollController.hasClients) return;
-    final offset = _outerScrollController.offset;
+    final pos = _outerScrollController.position;
+    final offset = pos.pixels;
+    var waveOffset = offset;
+    if (pos.hasContentDimensions &&
+        pos.maxScrollExtent > 0 &&
+        offset >= pos.maxScrollExtent - 0.5) {
+      waveOffset += kBoardsCollapsedWaveExtra;
+    }
+    _waveScope?.reportScroll(waveOffset);
     final threshold = (_heroHeaderHeight - 48.0).clamp(0.0, double.infinity);
     final shouldShow = offset > threshold;
     if (shouldShow != _showStickyBar && mounted) {
@@ -91,6 +101,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _waveScope = CasamaWaveTabScope.maybeOf(context);
     final scope = CasamaShellScope.maybeOf(context);
     final nextListenable = scope?.boardTabListenable;
     if (nextListenable != _shellBoardListenable) {
@@ -190,12 +201,18 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
     final inShell = CasamaShellScope.maybeOf(context) != null;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final topInset = MediaQuery.paddingOf(context).top;
-    final fabBottomOffset = inShell ? 84.0 + bottomInset : 20.0 + bottomInset;
-    final bodyBottomPadding = inShell ? 156.0 + bottomInset : 104.0 + bottomInset;
+    // When inside MainNavigationShell (extendBody: true), MediaQuery.paddingOf(context).bottom
+    // already includes the docked bottom navigation bar height. Adding 84.0 on top of it
+    // double-counts the nav bar and floats the FAB too high.
+    final fabBottomOffset = inShell ? 12.0 + bottomInset : 20.0 + bottomInset;
+    final bodyBottomPadding = inShell ? 80.0 + bottomInset : 104.0 + bottomInset;
+
+    final inWaveShell = _waveScope != null;
 
     return Scaffold(
-      backgroundColor: pal.scaffoldBg,
+      backgroundColor: inWaveShell ? Colors.transparent : pal.scaffoldBg,
       body: CasamaAmbientCanvas(
+        backgroundColor: inWaveShell ? Colors.transparent : null,
         child: Stack(
           children: [
             // Faint ambient board-icon watermark behind scrollable content
@@ -211,6 +228,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
                 SliverToBoxAdapter(
                   child: _MeasureSize(
                     onChange: (size) {
+                      _waveScope?.reportHeaderHeight(size.height);
                       if (size.height > 0 &&
                           (_heroHeaderHeight - size.height).abs() > 0.5) {
                         setState(() {
@@ -228,6 +246,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
                       extendedWave: true,
                       compact: true,
                       showNotificationBell: true,
+                      paintBackground: !inWaveShell,
                       onMenuTap: _openDrawer,
                       embeddedTabBar: _BoardsHeaderSwitcher(
                         tabs: _tabs,
