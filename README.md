@@ -332,3 +332,6 @@ flutter test
 ---
 
 *Final Project for Application Development — Built with care for better shared living.*
+* Jon Paul S. Berana
+* Trixter Lanz Donatos
+* Vinz Gabriel S. De Castro
