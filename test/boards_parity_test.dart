@@ -298,5 +298,65 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+
+    testWidgets(
+      'ParcelsBoardView shows Scheduled Today, Scheduled Yesterday + My Parcels helper without overflow at 360px',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+          final repo = MockRepository()..login();
+          final now = DateTime.now();
+          repo.addParcel(
+            courier: 'LBC',
+            arrival: now.subtract(const Duration(days: 1)),
+            paymentType: ParcelPaymentType.cod,
+            codAmount: 450,
+            notes: 'Past due parcel',
+          );
+          repo.addParcel(
+            courier: 'SPX',
+            arrival: now,
+            paymentType: ParcelPaymentType.paid,
+            notes: 'Today parcel',
+          );
+
+          await tester.pumpWidget(
+            ProviderScope(
+              key: ValueKey('parcel_copy_${mode.name}'),
+              overrides: [repositoryProvider.overrideWith((ref) => repo)],
+              child: MediaQuery(
+                data: const MediaQueryData(
+                  size: Size(360, 800),
+                  disableAnimations: true,
+                ),
+                child: MaterialApp(
+                  theme: CasamaTheme.lightTheme,
+                  darkTheme: CasamaTheme.darkTheme,
+                  themeMode: mode,
+                  home: const Scaffold(body: ParcelsBoardView(bottomPadding: 24)),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.text('Scheduled Today'), findsWidgets);
+          expect(find.text('Scheduled Yesterday'), findsOneWidget);
+          expect(find.text('Arriving Now'), findsNothing);
+
+          await tester.tap(find.text('My Parcels'));
+          await tester.pumpAndSettle();
+          expect(find.text('Scheduled Yesterday'), findsOneWidget);
+          expect(find.text('Expand to edit or delete listing'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        }
+      },
+    );
   });
 }

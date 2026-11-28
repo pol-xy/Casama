@@ -7,6 +7,7 @@ import '../../core/motion/casama_motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_wave_header.dart';
@@ -43,11 +44,29 @@ class QuickSnapHomeWidget extends ConsumerWidget {
     final snaps = repo.quickSnaps;
     final streak = repo.quickSnapStreak;
 
-    return CasamaCard(
-      padding: const EdgeInsets.all(CasamaSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Padding(
+      padding: const EdgeInsets.only(top: 44),
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
+          const Positioned(
+            left: 14,
+            top: -44,
+            child: IgnorePointer(
+              child: CasMascotView(
+                key: ValueKey('casnaps_peeking_migo'),
+                pose: CasMascotPose.cameraBehindCasnaps,
+                width: 84,
+                height: 84,
+              ),
+            ),
+          ),
+          CasamaCard(
+            padding: const EdgeInsets.all(CasamaSpacing.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
           // Header Row: Shared CASnaps + count badge + View all / Snap Back
           Row(
             children: [
@@ -167,9 +186,10 @@ class QuickSnapHomeWidget extends ConsumerWidget {
               ),
             )
           else ...[
-            // 3×2 Grid (up to 5 recent photos + 6th View all / +N slot)
+            // 3×2 Grid (1 row for 1–3 tiles, max 2 rows / 6 tiles for 4+)
             GridView.builder(
               shrinkWrap: true,
+              padding: EdgeInsets.zero,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: snaps.length > 5 ? 6 : snaps.length + 1,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -284,6 +304,9 @@ class QuickSnapHomeWidget extends ConsumerWidget {
               ),
             ),
           ],
+        ],
+      ),
+    ),
         ],
       ),
     );

@@ -25,7 +25,6 @@ class _PreferredNameTestMockRepository extends MockRepository {
     _trixterProfile = const UserProfile(
       id: 'u-trixter',
       displayName: 'lanzdonatos212006',
-      handle: '@trixter',
       fullName: 'Trixter Lanz C. Donatos',
       nickname: 'Trixter',
       hasConsentedTerms: true,
@@ -34,7 +33,6 @@ class _PreferredNameTestMockRepository extends MockRepository {
     _jonPaulProfile = const UserProfile(
       id: 'u-jonpaul',
       displayName: 'beranajonpaul14',
-      handle: '@jpberana',
       fullName: 'Jon Paul Berana',
       nickname: '   ',
       hasConsentedTerms: true,
@@ -93,7 +91,7 @@ class _PreferredNameTestMockRepository extends MockRepository {
         buyerId: _trixterProfile.id,
         buyerName: 'lanzdonatos212006',
         courier: 'J&T Express',
-        expectedArrival: now,
+        expectedArrival: DateTime.now(),
         paymentType: ParcelPaymentType.cod,
         codAmount: 250,
         status: ParcelStatus.expected,
@@ -189,7 +187,6 @@ class _PreferredNameTestMockRepository extends MockRepository {
           (p.nickname?.toLowerCase().trim() == key) ||
           (p.fullName?.toLowerCase().trim() == key) ||
           p.displayName.toLowerCase().trim() == key ||
-          p.handle.toLowerCase().replaceAll('@', '').trim() == key ||
           p.id.toLowerCase().trim() == key;
     });
   }
@@ -201,7 +198,6 @@ void main() {
       const withNickname = UserProfile(
         id: 'u1',
         displayName: 'lanzdonatos212006',
-        handle: '@trixter',
         fullName: 'Trixter Lanz C. Donatos',
         nickname: 'Trixter',
       );
@@ -210,7 +206,6 @@ void main() {
       const blankNickname = UserProfile(
         id: 'u2',
         displayName: 'beranajonpaul14',
-        handle: '@jp',
         fullName: 'Jon Paul Berana',
         nickname: '   ',
       );
@@ -219,7 +214,6 @@ void main() {
       const onlyDisplay = UserProfile(
         id: 'u3',
         displayName: 'grizzlylanz10',
-        handle: '@grizzly',
         fullName: '  ',
         nickname: null,
       );
@@ -228,7 +222,6 @@ void main() {
       const allBlank = UserProfile(
         id: 'u4',
         displayName: '  ',
-        handle: '@u4',
       );
       expect(allBlank.preferredName, 'Housemate');
     });
@@ -275,7 +268,7 @@ void main() {
 
         expect(find.text('Hello, Trixter!'), findsOneWidget);
         expect(find.text('Jon Paul Berana'), findsWidgets);
-        expect(find.textContaining('J&T Express COD for Trixter'), findsOneWidget);
+        expect(find.textContaining('J&T Express COD for You'), findsOneWidget);
         expect(find.text('lanzdonatos212006'), findsNothing);
         expect(find.text('beranajonpaul14'), findsNothing);
       },

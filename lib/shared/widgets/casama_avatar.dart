@@ -226,6 +226,10 @@ class CasamaPresetAvatarPicker extends StatelessWidget {
   final WrapAlignment alignment;
   final double avatarRadius;
   final bool toggleDeselect;
+  final bool horizontalScroll;
+  final double spacing;
+  final EdgeInsetsGeometry? horizontalPadding;
+  final Key? scrollViewKey;
 
   const CasamaPresetAvatarPicker({
     super.key,
@@ -234,52 +238,78 @@ class CasamaPresetAvatarPicker extends StatelessWidget {
     this.alignment = WrapAlignment.center,
     this.avatarRadius = 20,
     this.toggleDeselect = false,
+    this.horizontalScroll = false,
+    this.spacing = 8,
+    this.horizontalPadding,
+    this.scrollViewKey,
   });
+
+  Widget _buildPresetItem(BuildContext context, CasamaPalette pal, int i) {
+    final assetPath = UserProfile.presetAvatars[i];
+    final isSelected = selectedAvatar == assetPath;
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: 'Preset avatar ${i + 1}',
+      child: CasamaPressable(
+        onTap: () => onSelected(
+          (toggleDeselect && isSelected) ? null : assetPath,
+        ),
+        child: SizedBox(
+          width: CasamaSpacing.minTouchTarget,
+          height: CasamaSpacing.minTouchTarget,
+          child: Center(
+            child: AnimatedContainer(
+              duration: CasamaMotion.resolve(context, CasamaMotion.press),
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? pal.primaryCoral : pal.border,
+                  width: isSelected ? 2.5 : 1,
+                ),
+              ),
+              child: CasamaAvatar(
+                avatarUrl: assetPath,
+                radius: avatarRadius,
+                backgroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final pal = context.palette;
 
+    if (horizontalScroll) {
+      return SingleChildScrollView(
+        key: scrollViewKey,
+        scrollDirection: Axis.horizontal,
+        padding: horizontalPadding ??
+            const EdgeInsets.symmetric(horizontal: CasamaSpacing.lg),
+        child: Row(
+          children: [
+            for (var i = 0; i < UserProfile.presetAvatars.length; i++) ...[
+              if (i > 0) SizedBox(width: spacing),
+              _buildPresetItem(context, pal, i),
+            ],
+          ],
+        ),
+      );
+    }
+
     return Wrap(
       alignment: alignment,
-      spacing: 8,
-      runSpacing: 8,
-      children: List.generate(UserProfile.presetAvatars.length, (i) {
-        final assetPath = UserProfile.presetAvatars[i];
-        final isSelected = selectedAvatar == assetPath;
-        return Semantics(
-          button: true,
-          selected: isSelected,
-          label: 'Preset avatar ${i + 1}',
-          child: CasamaPressable(
-            onTap: () => onSelected(
-              (toggleDeselect && isSelected) ? null : assetPath,
-            ),
-            child: SizedBox(
-              width: CasamaSpacing.minTouchTarget,
-              height: CasamaSpacing.minTouchTarget,
-              child: Center(
-                child: AnimatedContainer(
-                  duration: CasamaMotion.resolve(context, CasamaMotion.press),
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelected ? pal.primaryCoral : pal.border,
-                      width: isSelected ? 2.5 : 1,
-                    ),
-                  ),
-                  child: CasamaAvatar(
-                    avatarUrl: assetPath,
-                    radius: avatarRadius,
-                    backgroundColor: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      }),
+      spacing: spacing,
+      runSpacing: spacing,
+      children: List.generate(
+        UserProfile.presetAvatars.length,
+        (i) => _buildPresetItem(context, pal, i),
+      ),
     );
   }
 }

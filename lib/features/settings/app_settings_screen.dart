@@ -7,8 +7,9 @@ import '../../core/constants/dimensions.dart';
 import '../../core/motion/casama_motion.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../data/casama_repository.dart';
+import '../../data/models.dart';
 import '../../data/repository_provider.dart';
-import '../../data/supabase_config.dart';
+import '../../shared/widgets/cas_mascot_view.dart';
 import '../../shared/widgets/casama_button.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../shared/widgets/casama_text_field.dart';
@@ -23,14 +24,20 @@ class AppSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
-  bool _shareRoomStatus = true;
-
   @override
   Widget build(BuildContext context) {
     final pal = context.palette;
     final theme = Theme.of(context);
     final currentThemeMode = ref.watch(themeModeProvider);
     final repo = ref.watch(repositoryProvider);
+    final households = repo.userHouseholds.isNotEmpty
+        ? repo.userHouseholds
+        : (repo.hasActiveHousehold
+            ? [repo.currentHousehold.copyWith(memberCount: repo.members.length)]
+            : const <Household>[]);
+    final residencySubtitle = households.isEmpty
+        ? 'Not in a household yet'
+        : households.map((h) => h.name).join(', ');
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final maxW = CasamaBreakpoints.isTablet(context)
         ? CasamaBreakpoints.maxContentWidth
@@ -46,8 +53,14 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
             children: [
               CasamaWaveHeader(
                 title: 'Settings',
-                subtitle: '${repo.currentHousehold.name} • Account & Preferences',
-                compact: true,
+                subtitle: repo.hasActiveHousehold &&
+                        repo.currentHousehold.name.trim().isNotEmpty
+                    ? '${repo.currentHousehold.name} • Account & Preferences'
+                    : 'Account & Preferences',
+                titleMascotPose: CasPose.settings,
+                titleMascotSize: 70,
+                extendedWave: true,
+                bottomPaddingOffset: 4,
                 onBackTap: () {
                   if (Navigator.canPop(context)) {
                     Navigator.pop(context);
@@ -79,8 +92,14 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                                 iconColor: pal.primaryCoral,
                                 iconBg: pal.softBlush,
                                 title: 'Edit Profile',
-                                subtitle:
-                                    '${repo.currentUser.preferredName} (${repo.currentUser.handle})',
+                                subtitle: () {
+                                  final u = repo.currentUser;
+                                  final full = u.effectiveFullName;
+                                  return full.isNotEmpty &&
+                                          full != u.preferredName
+                                      ? '${u.preferredName} • $full'
+                                      : u.preferredName;
+                                }(),
                                 onTap: () => _showEditProfileModal(context),
                               ),
                               Divider(height: 1, indent: 64, color: pal.divider),
@@ -94,29 +113,12 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                               ),
                               Divider(height: 1, indent: 64, color: pal.divider),
                               _SettingsActionRow(
-                                icon: Icons.badge_outlined,
+                                icon: Icons.home_work_outlined,
                                 iconColor: pal.infoFg,
                                 iconBg: pal.infoBg,
-                                title: 'Manage Account',
-                                subtitle:
-                                    'Verified Resident • ${repo.currentHousehold.name}',
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: pal.successBg,
-                                    borderRadius: CasamaSpacing.roundedPill,
-                                  ),
-                                  child: Text(
-                                    'Active',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: pal.successFg,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
+                                title: 'Residency',
+                                subtitle: residencySubtitle,
+                                onTap: () => _showResidencySheet(context),
                               ),
                               Divider(height: 1, indent: 64, color: pal.divider),
                               _SettingsActionRow(
@@ -200,43 +202,15 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                         ),
                         const SizedBox(height: CasamaSpacing.lg),
 
-                        // 3. Privacy and Security (1 Switch widget)
+                        // 3. Privacy and Security
                         const _SettingsSectionHeader(
                           title: 'Privacy and Security',
                         ),
                         const SizedBox(height: CasamaSpacing.xs),
                         CasamaCard(
                           padding: EdgeInsets.zero,
-                          child: Material(
-                            type: MaterialType.transparency,
-                            child: Column(
-                              children: [
-                                SwitchListTile(
-                                  title: Text(
-                                    'Presence & Status Sharing',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      color: pal.textPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'Share active room notes with verified housemates',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontSize: 12,
-                                      color: pal.textSecondary,
-                                    ),
-                                  ),
-                                  value: _shareRoomStatus,
-                                  activeTrackColor: pal.primaryCoral,
-                                  onChanged: (v) =>
-                                      setState(() => _shareRoomStatus = v),
-                                ),
-                              Divider(
-                                height: 1,
-                                indent: 16,
-                                endIndent: 16,
-                                color: pal.divider,
-                              ),
+                          child: Column(
+                            children: [
                               _SettingsActionRow(
                                 icon: Icons.perm_device_information_outlined,
                                 iconColor: pal.forestTeal,
@@ -247,32 +221,6 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                                 onTap: () => GoRouter.maybeOf(
                                   context,
                                 )?.push('/permissions?fromSettings=true'),
-                              ),
-                              Divider(height: 1, indent: 64, color: pal.divider),
-                              _SettingsActionRow(
-                                icon: Icons.security_outlined,
-                                iconColor: pal.successFg,
-                                iconBg: pal.successBg,
-                                title: 'Account Security & Two-Factor',
-                                subtitle:
-                                    'Protected via encrypted Supabase Auth session',
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: pal.successBg,
-                                    borderRadius: CasamaSpacing.roundedPill,
-                                  ),
-                                  child: Text(
-                                    'Secured',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: pal.successFg,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
                               ),
                               Divider(height: 1, indent: 64, color: pal.divider),
                               _SettingsActionRow(
@@ -288,131 +236,6 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                               ),
                             ],
                           ),
-                          ),
-                        ),
-                        const SizedBox(height: CasamaSpacing.lg),
-
-                        // 5. About Casama
-                        const _SettingsSectionHeader(title: 'About Casama'),
-                        const SizedBox(height: CasamaSpacing.xs),
-                        CasamaCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 42,
-                                    height: 42,
-                                    decoration: BoxDecoration(
-                                      color: pal.headerDeep,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.cottage_rounded,
-                                      color: Colors.white,
-                                      size: 22,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Casama',
-                                          style: theme.textTheme.titleMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w700,
-                                                color: pal.textPrimary,
-                                              ),
-                                        ),
-                                        Text(
-                                          'Version 1.0.0 (Build 1)',
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                fontSize: 12,
-                                                color: pal.textSecondary,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Making shared living simpler, warmer, and more coordinated.',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontSize: 13,
-                                  color: pal.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: CasamaSpacing.md),
-
-                        // Diagnostics & Cache Reset
-                        CasamaCard(
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Backend Engine',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        fontSize: 13,
-                                        color: pal.textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: SupabaseConfig.isConfigured
-                                          ? pal.successBg
-                                          : pal.warningBg,
-                                      borderRadius: CasamaSpacing.roundedPill,
-                                    ),
-                                    child: Text(
-                                      SupabaseConfig.isConfigured
-                                          ? 'Live Supabase'
-                                          : 'High-Fidelity Mock Mode',
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                            color: SupabaseConfig.isConfigured
-                                                ? pal.successFg
-                                                : pal.warningFg,
-                                          ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              CasamaButton(
-                                label: 'Reset Offline Cache',
-                                style: CasamaButtonStyle.secondary,
-                                height: 44,
-                                onPressed: () {
-                                  showCasamaToast(
-                                    context,
-                                    'Local cache reset successfully!',
-                                    icon: Icons.check_circle_outline_rounded,
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
                         ),
                       ],
                     ),
@@ -423,6 +246,16 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showResidencySheet(BuildContext context) {
+    showCasamaSheet<void>(
+      context,
+      icon: Icons.home_work_outlined,
+      title: 'Residency',
+      subtitle: 'Households you belong to',
+      builder: (_) => _ResidencySheetBody(hostContext: context),
     );
   }
 
@@ -621,7 +454,6 @@ class _SettingsActionRow extends StatelessWidget {
   final String title;
   final Color? titleColor;
   final String? subtitle;
-  final Widget? trailing;
   final VoidCallback? onTap;
 
   const _SettingsActionRow({
@@ -631,7 +463,6 @@ class _SettingsActionRow extends StatelessWidget {
     required this.title,
     this.titleColor,
     this.subtitle,
-    this.trailing,
     this.onTap,
   });
 
@@ -676,9 +507,7 @@ class _SettingsActionRow extends StatelessWidget {
               ],
             ),
           ),
-          if (trailing != null)
-            trailing!
-          else if (onTap != null)
+          if (onTap != null)
             Icon(
               Icons.chevron_right_rounded,
               size: 20,
@@ -751,6 +580,212 @@ class _ThemeChoiceTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ResidencySheetBody extends ConsumerStatefulWidget {
+  final BuildContext hostContext;
+
+  const _ResidencySheetBody({required this.hostContext});
+
+  @override
+  ConsumerState<_ResidencySheetBody> createState() =>
+      _ResidencySheetBodyState();
+}
+
+class _ResidencySheetBodyState extends ConsumerState<_ResidencySheetBody> {
+  String? _switchingHouseholdId;
+
+  Future<void> _handleSelect(Household target, bool isActive) async {
+    if (_switchingHouseholdId != null) return;
+    if (isActive) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() => _switchingHouseholdId = target.id);
+    try {
+      await ref.read(repositoryProvider).switchHousehold(target.id);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      if (widget.hostContext.mounted) {
+        showCasamaToast(
+          widget.hostContext,
+          'Switched to ${target.name}',
+          icon: Icons.cottage_rounded,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _switchingHouseholdId = null);
+      if (widget.hostContext.mounted) {
+        showCasamaToast(
+          widget.hostContext,
+          'Could not switch to ${target.name}.',
+          icon: Icons.error_outline_rounded,
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = context.palette;
+    final theme = Theme.of(context);
+    final reduced = CasamaMotion.reduceMotion(context);
+    final repo = ref.watch(repositoryProvider);
+    final households = repo.userHouseholds.isNotEmpty
+        ? repo.userHouseholds
+        : (repo.hasActiveHousehold
+            ? [repo.currentHousehold.copyWith(memberCount: repo.members.length)]
+            : const <Household>[]);
+
+    if (households.isEmpty) {
+      return CasamaCard(
+        child: Text(
+          "You aren't a member of any household yet.",
+          style: theme.textTheme.bodyMedium?.copyWith(color: pal.textSecondary),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < households.length; i++) ...[
+          if (i > 0) const SizedBox(height: CasamaSpacing.sm),
+          Builder(
+            builder: (ctx) {
+              final h = households[i];
+              final isActive =
+                  repo.hasActiveHousehold && h.id == repo.currentHousehold.id;
+              final isSwitching = _switchingHouseholdId == h.id;
+              final count = isActive
+                  ? (h.memberCount ?? repo.members.length)
+                  : h.memberCount;
+              final countPart = count != null
+                  ? '$count ${count == 1 ? 'member' : 'members'} • '
+                  : '';
+              final metaText = '${countPart}Code: ${h.inviteCode}';
+
+              return Semantics(
+                button: true,
+                selected: isActive,
+                label: '${h.name}, $metaText${isActive ? ', Active' : ''}',
+                child: CasamaPressable(
+                  onTap: () => _handleSelect(h, isActive),
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minHeight: CasamaSpacing.minTouchTarget,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isActive ? pal.softSage : pal.card,
+                      borderRadius: CasamaSpacing.roundedLg,
+                      border: Border.all(
+                        color: isActive ? pal.forestTeal : pal.border,
+                        width: isActive ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: isActive ? pal.forestTeal : pal.track,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.cottage_rounded,
+                            size: 20,
+                            color: isActive
+                                ? pal.onForestTeal
+                                : pal.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                h.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: pal.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                metaText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontSize: 12,
+                                  color: pal.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (isSwitching)
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: reduced
+                                ? Icon(
+                                    Icons.hourglass_top_rounded,
+                                    size: 18,
+                                    color: pal.forestTeal,
+                                  )
+                                : CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: pal.forestTeal,
+                                  ),
+                          )
+                        else if (isActive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: pal.successBg,
+                              borderRadius: CasamaSpacing.roundedPill,
+                            ),
+                            child: Text(
+                              'Active',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: pal.successFg,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        else
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: pal.textMuted,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ],
     );
   }
 }

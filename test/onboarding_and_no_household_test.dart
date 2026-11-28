@@ -19,7 +19,6 @@ void main() {
       const returningNoHousehold = UserProfile(
         id: 'u-ret-1',
         displayName: 'grizzlylanz10',
-        handle: '@grizzly',
         fullName: 'Trixter Lanz',
         nickname: 'Trixter',
         hasConsentedTerms: true,
@@ -50,7 +49,6 @@ void main() {
       const missingProfile = UserProfile(
         id: 'u-inc-1',
         displayName: 'newuser',
-        handle: '@newuser',
         hasConsentedTerms: false,
         hasCompletedOnboarding: false,
       );
@@ -59,7 +57,6 @@ void main() {
       final profileDoneNeedsHousehold = UserProfile(
         id: 'u-inc-2',
         displayName: 'Clara Reyes',
-        handle: '@clara',
         fullName: 'Clara Reyes',
         nickname: 'Clar',
         birthday: DateTime(2001, 4, 10),
@@ -81,12 +78,12 @@ void main() {
       );
     });
 
-    testWidgets('OptionalProfileScreen and EditProfileDialog use single Full Name input and pre-fill saved fields', (
+    testWidgets('OptionalProfileScreen and EditProfileDialog use First Name and Last Name inputs and pre-fill saved fields', (
       tester,
     ) async {
       final repo = MockRepository()..logout();
       repo.register(email: 'resume@casama.app', password: 'password123');
-      repo.updateProfile(fullName: 'Saved Name', nickname: 'Sav');
+      await repo.updateProfile(fullName: 'Saved Name', nickname: 'Sav');
 
       await tester.pumpWidget(
         ProviderScope(
@@ -99,10 +96,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Full Name'), findsOneWidget);
-      expect(find.text('First Name'), findsNothing);
-      expect(find.text('Last Name'), findsNothing);
-      expect(find.text('Saved Name'), findsOneWidget);
+      expect(find.text('Full Name'), findsNothing);
+      expect(find.text('First Name'), findsOneWidget);
+      expect(find.text('Last Name'), findsOneWidget);
+      expect(find.text('Saved'), findsOneWidget);
+      expect(find.text('Name'), findsOneWidget);
       expect(find.text('Sav'), findsOneWidget);
 
       await tester.pumpWidget(
@@ -116,9 +114,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Full Name'), findsOneWidget);
-      expect(find.text('First Name'), findsNothing);
-      expect(find.text('Last Name'), findsNothing);
+      expect(find.text('Full Name'), findsNothing);
+      expect(find.text('First Name'), findsOneWidget);
+      expect(find.text('Last Name'), findsOneWidget);
+      expect(find.text('Saved'), findsOneWidget);
+      expect(find.text('Name'), findsOneWidget);
     });
 
     testWidgets('HouseholdSetupScreen "Join a household later" advances without household and keeps onboarding false until Dashboard tour', (

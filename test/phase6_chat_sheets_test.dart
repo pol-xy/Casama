@@ -962,22 +962,18 @@ void main() {
       final maria = UserProfile(
         id: 'u_maria',
         displayName: 'Maria',
-        handle: '@maria',
       );
       final alex = UserProfile(
         id: 'u_alex',
         displayName: 'Alex',
-        handle: '@alex',
       );
       final zoe = UserProfile(
         id: 'u_zoe',
         displayName: 'Zoe',
-        handle: '@zoe',
       );
       final bea = UserProfile(
         id: 'u_bea',
         displayName: 'Bea',
-        handle: '@bea',
       );
       repo.setMembersForTest([
         MemberPresence(

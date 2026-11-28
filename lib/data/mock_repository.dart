@@ -98,7 +98,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       },
       directUnreadCounts: Map<String, int>.from(_directUnreadCounts),
       quickSnaps: List<QuickSnap>.from(_quickSnaps),
-      invitations: List<HouseholdInvitation>.from(_invitations),
       pointHistory: List<PointAuditEntry>.from(_pointHistory),
     );
   }
@@ -147,9 +146,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _quickSnaps
       ..clear()
       ..addAll(ws.quickSnaps);
-    _invitations
-      ..clear()
-      ..addAll(ws.invitations);
     _pointHistory
       ..clear()
       ..addAll(ws.pointHistory);
@@ -255,7 +251,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _directMessages.clear();
     _directUnreadCounts.clear();
     _quickSnaps.clear();
-    _invitations.clear();
     _pointHistory.clear();
 
     _householdOrder.remove(newId);
@@ -327,7 +322,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _directMessages.clear();
     _directUnreadCounts.clear();
     _quickSnaps.clear();
-    _invitations.clear();
     _pointHistory.clear();
 
     _householdOrder.remove(newId);
@@ -344,7 +338,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         LeaderboardStanding(
           userId: _currentUser.id,
           displayName: _currentUser.preferredName,
-          handle: _currentUser.handle,
           avatarUrl: _currentUser.avatarUrl,
           points: _kasamaPoints,
           isCurrentUser: true,
@@ -352,21 +345,18 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         LeaderboardStanding(
           userId: '22222222-2222-2222-2222-222222222222',
           displayName: 'Maria Santos',
-          handle: '@maria',
           points: 85 + (_memberBonusPoints['22222222-2222-2222-2222-222222222222'] ?? 0),
           isCurrentUser: _currentUser.id == '22222222-2222-2222-2222-222222222222',
         ),
         LeaderboardStanding(
           userId: '33333333-3333-3333-3333-333333333333',
           displayName: 'Alex Rivera',
-          handle: '@alex',
           points: 65 + (_memberBonusPoints['33333333-3333-3333-3333-333333333333'] ?? 0),
           isCurrentUser: _currentUser.id == '33333333-3333-3333-3333-333333333333',
         ),
         LeaderboardStanding(
           userId: '44444444-4444-4444-4444-444444444444',
           displayName: 'Ria Garcia',
-          handle: '@ria',
           points: 55 + (_memberBonusPoints['44444444-4444-4444-4444-444444444444'] ?? 0),
           isCurrentUser: _currentUser.id == '44444444-4444-4444-4444-444444444444',
         ),
@@ -378,7 +368,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       return LeaderboardStanding(
         userId: m.profile.id,
         displayName: isMe ? _currentUser.preferredName : m.preferredName,
-        handle: m.profile.handle,
         avatarUrl: m.profile.avatarUrl,
         points: isMe ? _kasamaPoints : (_memberBonusPoints[m.profile.id] ?? 0),
         isCurrentUser: isMe,
@@ -428,7 +417,8 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _currentUser = UserProfile(
       id: p.id,
       displayName: normalizedName,
-      handle: p.handle,
+      firstName: p.firstName,
+      lastName: p.lastName,
       fullName: p.fullName ?? normalizedName,
       nickname: p.nickname,
       birthday: p.birthday,
@@ -617,7 +607,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   UserProfile _currentUser = const UserProfile(
     id: 'user_initial',
     displayName: 'Housemate',
-    handle: '@housemate',
     hasConsentedTerms: false,
     hasCompletedOnboarding: false,
   );
@@ -693,15 +682,25 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
 
   bool get hasPendingSnapReactions =>
       _pendingReactionDeltas.values.any((m) => m.isNotEmpty);
-  final List<HouseholdInvitation> _invitations = [];
   final List<PointAuditEntry> _pointHistory = [];
+  final Set<String> _takenNicknames = {};
+
+  /// Seeds taken nicknames (case-insensitive) for testing unique nickname validation.
+  void seedTakenNicknamesForTest(Iterable<String> nicknames) {
+    _takenNicknames
+      ..clear()
+      ..addAll(
+        nicknames.map((n) => n.trim().toLowerCase()).where((n) => n.isNotEmpty),
+      );
+  }
 
   void _loadInitialSeedData() {
     _isAuthenticated = true;
     _currentUser = UserProfile(
       id: '11111111-1111-1111-1111-111111111111',
       displayName: 'Jon Paul Berana',
-      handle: '@jpberana',
+      firstName: 'Jon Paul',
+      lastName: 'Berana',
       fullName: 'Jon Paul Berana',
       nickname: 'JP',
       birthday: DateTime(2005, 5, 15),
@@ -716,7 +715,10 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       profile: const UserProfile(
         id: '11111111-1111-1111-1111-111111111111',
         displayName: 'You',
-        handle: '@jpberana',
+        firstName: 'Jon Paul',
+        lastName: 'Berana',
+        fullName: 'Jon Paul Berana',
+        nickname: 'JP',
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
       ),
       isHome: true,
@@ -727,7 +729,10 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       profile: const UserProfile(
         id: '22222222-2222-2222-2222-222222222222',
         displayName: 'Maria',
-        handle: '@maria',
+        firstName: 'Maria',
+        lastName: 'Santos',
+        fullName: 'Maria Santos',
+        nickname: 'Maria',
         avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
       ),
       isHome: true,
@@ -738,7 +743,10 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       profile: const UserProfile(
         id: '33333333-3333-3333-3333-333333333333',
         displayName: 'Alex',
-        handle: '@alex',
+        firstName: 'Alex',
+        lastName: 'Rivera',
+        fullName: 'Alex Rivera',
+        nickname: 'Alex',
         avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
       ),
       isHome: false,
@@ -749,7 +757,10 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       profile: const UserProfile(
         id: '44444444-4444-4444-4444-444444444444',
         displayName: 'Ria',
-        handle: '@ria',
+        firstName: 'Ria',
+        lastName: 'Garcia',
+        fullName: 'Ria Garcia',
+        nickname: 'Ria',
         avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=200&q=80',
       ),
       isHome: true,
@@ -829,7 +840,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         createdBy: '11111111-1111-1111-1111-111111111111',
         createdByName: 'Jon Paul',
         createdAt: DateTime.now().subtract(const Duration(hours: 4)),
-        dueDate: DateTime.now().add(const Duration(days: 1)),
       ),
       MaintenanceTask(
         id: 't2',
@@ -841,7 +851,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         createdBy: '22222222-2222-2222-2222-222222222222',
         createdByName: 'Maria',
         createdAt: DateTime.now().subtract(const Duration(hours: 6)),
-        dueDate: DateTime.now(),
       ),
       MaintenanceTask(
         id: 't3',
@@ -853,7 +862,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         createdBy: '33333333-3333-3333-3333-333333333333',
         createdByName: 'Alex',
         createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        dueDate: DateTime.now().add(const Duration(days: 4)),
       ),
     ]);
 
@@ -1006,20 +1014,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       ],
     });
 
-    // Household invitations
-    _invitations.addAll([
-      HouseholdInvitation(
-        id: 'inv_1',
-        householdId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        householdName: 'Casa 204',
-        inviterName: 'Jon Paul',
-        inviteeEmailOrHandle: '@miguel',
-        inviteeName: 'Miguel Ramos',
-        status: InvitationStatus.pending,
-        createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-      ),
-    ]);
-
     // Point audit ledger
     _pointHistory.addAll([
       PointAuditEntry(
@@ -1053,37 +1047,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     ]);
   }
 
-  // Searchable Casama public directory (external users not yet in household)
-  final List<UserProfile> _allCasamaUsers = const [
-    UserProfile(
-      id: '55555555-5555-5555-5555-555555555555',
-      displayName: 'Miguel Ramos',
-      handle: '@miguel',
-      fullName: 'Miguel Ramos',
-      nickname: 'Miggy',
-      avatarUrl:
-          'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
-    ),
-    UserProfile(
-      id: '66666666-6666-6666-6666-666666666666',
-      displayName: 'Clara Reyes',
-      handle: '@clara',
-      fullName: 'Clara Reyes',
-      nickname: 'Clara',
-      avatarUrl:
-          'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=200&q=80',
-    ),
-    UserProfile(
-      id: '77777777-7777-7777-7777-777777777777',
-      displayName: 'Bea Gomez',
-      handle: '@bea',
-      fullName: 'Bea Gomez',
-      nickname: 'Bea',
-      avatarUrl:
-          'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=200&q=80',
-    ),
-  ];
-
   NotificationPreferences _notificationPreferences =
       const NotificationPreferences();
 
@@ -1096,7 +1059,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   NotificationPreferences get notificationPreferences =>
       _notificationPreferences;
   List<MemberPresence> get members => List.unmodifiable(_members);
-  List<HouseholdInvitation> get invitations => List.unmodifiable(_invitations);
   List<ParcelItem> get parcels => List.unmodifiable(_parcels);
   List<LostFoundItem> get items => List.unmodifiable(_items);
   List<MaintenanceTask> get tasks => List.unmodifiable(_tasks);
@@ -1212,10 +1174,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       _currentUser = UserProfile(
         id: userId,
         displayName: name,
-        handle: UserProfile.buildFallbackHandle(
-          preferred: name,
-          userId: userId,
-        ),
+        firstName: name,
         fullName: name,
         nickname: name,
         birthday: DateTime(2000, 1, 1),
@@ -1266,14 +1225,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _isAuthenticated = true;
     final name = email.split('@').first;
     final userId = 'usr_${DateTime.now().millisecondsSinceEpoch}';
-    final handle = UserProfile.buildFallbackHandle(
-      preferred: name,
-      userId: userId,
-    );
     _currentUser = UserProfile(
       id: userId,
       displayName: name,
-      handle: handle,
       fullName: null,
       nickname: null,
       birthday: null,
@@ -1293,7 +1247,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _directMessages.clear();
     _directUnreadCounts.clear();
     _groupMessages.clear();
-    _invitations.clear();
     _pointHistory.clear();
     _quickSnaps.clear();
     _kasamaPoints = 0;
@@ -1325,7 +1278,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     _directMessages.clear();
     _directUnreadCounts.clear();
     _groupMessages.clear();
-    _invitations.clear();
     _pointHistory.clear();
     _quickSnaps.clear();
     _kasamaPoints = 0;
@@ -1350,9 +1302,33 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     notifyListeners();
   }
 
-  void updateProfile({
+  bool _isNicknameTaken(String candidate) {
+    final normalized = candidate.trim().toLowerCase();
+    if (normalized.isEmpty) return false;
+    final currentNormalized = _currentUser.nickname?.trim().toLowerCase();
+    if (currentNormalized == normalized) return false;
+    if (_takenNicknames.contains(normalized)) return true;
+    for (final m in _members) {
+      if (m.profile.id != _currentUser.id &&
+          (m.profile.nickname?.trim().toLowerCase() == normalized)) {
+        return true;
+      }
+    }
+    for (final ws in _workspaces.values) {
+      for (final m in ws.members) {
+        if (m.profile.id != _currentUser.id &&
+            (m.profile.nickname?.trim().toLowerCase() == normalized)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Future<String?> updateProfile({
     String? displayName,
-    String? handle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -1362,34 +1338,61 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     bool clearAvatar = false,
     bool clearNickname = false,
     bool clearBirthday = false,
-  }) {
+  }) async {
+    final trimmedNickname = nickname?.trim();
+    if (!clearNickname &&
+        trimmedNickname != null &&
+        trimmedNickname.isNotEmpty &&
+        _isNicknameTaken(trimmedNickname)) {
+      return CasamaRepository.duplicateNicknameMessage;
+    }
+
     final normalizedBirthday = birthday != null
         ? DateTime(birthday.year, birthday.month, birthday.day)
         : null;
-    final effectiveFullName = fullName ?? _currentUser.fullName;
-    final effectiveDisplayName = displayName ??
-        (fullName != null && fullName.trim().isNotEmpty
-            ? fullName.trim()
-            : _currentUser.displayName);
+    final String? effectiveFirstName;
+    final String? effectiveLastName;
+    if (firstName != null || lastName != null) {
+      final f = (firstName ?? _currentUser.firstName ?? '').trim();
+      final l = (lastName ?? _currentUser.lastName ?? '').trim();
+      effectiveFirstName = f.isNotEmpty ? f : null;
+      effectiveLastName = l.isNotEmpty ? l : null;
+    } else if (fullName != null && fullName.trim().isNotEmpty) {
+      final parts = UserProfile.splitFullName(fullName);
+      effectiveFirstName =
+          parts.firstName.isNotEmpty ? parts.firstName : null;
+      effectiveLastName = parts.lastName.isNotEmpty ? parts.lastName : null;
+    } else {
+      effectiveFirstName = _currentUser.firstName;
+      effectiveLastName = _currentUser.lastName;
+    }
 
-    final trimmedExplicitHandle = handle?.trim();
-    final existingHandle = _currentUser.handle.trim();
-    final effectiveHandle =
-        (trimmedExplicitHandle != null && trimmedExplicitHandle.isNotEmpty)
-            ? trimmedExplicitHandle
-            : (!UserProfile.isPlaceholderHandle(existingHandle)
-                ? existingHandle
-                : UserProfile.buildFallbackHandle(
-                    preferred: nickname ?? displayName ?? effectiveFullName,
-                    userId: _currentUser.id,
-                  ));
+    final joinedName = UserProfile.joinFullName(
+      effectiveFirstName ?? '',
+      effectiveLastName ?? '',
+    );
+    final effectiveFullName = joinedName.isNotEmpty
+        ? joinedName
+        : (fullName?.trim().isNotEmpty == true
+            ? fullName!.trim()
+            : _currentUser.fullName);
+    final effectiveDisplayName = displayName?.trim().isNotEmpty == true
+        ? displayName!.trim()
+        : (effectiveFullName != null && effectiveFullName.trim().isNotEmpty
+            ? effectiveFullName.trim()
+            : _currentUser.displayName);
 
     _currentUser = UserProfile(
       id: _currentUser.id,
       displayName: effectiveDisplayName,
-      handle: effectiveHandle,
+      firstName: effectiveFirstName,
+      lastName: effectiveLastName,
       fullName: effectiveFullName,
-      nickname: clearNickname ? null : (nickname ?? _currentUser.nickname),
+      nickname: clearNickname
+          ? null
+          : ((trimmedNickname != null && trimmedNickname.isNotEmpty)
+              ? trimmedNickname
+              : (nickname != null ? null : _currentUser.nickname)),
       birthday: clearBirthday ? null : (normalizedBirthday ?? _currentUser.birthday),
       avatarUrl: clearAvatar ? null : (avatarUrl ?? _currentUser.avatarUrl),
       hasConsentedTerms: hasConsentedTerms ?? _currentUser.hasConsentedTerms,
@@ -1408,6 +1411,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     }
 
     notifyListeners();
+    return null;
   }
 
   void updateNotificationPreferences({
@@ -1426,32 +1430,12 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   void recordTermsConsent() {
-    _currentUser = UserProfile(
-      id: _currentUser.id,
-      displayName: _currentUser.displayName,
-      handle: _currentUser.handle,
-      fullName: _currentUser.fullName,
-      nickname: _currentUser.nickname,
-      birthday: _currentUser.birthday,
-      avatarUrl: _currentUser.avatarUrl,
-      hasConsentedTerms: true,
-      hasCompletedOnboarding: _currentUser.hasCompletedOnboarding,
-    );
+    _currentUser = _currentUser.copyWith(hasConsentedTerms: true);
     notifyListeners();
   }
 
   void completeOnboardingTutorial() {
-    _currentUser = UserProfile(
-      id: _currentUser.id,
-      displayName: _currentUser.displayName,
-      handle: _currentUser.handle,
-      fullName: _currentUser.fullName,
-      nickname: _currentUser.nickname,
-      birthday: _currentUser.birthday,
-      avatarUrl: _currentUser.avatarUrl,
-      hasConsentedTerms: _currentUser.hasConsentedTerms,
-      hasCompletedOnboarding: true,
-    );
+    _currentUser = _currentUser.copyWith(hasCompletedOnboarding: true);
     notifyListeners();
   }
 
@@ -1762,7 +1746,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     required TaskCategory category,
     required TaskUrgency urgency,
     String? description,
-    DateTime? dueDate,
   }) {
     final taskId = 't_${DateTime.now().millisecondsSinceEpoch}_${++_nextIdSeq}';
     _tasks.insert(
@@ -1778,7 +1761,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         createdBy: _currentUser.id,
         createdByName: _currentUser.displayName,
         createdAt: DateTime.now(),
-        dueDate: dueDate,
       ),
     );
     _pushNotification(
@@ -2450,8 +2432,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
               m.profile.preferredName.toLowerCase().contains(key) ||
               (m.profile.nickname?.toLowerCase().contains(key) ?? false) ||
               (m.profile.fullName?.toLowerCase().contains(key) ?? false) ||
-              m.profile.displayName.toLowerCase().contains(key) ||
-              m.profile.handle.toLowerCase().contains(key),
+              m.profile.displayName.toLowerCase().contains(key),
           orElse: () => _members.first,
         );
 
@@ -2751,139 +2732,8 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   // ==========================================
-  // PART 5: Housemate Management & Invitations
+  // PART 5: Housemate Management
   // ==========================================
-
-  List<UserProfile> searchUsers(String query) {
-    if (query.trim().isEmpty) return [];
-    final q = query.trim().toLowerCase();
-    return _allCasamaUsers.where((u) {
-      final matchesHandle = u.handle.toLowerCase().contains(q);
-      final matchesName =
-          u.preferredName.toLowerCase().contains(q) ||
-          (u.nickname != null && u.nickname!.toLowerCase().contains(q)) ||
-          u.displayName.toLowerCase().contains(q) ||
-          (u.fullName != null && u.fullName!.toLowerCase().contains(q));
-      final alreadyMember = _members.any((m) => m.profile.id == u.id);
-      return (matchesHandle || matchesName) && !alreadyMember;
-    }).toList();
-  }
-
-  bool sendInvitation({
-    required String inviteeEmailOrHandle,
-    String? inviteeName,
-  }) {
-    final cleanTarget = inviteeEmailOrHandle.trim().toLowerCase();
-    if (cleanTarget.isEmpty) return false;
-
-    // Check if user is already a member
-    final alreadyMember = _members.any(
-      (m) =>
-          m.profile.handle.toLowerCase() == cleanTarget ||
-          m.profile.displayName.toLowerCase() == cleanTarget,
-    );
-    if (alreadyMember) return false;
-
-    // Check if an invitation is already pending
-    final alreadyPending = _invitations.any(
-      (inv) =>
-          inv.inviteeEmailOrHandle.toLowerCase() == cleanTarget &&
-          inv.status == InvitationStatus.pending,
-    );
-    if (alreadyPending) return false;
-
-    // Lookup matching profile name if not provided
-    final matchedUser = _allCasamaUsers.cast<UserProfile?>().firstWhere(
-      (u) => u?.handle.toLowerCase() == cleanTarget,
-      orElse: () => null,
-    );
-
-    _invitations.insert(
-      0,
-      HouseholdInvitation(
-        id: 'inv_${DateTime.now().millisecondsSinceEpoch}',
-        householdId: _currentHousehold.id,
-        householdName: _currentHousehold.name,
-        inviterName: _currentUser.displayName,
-        inviteeEmailOrHandle: inviteeEmailOrHandle.trim(),
-        inviteeName:
-            inviteeName ??
-            matchedUser?.displayName ??
-            inviteeEmailOrHandle.trim(),
-        status: InvitationStatus.pending,
-        createdAt: DateTime.now(),
-      ),
-    );
-    notifyListeners();
-    return true;
-  }
-
-  bool acceptInvitation(String invitationId) {
-    final index = _invitations.indexWhere((inv) => inv.id == invitationId);
-    if (index == -1) return false;
-
-    final inv = _invitations[index];
-    _invitations[index] = HouseholdInvitation(
-      id: inv.id,
-      householdId: inv.householdId,
-      householdName: inv.householdName,
-      inviterName: inv.inviterName,
-      inviteeEmailOrHandle: inv.inviteeEmailOrHandle,
-      inviteeName: inv.inviteeName,
-      status: InvitationStatus.accepted,
-      createdAt: inv.createdAt,
-    );
-
-    // Look up or construct user profile for the new housemate
-    final matchedUser = _allCasamaUsers.cast<UserProfile?>().firstWhere(
-      (u) => u?.handle.toLowerCase() == inv.inviteeEmailOrHandle.toLowerCase(),
-      orElse: () => null,
-    );
-
-    final newProfile =
-        matchedUser ??
-        UserProfile(
-          id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
-          displayName: inv.inviteeName ?? inv.inviteeEmailOrHandle,
-          handle: inv.inviteeEmailOrHandle.startsWith('@')
-              ? inv.inviteeEmailOrHandle
-              : '@${inv.inviteeEmailOrHandle.split('@').first}',
-          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-        );
-
-    if (!_members.any((m) => m.profile.id == newProfile.id)) {
-      _members.add(
-        MemberPresence(
-          profile: newProfile,
-          isHome: true,
-          note: 'Just joined the household 🎉',
-          updatedAt: DateTime.now(),
-        ),
-      );
-    }
-
-    notifyListeners();
-    return true;
-  }
-
-  bool declineInvitation(String invitationId) {
-    final index = _invitations.indexWhere((inv) => inv.id == invitationId);
-    if (index == -1) return false;
-
-    final inv = _invitations[index];
-    _invitations[index] = HouseholdInvitation(
-      id: inv.id,
-      householdId: inv.householdId,
-      householdName: inv.householdName,
-      inviterName: inv.inviterName,
-      inviteeEmailOrHandle: inv.inviteeEmailOrHandle,
-      inviteeName: inv.inviteeName,
-      status: InvitationStatus.declined,
-      createdAt: inv.createdAt,
-    );
-    notifyListeners();
-    return true;
-  }
 
   bool isHousemateAuthorized(String contactKey) {
     final key = contactKey.toLowerCase().replaceAll('@', '').trim();
@@ -2892,13 +2742,11 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       final mNick = (m.profile.nickname ?? '').toLowerCase().trim();
       final mFull = (m.profile.fullName ?? '').toLowerCase().trim();
       final mName = m.profile.displayName.toLowerCase().trim();
-      final mHandle = m.profile.handle.toLowerCase().replaceAll('@', '').trim();
       final mId = m.profile.id.toLowerCase().trim();
       return mPref == key ||
           mNick == key ||
           mFull == key ||
           mName == key ||
-          mHandle == key ||
           mId == key;
     });
   }
@@ -3095,7 +2943,6 @@ class _MockHouseholdWorkspace {
   final Map<String, List<ChatMessage>> directMessages;
   final Map<String, int> directUnreadCounts;
   final List<QuickSnap> quickSnaps;
-  final List<HouseholdInvitation> invitations;
   final List<PointAuditEntry> pointHistory;
 
   const _MockHouseholdWorkspace({
@@ -3115,7 +2962,6 @@ class _MockHouseholdWorkspace {
     required this.directMessages,
     this.directUnreadCounts = const {},
     required this.quickSnaps,
-    required this.invitations,
     required this.pointHistory,
   });
 }

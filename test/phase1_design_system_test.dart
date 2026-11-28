@@ -34,6 +34,12 @@ void main() {
         CasPose.lostFound: 'assets/images/cas/migo_lost_found.png',
         CasPose.lostFoundEmpty: 'assets/images/cas/migo_lost_found_empty.png',
         CasPose.drawer: 'assets/images/cas/migo_drawer.png',
+        CasPose.inviteKey: 'assets/images/cas/migo_invite_key.png',
+        CasPose.cameraBehindCasnaps:
+            'assets/images/cas/migo_camera_behind_CASnaps.png',
+        CasPose.settings: 'assets/images/cas/migo_settings.png',
+        CasPose.permissions: 'assets/images/cas/migo_permissions.png',
+        CasPose.terms: 'assets/images/cas/migo_terms.png',
       };
 
       for (final entry in expected.entries) {

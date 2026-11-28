@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
@@ -9,8 +10,10 @@ import '../../core/theme/app_theme.dart';
 import '../../data/casama_repository.dart';
 import '../../data/models.dart';
 import '../../data/repository_provider.dart';
+import '../../shared/widgets/casama_avatar.dart';
 import '../../shared/widgets/casama_filter_controls.dart';
 import '../../shared/widgets/casama_wave_header.dart';
+import '../chat/chat_directory_screen.dart';
 import '../dashboard/main_navigation_shell.dart';
 
 class HouseholdCalendarView extends ConsumerStatefulWidget {
@@ -30,7 +33,6 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
   static const List<CasamaFilterOption<String>> _filterOptions = [
     CasamaFilterOption(value: 'All', label: 'All'),
     CasamaFilterOption(value: 'Parcels', label: 'Parcels'),
-    CasamaFilterOption(value: 'Tasks', label: 'Tasks'),
     CasamaFilterOption(value: 'Agenda', label: 'Agenda'),
   ];
 
@@ -72,7 +74,6 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
       return switch (_selectedFilter) {
         'All' => true,
         'Parcels' => e.type == _CalendarEventType.parcel,
-        'Tasks' => e.type == _CalendarEventType.task,
         'Agenda' => e.type == _CalendarEventType.agenda,
         _ => true,
       };
@@ -81,6 +82,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     return CasamaCard(
       padding: const EdgeInsets.all(CasamaSpacing.md),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header: Live Dot + Casa Schedule + Month Controls
@@ -250,7 +252,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
           ),
           const SizedBox(height: CasamaSpacing.xs),
 
-          // Unified Pill Filter Rail (All, Parcels, Tasks, Agenda)
+          // Unified Pill Filter Rail (All, Parcels, Agenda)
           CasamaPillFilterRail<String>(
             padding: EdgeInsets.zero,
             options: _filterOptions,
@@ -259,18 +261,18 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
           ),
           const SizedBox(height: CasamaSpacing.xs),
 
-          // Events List
+          // Events List (tightly wrapped with zero extra bottom inset)
           if (filteredEvents.isEmpty)
             _buildEmptyState(context, pal, theme)
           else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: filteredEvents.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                return _buildEventTile(context, filteredEvents[index]);
-              },
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < filteredEvents.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  _buildEventTile(context, filteredEvents[i]),
+                ],
+              ],
             ),
         ],
       ),
@@ -299,6 +301,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
 
     return GridView.builder(
       shrinkWrap: true,
+      padding: EdgeInsets.zero,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: totalSlots,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -433,37 +436,22 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     final pal = context.palette;
     final theme = Theme.of(context);
 
-    final Color iconBg;
-    final Color iconColor;
-    final IconData icon;
+    final Color badgeBg;
+    final Color badgeFg;
     final String badgeText;
     final VoidCallback onTap;
 
     switch (event.type) {
       case _CalendarEventType.parcel:
-        iconBg = pal.softBlush;
-        iconColor = pal.primaryCoral;
-        icon = Icons.local_shipping_outlined;
+        badgeBg = pal.softBlush;
+        badgeFg = pal.primaryCoral;
         badgeText = 'Parcel';
         onTap = () => _navigateBoardOrRoute(context, 0, '/parcels');
-      case _CalendarEventType.task:
-        iconBg = pal.softSage;
-        iconColor = pal.forestTeal;
-        icon = Icons.checklist_rounded;
-        badgeText = 'Task';
-        onTap = () => _navigateBoardOrRoute(context, 1, '/maintenance');
       case _CalendarEventType.agenda:
-        iconBg = pal.infoBg;
-        iconColor = pal.infoFg;
-        icon = Icons.people_outline_rounded;
+        badgeBg = pal.infoBg;
+        badgeFg = pal.infoFg;
         badgeText = 'Agenda';
-        onTap = () {
-          if (GoRouter.maybeOf(context) != null) {
-            context.push('/group-chat');
-          } else {
-            CasamaShellScope.maybeOf(context)?.selectTab(3);
-          }
-        };
+        onTap = () => _navigateToChatAgendas(context);
     }
 
     return Semantics(
@@ -481,11 +469,10 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
           ),
           child: Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-                child: Icon(icon, color: iconColor, size: 19),
+              CasamaAvatar(
+                radius: 20,
+                avatarUrl: event.avatarUrl,
+                name: event.avatarName,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -500,7 +487,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: iconBg,
+                            color: badgeBg,
                             borderRadius: CasamaSpacing.roundedPill,
                           ),
                           child: Text(
@@ -508,7 +495,7 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: iconColor,
+                              color: badgeFg,
                             ),
                           ),
                         ),
@@ -549,6 +536,24 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _navigateToChatAgendas(BuildContext context) {
+    final shell = CasamaShellScope.maybeOf(context);
+    if (shell != null) {
+      shell.openChatAgendas();
+      return;
+    }
+    final router = GoRouter.maybeOf(context);
+    if (router != null) {
+      router.go('/chat?section=agendas');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const ChatDirectoryScreen(initialFocusAgendas: true),
       ),
     );
   }
@@ -624,21 +629,42 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
     DateTime date,
   ) {
     final list = <_CalendarEventItem>[];
+    final nowLocal = DateTime.now().toLocal();
+    final startOfToday = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
 
     for (final p in repo.parcels) {
       if (_isSameDay(p.expectedArrival, date)) {
-        final buyer = repo.resolveHousemateName(
+        final isOwner = p.buyerId == repo.currentUser.id;
+        final buyerName = repo.resolveHousemateName(
           p.buyerId,
           fallback: p.buyerName,
         );
+        final arrivalLocal = p.expectedArrival.toLocal();
+        final String statusLabel;
+        if (!p.isSettled &&
+            p.status != ParcelStatus.cancelled &&
+            arrivalLocal.isBefore(startOfToday)) {
+          statusLabel = 'Scheduled Yesterday';
+        } else if (!p.isSettled &&
+            p.status != ParcelStatus.cancelled &&
+            (_isSameDay(arrivalLocal, startOfToday) ||
+                p.status == ParcelStatus.arrived)) {
+          statusLabel = 'Scheduled Today';
+        } else {
+          statusLabel = p.status.label;
+        }
         list.add(
           _CalendarEventItem(
-            title: "$buyer's ${p.courier} Package",
+            title: isOwner
+                ? 'Your ${p.courier} Package'
+                : "$buyerName's ${p.courier} Package",
             subtitle:
                 p.paymentType == ParcelPaymentType.cod && p.codAmount != null
-                ? 'COD: ₱${p.codAmount!.toStringAsFixed(2)} • ${p.status.label}'
-                : 'Prepaid delivery • Status: ${p.status.label}',
-            timeLabel: '4:00 PM',
+                ? 'COD: ₱${p.codAmount!.toStringAsFixed(2)} • $statusLabel'
+                : 'Prepaid delivery • $statusLabel',
+            timeLabel: DateFormat('h:mm a').format(arrivalLocal),
+            avatarUrl: repo.resolveHousemateAvatarUrl(p.buyerId),
+            avatarName: buyerName,
             type: _CalendarEventType.parcel,
           ),
         );
@@ -647,32 +673,18 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
 
     for (final m in repo.housematesAgendaInvitations) {
       if (m.hasValidData && m.isActive && _isSameDay(m.scheduledTime, date)) {
+        final creatorName = repo.resolveHousemateName(
+          m.creatorId,
+          fallback: 'Housemate',
+        );
         list.add(
           _CalendarEventItem(
             title: m.activity,
             subtitle: '${m.location} • ${m.goingCount} housemates going',
-            timeLabel:
-                '${m.scheduledTime.hour}:${m.scheduledTime.minute.toString().padLeft(2, '0')}',
+            timeLabel: DateFormat('h:mm a').format(m.scheduledTime.toLocal()),
+            avatarUrl: repo.resolveHousemateAvatarUrl(m.creatorId),
+            avatarName: creatorName,
             type: _CalendarEventType.agenda,
-          ),
-        );
-      }
-    }
-
-    for (final t in repo.tasks) {
-      final taskDate = t.dueDate ?? t.createdAt;
-      if (_isSameDay(taskDate, date)) {
-        final creator = repo.resolveHousemateName(
-          t.createdBy,
-          fallback: t.createdByName,
-        );
-        list.add(
-          _CalendarEventItem(
-            title: t.title,
-            subtitle:
-                '${t.category.label} • By $creator • ${t.urgency.label}',
-            timeLabel: t.status == TaskStatus.done ? 'Completed' : 'Due Today',
-            type: _CalendarEventType.task,
           ),
         );
       }
@@ -700,18 +712,22 @@ class _HouseholdCalendarViewState extends ConsumerState<HouseholdCalendarView> {
   }
 }
 
-enum _CalendarEventType { parcel, task, agenda }
+enum _CalendarEventType { parcel, agenda }
 
 class _CalendarEventItem {
   final String title;
   final String subtitle;
   final String timeLabel;
+  final String? avatarUrl;
+  final String avatarName;
   final _CalendarEventType type;
 
   const _CalendarEventItem({
     required this.title,
     required this.subtitle,
     required this.timeLabel,
+    required this.avatarUrl,
+    required this.avatarName,
     required this.type,
   });
 }

@@ -23,16 +23,20 @@ import 'widgets/casama_household_drawer.dart';
 class CasamaShellScope extends InheritedWidget {
   final int currentIndex;
   final ValueListenable<int> boardTabListenable;
+  final ValueListenable<int> chatAgendaFocusListenable;
   final ValueChanged<int> selectTab;
   final ValueChanged<int> openBoardTab;
+  final VoidCallback openChatAgendas;
   final VoidCallback openDrawer;
 
   const CasamaShellScope({
     super.key,
     required this.currentIndex,
     required this.boardTabListenable,
+    required this.chatAgendaFocusListenable,
     required this.selectTab,
     required this.openBoardTab,
+    required this.openChatAgendas,
     required this.openDrawer,
     required super.child,
   });
@@ -44,12 +48,14 @@ class CasamaShellScope extends InheritedWidget {
   @override
   bool updateShouldNotify(CasamaShellScope oldWidget) =>
       currentIndex != oldWidget.currentIndex ||
-      boardTabListenable != oldWidget.boardTabListenable;
+      boardTabListenable != oldWidget.boardTabListenable ||
+      chatAgendaFocusListenable != oldWidget.chatAgendaFocusListenable;
 }
 
 class MainNavigationShell extends ConsumerStatefulWidget {
   final int initialIndex;
   final int initialBoardIndex;
+  final bool initialFocusAgendas;
   final bool showBottomNav;
   final bool isTourMode;
 
@@ -57,6 +63,7 @@ class MainNavigationShell extends ConsumerStatefulWidget {
     super.key,
     this.initialIndex = 0,
     this.initialBoardIndex = 0,
+    this.initialFocusAgendas = false,
     this.showBottomNav = true,
     this.isTourMode = false,
   });
@@ -69,15 +76,16 @@ class MainNavigationShell extends ConsumerStatefulWidget {
 class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
   late int _currentIndex;
   late final ValueNotifier<int> _boardTabNotifier;
+  late final ValueNotifier<int> _chatAgendaFocusNotifier;
   late bool _isTourActive;
   int _tourStep = 0;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    BoardsScreen(),
-    SizedBox.shrink(), // Center CASnap camera slot placeholder
-    ChatDirectoryScreen(),
-    ProfileScreen(),
+  late final List<Widget> _screens = [
+    const DashboardScreen(),
+    const BoardsScreen(),
+    const SizedBox.shrink(), // Center CASnap camera slot placeholder
+    ChatDirectoryScreen(initialFocusAgendas: widget.initialFocusAgendas),
+    const ProfileScreen(),
   ];
 
   @override
@@ -85,6 +93,8 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     super.initState();
     _currentIndex = widget.initialIndex.clamp(0, 4);
     _boardTabNotifier = ValueNotifier<int>(widget.initialBoardIndex.clamp(0, 2));
+    _chatAgendaFocusNotifier =
+        ValueNotifier<int>(widget.initialFocusAgendas ? 1 : 0);
     _isTourActive = widget.isTourMode;
     if (_isTourActive) {
       _tourStep = _currentIndex == 1
@@ -117,6 +127,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
   @override
   void dispose() {
     _boardTabNotifier.dispose();
+    _chatAgendaFocusNotifier.dispose();
     super.dispose();
   }
 
@@ -154,6 +165,14 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     setState(() {
       _currentIndex = 1;
       if (_isTourActive) _tourStep = 1;
+    });
+  }
+
+  void _openChatAgendas() {
+    _chatAgendaFocusNotifier.value++;
+    setState(() {
+      _currentIndex = 3;
+      if (_isTourActive) _tourStep = 3;
     });
   }
 
@@ -218,8 +237,10 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     return CasamaShellScope(
       currentIndex: _currentIndex,
       boardTabListenable: _boardTabNotifier,
+      chatAgendaFocusListenable: _chatAgendaFocusNotifier,
       selectTab: _onTabTapped,
       openBoardTab: _openBoardTab,
+      openChatAgendas: _openChatAgendas,
       openDrawer: _openDrawer,
       child: Scaffold(
         backgroundColor: pal.scaffoldBg,

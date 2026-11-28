@@ -32,7 +32,6 @@ class LeaderboardScreen extends ConsumerWidget {
             standings[i].userId,
             fallback: standings[i].displayName,
           ),
-          standings[i].handle,
           standings[i].points,
           i < medals.length ? medals[i] : '🎖️',
           standings[i].avatarUrl,
@@ -179,14 +178,6 @@ class LeaderboardScreen extends ConsumerWidget {
                                                 ],
                                               ],
                                             ),
-                                            Text(
-                                              entry.handle,
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    fontSize: 12,
-                                                    color: pal.textSecondary,
-                                                  ),
-                                            ),
                                           ],
                                         ),
                                       ),
@@ -332,7 +323,6 @@ class _PointRuleRow extends StatelessWidget {
 
 class _LeaderboardEntry {
   final String name;
-  final String handle;
   final int points;
   final String medal;
   final String? avatarUrl;
@@ -340,7 +330,6 @@ class _LeaderboardEntry {
 
   const _LeaderboardEntry(
     this.name,
-    this.handle,
     this.points,
     this.medal,
     this.avatarUrl, {

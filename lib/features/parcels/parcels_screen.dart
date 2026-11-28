@@ -407,16 +407,33 @@ class _ParcelCard extends ConsumerWidget {
     final claimerAvatarUrl = repo.resolveHousemateAvatarUrl(parcel.claimedById);
 
     final nowLocal = DateTime.now().toLocal();
+    final startOfToday = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
     final startOfTomorrow = DateTime(
       nowLocal.year,
       nowLocal.month,
       nowLocal.day + 1,
     );
-    final isArrivingTodayOrPast =
-        parcel.expectedArrival.toLocal().isBefore(startOfTomorrow);
+    final arrivalLocal = parcel.expectedArrival.toLocal();
+    final isPastToday = arrivalLocal.isBefore(startOfToday);
+    final isToday = !isPastToday && arrivalLocal.isBefore(startOfTomorrow);
+    final isArrivingTodayOrPast = arrivalLocal.isBefore(startOfTomorrow);
     final isArrivedNow =
         parcel.status == ParcelStatus.arrived && !parcel.isClaimed;
     final canClaim = isArrivedNow || isArrivingTodayOrPast;
+
+    final isUnsettled =
+        !parcel.isSettled && parcel.status != ParcelStatus.cancelled;
+    final showScheduledYesterday =
+        isUnsettled &&
+        isPastToday &&
+        (tabMode == _ParcelTabMode.myParcels || !parcel.isClaimed);
+    final showPastMyParcelHelper =
+        tabMode == _ParcelTabMode.myParcels && isUnsettled && isPastToday;
+    final showScheduledToday =
+        isUnsettled &&
+        !parcel.isClaimed &&
+        !showScheduledYesterday &&
+        (isToday || isArrivedNow);
 
     final isCod = parcel.paymentType == ParcelPaymentType.cod;
     final paymentText = isCod
@@ -428,11 +445,20 @@ class _ParcelCard extends ConsumerWidget {
       fontWeight: FontWeight.w500,
     );
 
+    final bool hasStatusRow =
+        showScheduledYesterday ||
+        showScheduledToday ||
+        tabMode == _ParcelTabMode.history ||
+        parcel.isSettled ||
+        parcel.isUnsettledClaim ||
+        showPastMyParcelHelper;
+
     final headerContent = ConstrainedBox(
       constraints: const BoxConstraints(
         minHeight: CasamaSpacing.minTouchTarget,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CasamaCourierLogo(
             key: ValueKey('parcel_courier_logo_${parcel.id}'),
@@ -445,19 +471,43 @@ class _ParcelCard extends ConsumerWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  parcel.courier,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: pal.textPrimary,
-                  ),
+                // Row 1: Courier name + Payment pill + Expand chevron
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        parcel.courier,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: pal.textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    StatusChip(
+                      label: paymentText,
+                      variant: isCod ? ChipVariant.cod : ChipVariant.paid,
+                    ),
+                    const SizedBox(width: 2),
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.5 : 0.0,
+                      duration: animDuration,
+                      curve: CasamaMotion.easeOut,
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 22,
+                        color: isExpanded ? pal.forestTeal : pal.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
+                // Row 2: Full-width poster badge + formatted arrival date/time
                 CasamaInlineUserBadge(
                   avatarKey: ValueKey('parcel_poster_avatar_${parcel.id}'),
                   prefix: 'For ',
@@ -466,51 +516,58 @@ class _ParcelCard extends ConsumerWidget {
                   avatarUrl: buyerAvatarUrl,
                   suffix: ' • ${_formatArrival(parcel.expectedArrival)}',
                   avatarSize: 18,
+                  maxLines: 2,
                   baseStyle: metaStyle,
                   nameStyle: metaStyle?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: pal.textPrimary,
                   ),
                 ),
-                if (isArrivedNow) ...[
-                  const SizedBox(height: 4),
-                  StatusChip(
-                    key: ValueKey('parcel_arriving_now_${parcel.id}'),
-                    label: ParcelStatus.arrived.label,
-                    icon: Icons.local_shipping_rounded,
-                    variant: ChipVariant.unclaimed,
-                  ),
-                ] else if (tabMode == _ParcelTabMode.history ||
-                    parcel.isSettled) ...[
-                  const SizedBox(height: 4),
-                  const StatusChip(
-                    label: 'Settled',
-                    variant: ChipVariant.returned,
-                  ),
-                ] else if (parcel.isUnsettledClaim) ...[
-                  const SizedBox(height: 4),
-                  const StatusChip(
-                    label: 'Unsettled',
-                    variant: ChipVariant.cod,
+                // Row 3: Status pill + past-today My Parcels helper note
+                if (hasStatusRow) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (showScheduledYesterday)
+                        StatusChip(
+                          key: ValueKey('parcel_scheduled_yesterday_${parcel.id}'),
+                          label: 'Scheduled Yesterday',
+                          icon: Icons.schedule_rounded,
+                          variant: ChipVariant.cod,
+                        )
+                      else if (showScheduledToday)
+                        StatusChip(
+                          key: ValueKey('parcel_scheduled_today_${parcel.id}'),
+                          label: 'Scheduled Today',
+                          icon: Icons.local_shipping_rounded,
+                          variant: ChipVariant.unclaimed,
+                        )
+                      else if (tabMode == _ParcelTabMode.history ||
+                          parcel.isSettled)
+                        const StatusChip(
+                          label: 'Settled',
+                          variant: ChipVariant.returned,
+                        )
+                      else if (parcel.isUnsettledClaim)
+                        const StatusChip(
+                          label: 'Unsettled',
+                          variant: ChipVariant.cod,
+                        ),
+                      if (showPastMyParcelHelper)
+                        Text(
+                          'Expand to edit or delete listing',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 11.5,
+                            color: pal.textSecondary,
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          StatusChip(
-            label: paymentText,
-            variant: isCod ? ChipVariant.cod : ChipVariant.paid,
-          ),
-          const SizedBox(width: 4),
-          AnimatedRotation(
-            turns: isExpanded ? 0.5 : 0.0,
-            duration: animDuration,
-            curve: CasamaMotion.easeOut,
-            child: Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 22,
-              color: isExpanded ? pal.forestTeal : pal.textSecondary,
             ),
           ),
         ],
@@ -855,8 +912,8 @@ class _ParcelCard extends ConsumerWidget {
     if (local.day == now.day &&
         local.month == now.month &&
         local.year == now.year) {
-      return 'Today ${DateFormat('h:mm a').format(local)}';
+      return 'Today, ${DateFormat('h:mm a').format(local)}';
     }
-    return DateFormat('MMM dd h:mm a').format(local);
+    return DateFormat('MMM d, h:mm a').format(local);
   }
 }

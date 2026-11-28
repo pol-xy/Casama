@@ -1,3 +1,4 @@
+import 'package:casama/core/motion/casama_motion.dart';
 import 'package:casama/core/theme/app_theme.dart';
 import 'package:casama/data/mock_repository.dart';
 import 'package:casama/data/models.dart';
@@ -8,7 +9,6 @@ import 'package:casama/features/chat/group_chat_screen.dart';
 import 'package:casama/features/dashboard/main_navigation_shell.dart';
 import 'package:casama/features/parcels/parcels_screen.dart';
 import 'package:casama/shared/widgets/casama_avatar.dart';
-import 'package:casama/shared/widgets/casama_button.dart';
 import 'package:casama/shared/widgets/casama_notifications_sheet.dart';
 import 'package:casama/shared/widgets/casama_wave_header.dart';
 import 'package:flutter/material.dart';
@@ -90,7 +90,10 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Notifications'), findsOneWidget);
-        expect(find.text('Recent household updates'), findsOneWidget);
+        final expectedSubtitle = repo.unreadNotificationCount == 0
+            ? 'All caught up!'
+            : '${repo.unreadNotificationCount} unread ${repo.unreadNotificationCount == 1 ? 'update' : 'updates'}';
+        expect(find.text(expectedSubtitle), findsOneWidget);
         expect(find.text('All notifications caught up'), findsNothing);
 
         await tester.tap(find.bySemanticsLabel('Close Notifications'));
@@ -135,10 +138,13 @@ void main() {
           find.text("You're all caught up! No new notifications."),
           findsOneWidget,
         );
-        final emptyBtn = tester.widget<CasamaButton>(
-          find.byKey(const ValueKey('casama_mark_all_read_button')),
+        final emptyBtn = tester.widget<CasamaPressable>(
+          find.descendant(
+            of: find.byKey(const ValueKey('casama_mark_all_read_button')),
+            matching: find.byType(CasamaPressable),
+          ),
         );
-        expect(emptyBtn.onPressed, isNull);
+        expect(emptyBtn.onTap, isNull);
 
         await tester.tap(find.byKey(const ValueKey('casama_mark_all_read_button')));
         await tester.pumpAndSettle();
@@ -164,15 +170,18 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Already read update'), findsOneWidget);
-        final readBtn = tester.widget<CasamaButton>(
-          find.byKey(const ValueKey('casama_mark_all_read_button')),
+        final readBtn = tester.widget<CasamaPressable>(
+          find.descendant(
+            of: find.byKey(const ValueKey('casama_mark_all_read_button')),
+            matching: find.byType(CasamaPressable),
+          ),
         );
-        expect(readBtn.onPressed, isNull);
+        expect(readBtn.onTap, isNull);
 
         await tester.tap(find.bySemanticsLabel('Close Notifications'));
         await tester.pumpAndSettle();
 
-        // 3. Unread notification -> Mark all read enabled and marks read
+        // 3. Unread notification -> Mark all read enabled and marks read in-place
         repo.setNotificationsForTest([
           HouseholdNotificationItem(
             id: 'n_unread',
@@ -189,25 +198,31 @@ void main() {
 
         await tester.tap(find.byType(CasamaNotificationBellButton));
         await tester.pumpAndSettle();
+        expect(find.text('1 unread update'), findsOneWidget);
 
-        final unreadBtn = tester.widget<CasamaButton>(
-          find.byKey(const ValueKey('casama_mark_all_read_button')),
+        final unreadBtn = tester.widget<CasamaPressable>(
+          find.descendant(
+            of: find.byKey(const ValueKey('casama_mark_all_read_button')),
+            matching: find.byType(CasamaPressable),
+          ),
         );
-        expect(unreadBtn.onPressed, isNotNull);
+        expect(unreadBtn.onTap, isNotNull);
 
         await tester.tap(find.byKey(const ValueKey('casama_mark_all_read_button')));
         await tester.pumpAndSettle();
 
         expect(repo.unreadNotificationCount, 0);
         expect(repo.notifications.single.readAt, isNotNull);
-
-        // Re-opening sheet now shows Mark all read disabled
-        await tester.tap(find.byType(CasamaNotificationBellButton));
-        await tester.pumpAndSettle();
-        final afterBtn = tester.widget<CasamaButton>(
-          find.byKey(const ValueKey('casama_mark_all_read_button')),
+        // Sheet stays open and updates in-place
+        expect(find.text('Notifications'), findsOneWidget);
+        expect(find.text('All caught up!'), findsOneWidget);
+        final afterBtn = tester.widget<CasamaPressable>(
+          find.descendant(
+            of: find.byKey(const ValueKey('casama_mark_all_read_button')),
+            matching: find.byType(CasamaPressable),
+          ),
         );
-        expect(afterBtn.onPressed, isNull);
+        expect(afterBtn.onTap, isNull);
       }
     },
   );
@@ -366,10 +381,13 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Legacy reminder'), findsNothing);
-      final btn = tester.widget<CasamaButton>(
-        find.byKey(const ValueKey('casama_mark_all_read_button')),
+      final btn = tester.widget<CasamaPressable>(
+        find.descendant(
+          of: find.byKey(const ValueKey('casama_mark_all_read_button')),
+          matching: find.byType(CasamaPressable),
+        ),
       );
-      expect(btn.onPressed, isNull);
+      expect(btn.onTap, isNull);
     },
   );
 
@@ -792,11 +810,11 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Switch to Upcoming -> arrived future parcel appears at top with Arriving Now badge & I Got It when expanded
+        // Switch to Upcoming -> arrived future parcel appears at top with Scheduled Today badge & I Got It when expanded
         await tester.tap(find.text('Upcoming'));
         await tester.pumpAndSettle();
-        expect(find.byKey(ValueKey('parcel_arriving_now_$createdId')), findsOneWidget);
-        expect(find.text('Arriving Now'), findsOneWidget);
+        expect(find.byKey(ValueKey('parcel_scheduled_today_$createdId')), findsOneWidget);
+        expect(find.text('Scheduled Today'), findsOneWidget);
         await tester.tap(find.text('Ninja Van'));
         await tester.pumpAndSettle();
         expect(find.text('I Got It'), findsWidgets);
@@ -804,8 +822,8 @@ void main() {
         // Switch to My Parcels -> arrived parcel is visible there too
         await tester.tap(find.text('My Parcels'));
         await tester.pumpAndSettle();
-        expect(find.byKey(ValueKey('parcel_arriving_now_$createdId')), findsOneWidget);
-        expect(find.text('Arriving Now'), findsOneWidget);
+        expect(find.byKey(ValueKey('parcel_scheduled_today_$createdId')), findsOneWidget);
+        expect(find.text('Scheduled Today'), findsOneWidget);
       }
     },
   );
@@ -885,6 +903,157 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('3 of 4 Home'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Bell shows numeric unread badge matching unread count, capped at 9+, and hides at 0',
+    (tester) async {
+      final repo = MockRepository()..login();
+      final now = DateTime.now();
+
+      List<HouseholdNotificationItem> buildUnread(int count) => [
+        for (var i = 0; i < count; i++)
+          HouseholdNotificationItem(
+            id: 'n_badge_$i',
+            type: 'parcel_received',
+            title: 'Parcel $i',
+            subtitle: 'Delivered',
+            createdAt: now,
+            isRead: false,
+          ),
+      ];
+
+      repo.setNotificationsForTest(buildUnread(3));
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(390, 844),
+              disableAnimations: true,
+            ),
+            child: MaterialApp(
+              theme: CasamaTheme.lightTheme,
+              home: const MainNavigationShell(initialIndex: 0),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final bellFinder = find.byType(CasamaNotificationBellButton);
+      expect(
+        find.descendant(of: bellFinder, matching: find.text('3')),
+        findsOneWidget,
+      );
+
+      repo.setNotificationsForTest(buildUnread(10));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: bellFinder, matching: find.text('9+')),
+        findsOneWidget,
+      );
+
+      repo.setNotificationsForTest(const []);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: bellFinder, matching: find.text('9+')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: bellFinder, matching: find.text('0')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'Pinned filter pills switch between All and Unread and distinguish unread vs read cards',
+    (tester) async {
+      final repo = MockRepository()..login();
+      final now = DateTime.now();
+
+      repo.setNotificationsForTest([
+        HouseholdNotificationItem(
+          id: 'n_unread_card',
+          type: 'parcel_arrived',
+          title: 'Unread Parcel Update',
+          subtitle: 'Waiting at the gate',
+          createdAt: now,
+          isRead: false,
+          readAt: null,
+        ),
+        HouseholdNotificationItem(
+          id: 'n_read_card',
+          type: 'task_completed',
+          title: 'Read Task Update',
+          subtitle: 'Already completed',
+          createdAt: now.subtract(const Duration(minutes: 5)),
+          isRead: true,
+          readAt: now,
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [repositoryProvider.overrideWith((ref) => repo)],
+          child: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(390, 844),
+              disableAnimations: true,
+            ),
+            child: MaterialApp(
+              theme: CasamaTheme.lightTheme,
+              home: const MainNavigationShell(initialIndex: 0),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(CasamaNotificationBellButton));
+      await tester.pumpAndSettle();
+
+      // Dynamic subtitle reflects 1 unread
+      expect(find.text('1 unread update'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('casama_notif_filter_all')),
+          matching: find.text('All'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Unread (1)'), findsOneWidget);
+
+      // Both cards visible under All
+      expect(find.text('Unread Parcel Update'), findsOneWidget);
+      expect(find.text('Read Task Update'), findsOneWidget);
+
+      // Visual distinction: unread title is w700, read title is w500
+      final unreadTitle = tester.widget<Text>(find.text('Unread Parcel Update'));
+      final readTitle = tester.widget<Text>(find.text('Read Task Update'));
+      expect(unreadTitle.style?.fontWeight, FontWeight.w700);
+      expect(readTitle.style?.fontWeight, FontWeight.w500);
+
+      // Tap Unread (1) pill -> hides read notification
+      await tester.tap(find.byKey(const ValueKey('casama_notif_filter_unread')));
+      await tester.pumpAndSettle();
+      expect(find.text('Unread Parcel Update'), findsOneWidget);
+      expect(find.text('Read Task Update'), findsNothing);
+
+      // Tap Mark all read -> sheet stays open, shows Unread empty state
+      await tester.tap(find.byKey(const ValueKey('casama_mark_all_read_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Unread (0)'), findsOneWidget);
+      expect(find.text('No unread notifications right now.'), findsOneWidget);
+
+      // Switch back to All -> both notifications visible as read
+      await tester.tap(find.byKey(const ValueKey('casama_notif_filter_all')));
+      await tester.pumpAndSettle();
+      expect(find.text('Unread Parcel Update'), findsOneWidget);
+      expect(find.text('Read Task Update'), findsOneWidget);
     },
   );
 }

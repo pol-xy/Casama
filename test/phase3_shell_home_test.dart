@@ -4,6 +4,7 @@ import 'package:casama/data/mock_repository.dart';
 import 'package:casama/data/models.dart';
 import 'package:casama/data/repository_provider.dart';
 import 'package:casama/features/calendar/household_calendar_view.dart';
+import 'package:casama/features/chat/chat_directory_screen.dart';
 import 'package:casama/features/dashboard/boards_screen.dart';
 import 'package:casama/features/dashboard/dashboard_screen.dart';
 import 'package:casama/features/dashboard/main_navigation_shell.dart';
@@ -293,14 +294,18 @@ void main() {
   );
 
   testWidgets(
-    'DashboardScreen toggles inline You: Home status, renders Live Attention items, and filters Tasks in Casa Schedule under dark mode & reduced motion',
+    'DashboardScreen toggles inline You: Home status, enforces Live Attention 3-rule filter + View all sheet, and Casa Schedule shows Parcels & Agendas only',
     (tester) async {
       final repo = MockRepository()..login();
       repo.addTask(
         title: 'Clean Balcony Today',
         category: TaskCategory.cleaning,
         urgency: TaskUrgency.urgent,
-        dueDate: DateTime.now(),
+      );
+      repo.addTask(
+        title: 'Non Urgent Task',
+        category: TaskCategory.cleaning,
+        urgency: TaskUrgency.low,
       );
 
       await tester.pumpWidget(
@@ -315,7 +320,7 @@ void main() {
               theme: CasamaTheme.lightTheme,
               darkTheme: CasamaTheme.darkTheme,
               themeMode: ThemeMode.dark,
-              home: const DashboardScreen(),
+              home: const MainNavigationShell(),
             ),
           ),
         ),
@@ -327,28 +332,54 @@ void main() {
       expect(find.text('Live Attention Needed'), findsOneWidget);
       expect(find.textContaining('Assigned to'), findsNothing);
       expect(find.textContaining('Unassigned'), findsNothing);
+      expect(find.text('Non Urgent Task'), findsNothing);
+      expect(find.text('Clean Balcony Today'), findsOneWidget);
+      expect(find.textContaining('By You'), findsWidgets);
+      expect(find.text('Status: Scheduled Today'), findsWidgets);
       expect(find.text('Casa Schedule'), findsOneWidget);
       expect(find.byType(HouseholdCalendarView), findsOneWidget);
       expect(find.text('Bills'), findsNothing);
 
-      // Filter Casa Schedule to Tasks
-      final tasksPill = find.descendant(
-        of: find.byType(HouseholdCalendarView),
-        matching: find.text('Tasks'),
-      );
-      await tester.ensureVisible(tasksPill);
-      await tester.pumpAndSettle();
-      await tester.tap(tasksPill);
-      await tester.pumpAndSettle();
+      // Casa Schedule shows All, Parcels, Agenda (no Tasks filter or tasks in schedule)
+      final cal = find.byType(HouseholdCalendarView);
+      expect(find.descendant(of: cal, matching: find.text('All')), findsOneWidget);
+      expect(find.descendant(of: cal, matching: find.text('Parcels')), findsOneWidget);
+      expect(find.descendant(of: cal, matching: find.text('Agenda')), findsWidgets);
+      expect(find.descendant(of: cal, matching: find.text('Tasks')), findsNothing);
       expect(
-        find.descendant(
-          of: find.byType(HouseholdCalendarView),
-          matching: find.text('Clean Balcony Today'),
-        ),
+        find.descendant(of: cal, matching: find.text('Clean Balcony Today')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: cal, matching: find.text("Maria's J&T Express Package")),
         findsOneWidget,
       );
 
-      // Toggle presence inline via You: Home pill
+      // Live Attention "View all ›" opens bottom sheet listing all qualifying items (including <24h undecided Agenda)
+      final viewAllBtn = find.byKey(const ValueKey('live_attention_view_all_button'));
+      await tester.ensureVisible(viewAllBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(viewAllBtn);
+      await tester.pumpAndSettle();
+      expect(find.text('Study Session 🎓'), findsWidgets);
+      await tester.tap(find.bySemanticsLabel('Close Live Attention Needed'));
+      await tester.pumpAndSettle();
+
+      // Tapping an Agenda row in Casa Schedule routes to ChatDirectoryScreen (Housemates Agenda section)
+      final agendaRow = find.descendant(
+        of: cal,
+        matching: find.text('Study Session 🎓'),
+      );
+      await tester.ensureVisible(agendaRow);
+      await tester.pumpAndSettle();
+      await tester.tap(agendaRow);
+      await tester.pumpAndSettle();
+      expect(find.byType(ChatDirectoryScreen), findsOneWidget);
+
+      // Return Home and toggle presence inline via You: Home pill
+      final navBar = find.byKey(const ValueKey('casama_5_slot_bar'));
+      await tester.tap(find.descendant(of: navBar, matching: find.text('Home')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('You: Home'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('You: Home'));
@@ -364,7 +395,7 @@ void main() {
   );
 
   testWidgets(
-    'DashboardScreen shows clean Live Attention Needed empty copy when no urgent tasks or COD handoffs remain',
+    'DashboardScreen shows clean Live Attention Needed empty copy when no urgent tasks, today parcels, or undecided agendas remain',
     (tester) async {
       final repo = MockRepository()..login();
       for (final t in List<MaintenanceTask>.from(repo.tasks)) {
@@ -375,7 +406,11 @@ void main() {
             p.status != ParcelStatus.cancelled) {
           repo.receiveParcel(p.id);
         }
+        if (!p.isSettled) {
+          await repo.settleParcelClaim(p.id);
+        }
       }
+      repo.respondToHousematesAgendaInvitation('going');
 
       await tester.pumpWidget(
         ProviderScope(
@@ -389,7 +424,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('All caught up — no urgent tasks or COD handoffs.'),
+        find.text('All caught up — no urgent tasks, today parcels, or pending agendas.'),
         findsOneWidget,
       );
     },

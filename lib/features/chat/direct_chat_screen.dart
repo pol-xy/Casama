@@ -261,7 +261,6 @@ class _DirectChatScreenState extends ConsumerState<DirectChatScreen> {
         if (m == null) return false;
         final p = m.profile;
         return p.id.toLowerCase() == keyLower ||
-            p.handle.toLowerCase().contains(keyLower) ||
             p.preferredName.toLowerCase().contains(keyLower) ||
             (p.nickname?.toLowerCase().contains(keyLower) ?? false) ||
             (p.fullName?.toLowerCase().contains(keyLower) ?? false) ||

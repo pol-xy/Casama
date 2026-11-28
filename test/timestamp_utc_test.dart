@@ -46,7 +46,6 @@ void main() {
       final profile = UserProfile.fromJson({
         'id': 'u1',
         'display_name': 'JP',
-        'handle': '@jp',
         'birthday': '2000-05-15',
       });
       expect(profile.birthday, DateTime(2000, 5, 15));
@@ -105,16 +104,14 @@ void main() {
         createdByName: 'JP',
         createdAt: localTime,
         completedAt: localTime,
-        dueDate: localTime,
       );
       final taskJson = task.toJson();
       expect((taskJson['created_at'] as String).endsWith('Z'), isTrue);
       expect((taskJson['completed_at'] as String).endsWith('Z'), isTrue);
-      expect((taskJson['due_date'] as String).endsWith('Z'), isTrue);
+      expect(taskJson.containsKey('due_date'), isFalse);
       final parsedTask = MaintenanceTask.fromJson(taskJson);
       expect(parsedTask.createdAt.isUtc, isFalse);
       expect(parsedTask.completedAt!.isUtc, isFalse);
-      expect(parsedTask.dueDate!.isUtc, isFalse);
 
       // ChatMessage & QuickSnapComment & ChoreRouletteRecord
       final msg = ChatMessage(

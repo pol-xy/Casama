@@ -37,7 +37,6 @@ void main() {
 
       expect(repo.isAuthenticated, true);
       expect(repo.currentUser.displayName, 'newuser');
-      expect(repo.currentUser.handle, startsWith('@newuser_'));
       expect(repo.currentUser.hasConsentedTerms, false);
       expect(repo.currentUser.hasCompletedOnboarding, false);
       expect(repo.currentUser.effectiveGreetingName, 'newuser');
@@ -534,7 +533,6 @@ void main() {
       final profile1 = UserProfile(
         id: 'u1',
         displayName: 'Jon Paul Berana',
-        handle: '@jpberana',
         fullName: 'Jon Paul Berana',
         nickname: 'JP',
       );
@@ -544,7 +542,6 @@ void main() {
       final profile2 = UserProfile(
         id: 'u2',
         displayName: 'Maria Santos',
-        handle: '@maria',
         fullName: 'Maria Santos',
         nickname: null,
       );
@@ -554,7 +551,6 @@ void main() {
       final profile3 = UserProfile(
         id: 'u3',
         displayName: 'Dave',
-        handle: '@dave',
         fullName: null,
         nickname: null,
       );
@@ -564,7 +560,6 @@ void main() {
       final profile4 = UserProfile(
         id: 'u4',
         displayName: '',
-        handle: '@empty',
         fullName: null,
         nickname: null,
       );
@@ -572,78 +567,34 @@ void main() {
     });
 
     test(
-      'Maintenance tasks maintain dueDate and support calendar scheduling',
+      'MaintenanceTask.toJson omits retired due_date column',
       () {
         final task = repo.tasks.first;
-        expect(task.dueDate, isNotNull);
-        final due = task.dueDate!;
-
-        // Completing the task preserves dueDate
         repo.completeTask(task.id);
         final updatedTask = repo.tasks.firstWhere((t) => t.id == task.id);
         expect(updatedTask.status, TaskStatus.done);
-        expect(updatedTask.dueDate, due);
+        expect(updatedTask.toJson().containsKey('due_date'), isFalse);
       },
     );
 
-    test('User search filters by handle or name, excluding current household members, and preserves privacy', () {
-      // 1. Search for non-member Miguel
-      final results = repo.searchUsers('miguel');
-      expect(results.length, 1);
-      expect(results.first.displayName, 'Miguel Ramos');
-      expect(results.first.handle, '@miguel');
+    test('MockRepository.updateProfile enforces case-insensitive unique nicknames and allows keeping own nickname', () async {
+      repo.seedTakenNicknamesForTest(['TakenNick']);
 
-      // 2. Search for existing member Maria - excluded from results
-      final memberResults = repo.searchUsers('maria');
-      expect(memberResults.isEmpty, true);
-
-      // 3. Blank search returns empty list
-      expect(repo.searchUsers('').isEmpty, true);
-    });
-
-    test('Household invitation flow: sending, duplicate prevention, and accepting adds new member to household', () {
-      final initialMembersCount = repo.members.length;
-
-      // 1. Send invitation to Clara
-      final sent = repo.sendInvitation(
-        inviteeEmailOrHandle: '@clara',
-        inviteeName: 'Clara Reyes',
+      final dupError = await repo.updateProfile(
+        firstName: 'Jon Paul',
+        lastName: 'Berana',
+        nickname: '  takennick ',
       );
-      expect(sent, true);
-      expect(repo.invitations.first.inviteeEmailOrHandle, '@clara');
-      expect(repo.invitations.first.status, InvitationStatus.pending);
+      expect(dupError, 'That nickname is already taken. Please choose another.');
+      expect(repo.currentUser.nickname, 'JP');
 
-      // 2. Duplicate invitation prevented
-      final duplicate = repo.sendInvitation(inviteeEmailOrHandle: '@clara');
-      expect(duplicate, false);
-
-      // 3. Inviting existing member prevented
-      final existing = repo.sendInvitation(inviteeEmailOrHandle: '@maria');
-      expect(existing, false);
-
-      // 4. Accept invitation adds member to household
-      final invId = repo.invitations.first.id;
-      final accepted = repo.acceptInvitation(invId);
-      expect(accepted, true);
-      expect(repo.invitations.first.status, InvitationStatus.accepted);
-      expect(repo.members.length, initialMembersCount + 1);
-      expect(repo.members.any((m) => m.profile.handle == '@clara'), true);
-    });
-
-    test('Household invitation flow: declining invitation marks status declined without adding member', () {
-      final initialMembersCount = repo.members.length;
-
-      repo.sendInvitation(
-        inviteeEmailOrHandle: '@bea',
-        inviteeName: 'Bea Gomez',
+      final selfSave = await repo.updateProfile(
+        firstName: 'Jon Paul',
+        lastName: 'Berana',
+        nickname: 'jp',
       );
-      final invId = repo.invitations.first.id;
-
-      final declined = repo.declineInvitation(invId);
-      expect(declined, true);
-      expect(repo.invitations.first.status, InvitationStatus.declined);
-      expect(repo.members.length, initialMembersCount);
-      expect(repo.members.any((m) => m.profile.handle == '@bea'), false);
+      expect(selfSave, isNull);
+      expect(repo.currentUser.nickname, 'jp');
     });
 
     test('Household authorization check correctly distinguishes verified members from unauthorized external users', () {
@@ -651,7 +602,7 @@ void main() {
       expect(repo.isHousemateAuthorized('maria'), true);
       expect(repo.isHousemateAuthorized('alex'), true);
       expect(repo.isHousemateAuthorized('ria'), true);
-      expect(repo.isHousemateAuthorized('@jpberana'), true);
+      expect(repo.isHousemateAuthorized('JP'), true);
 
       // Unauthorized external users
       expect(repo.isHousemateAuthorized('hacker_99'), false);
@@ -692,20 +643,28 @@ void main() {
       expect(repo.effectiveGreetingName, 'Jon');
     });
 
-    test('UserProfile.fromJson / toJson parses and serializes YYYY-MM-DD birthday without timezone shifts', () {
+    test('UserProfile.fromJson / toJson parses first/last name, omits handle, and serializes YYYY-MM-DD birthday without timezone shifts', () {
       final profile = UserProfile.fromJson({
         'id': 'u1',
         'display_name': 'Clara Reyes',
-        'handle': '@clara',
+        'first_name': 'Clara',
+        'last_name': 'Reyes',
         'birthday': '2007-01-01T00:00:00Z',
         'has_consented_terms': true,
         'has_completed_onboarding': true,
       });
 
+      expect(profile.firstName, 'Clara');
+      expect(profile.lastName, 'Reyes');
+      expect(profile.fullName, 'Clara Reyes');
       expect(profile.birthday, DateTime(2007, 1, 1));
       expect(profile.computedAge, isNotNull);
       final json = profile.toJson();
+      expect(json['first_name'], 'Clara');
+      expect(json['last_name'], 'Reyes');
+      expect(json['full_name'], 'Clara Reyes');
       expect(json['birthday'], '2007-01-01');
+      expect(json.containsKey('handle'), isFalse);
       expect(json.containsKey('age'), isFalse);
 
       expect(UserProfile.parseDateOnly('2026-02-30'), isNull);

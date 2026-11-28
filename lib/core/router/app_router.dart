@@ -186,7 +186,13 @@ GoRouter createAppRouter({
     ),
     GoRoute(
       path: '/chat',
-      builder: (context, state) => const MainNavigationShell(initialIndex: 3),
+      builder: (context, state) {
+        final focusAgendas = state.uri.queryParameters['section'] == 'agendas';
+        return MainNavigationShell(
+          initialIndex: 3,
+          initialFocusAgendas: focusAgendas,
+        );
+      },
     ),
     GoRoute(
       path: '/group-chat',

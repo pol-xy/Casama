@@ -32,7 +32,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   UserProfile _currentUser = const UserProfile(
     id: '',
     displayName: 'Housemate',
-    handle: '@housemate',
   );
   Household _currentHousehold = const Household(
     id: '',
@@ -69,7 +68,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   List<HouseholdNotificationItem> _notifications = [];
   NotificationPreferences _notificationPreferences =
       const NotificationPreferences();
-  final List<HouseholdInvitation> _invitations = [];
   static const Duration quickSnapReactionDebounce = Duration(
     milliseconds: 1200,
   );
@@ -81,8 +79,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   final Map<String, Timer> _reactionFlushTimers = {};
   final Set<String> _flushingSnapIds = {};
   final Map<String, Future<void>> _inFlightFlushFutures = {};
-  List<UserProfile> _cachedUserSearch = [];
-  String _lastSearchQuery = '';
   RepositoryActionError? _pendingError;
 
   SupabaseRepository(this._client) {
@@ -268,9 +264,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       _notificationPreferences;
 
   @override
-  List<HouseholdInvitation> get invitations => List.unmodifiable(_invitations);
-
-  @override
   List<QuickSnap> get quickSnaps => List.unmodifiable(_quickSnaps);
 
   @override
@@ -327,42 +320,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     return _resolveMemberByKey(contactKey) != null;
   }
 
-  @override
-  List<UserProfile> searchUsers(String query) {
-    final clean = query.trim();
-    if (clean.isEmpty) {
-      _lastSearchQuery = '';
-      _cachedUserSearch = [];
-      return const [];
-    }
-    if (clean != _lastSearchQuery && _client != null && isAuthenticated) {
-      _lastSearchQuery = clean;
-      unawaited(_refreshUserSearch(clean));
-    }
-    return List.unmodifiable(_cachedUserSearch);
-  }
-
-  Future<void> _refreshUserSearch(String query) async {
-    final client = _client;
-    if (client == null) return;
-    try {
-      final memberIds = _members.map((m) => m.profile.id).toSet();
-      final res = await client
-          .from('profiles')
-          .select()
-          .or('handle.ilike.%$query%,display_name.ilike.%$query%')
-          .limit(20);
-      final parsed = (res as List<dynamic>)
-          .map((e) => UserProfile.fromJson(e as Map<String, dynamic>))
-          .where((p) => !memberIds.contains(p.id) && p.id != _currentUser.id)
-          .toList();
-      _cachedUserSearch = parsed;
-      _safeNotify();
-    } catch (e) {
-      debugPrint('Supabase searchUsers error: $e');
-    }
-  }
-
   // =========================================================================
   // AUTH, SESSION & PROFILE
   // =========================================================================
@@ -404,14 +361,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final client = _requireClient();
     final trimmedEmail = email.trim();
     final prefix = trimmedEmail.split('@').first;
-    final defaultHandle = UserProfile.buildFallbackHandle(
-      preferred: prefix,
-      userId: _uuid.v4(),
-    );
     final res = await client.auth.signUp(
       email: trimmedEmail,
       password: password,
-      data: {'full_name': prefix, 'handle': defaultHandle},
+      data: {'full_name': prefix},
     );
     final user = res.user;
     if (res.session != null && user != null) {
@@ -547,7 +500,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     _inFlightFlushFutures.clear();
     _serverQuickSnaps = [];
     _quickSnaps = [];
-    _cachedUserSearch = [];
   }
 
   void _upsertUserHousehold(Household household, {bool moveToFront = false}) {
@@ -634,7 +586,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     _currentUser = const UserProfile(
       id: '',
       displayName: 'Housemate',
-      handle: '@housemate',
     );
     _currentHousehold = const Household(
       id: '',
@@ -664,41 +615,24 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         ? (authUser.userMetadata!['full_name'] as String).trim()
         : emailPrefix;
 
+    final nameParts = UserProfile.splitFullName(displayName);
     final payload = <String, dynamic>{
       'id': authUser.id,
       'display_name': displayName,
+      'first_name': nameParts.firstName.isNotEmpty ? nameParts.firstName : null,
+      'last_name': nameParts.lastName.isNotEmpty ? nameParts.lastName : null,
       'full_name': displayName,
-      'handle': UserProfile.buildFallbackHandle(
-        preferred: emailPrefix,
-        userId: authUser.id,
-      ),
       'avatar_url': authUser.userMetadata?['avatar_url'],
       'has_consented_terms': false,
       'has_completed_onboarding': false,
     };
 
-    try {
-      final inserted = await client
-          .from('profiles')
-          .upsert(payload, onConflict: 'id')
-          .select()
-          .single();
-      return UserProfile.fromJson(inserted);
-    } on PostgrestException catch (e) {
-      if (e.code == '23505') {
-        payload['handle'] = UserProfile.buildCollisionRetryHandle(
-          baseHandle: payload['handle'] as String,
-          randomSuffix: _uuid.v4().substring(0, 4),
-        );
-        final inserted = await client
-            .from('profiles')
-            .upsert(payload, onConflict: 'id')
-            .select()
-            .single();
-        return UserProfile.fromJson(inserted);
-      }
-      rethrow;
-    }
+    final inserted = await client
+        .from('profiles')
+        .upsert(payload, onConflict: 'id')
+        .select()
+        .single();
+    return UserProfile.fromJson(inserted);
   }
 
   Future<void> _hydrateAuthenticatedUser(User authUser) {
@@ -761,9 +695,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @override
-  void updateProfile({
+  Future<String?> updateProfile({
     String? displayName,
-    String? handle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -774,20 +709,19 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     bool clearNickname = false,
     bool clearBirthday = false,
   }) {
-    unawaited(
-      _updateProfileAsync(
-        displayName: displayName,
-        handle: handle,
-        fullName: fullName,
-        nickname: nickname,
-        birthday: birthday,
-        avatarUrl: avatarUrl,
-        hasConsentedTerms: hasConsentedTerms,
-        hasCompletedOnboarding: hasCompletedOnboarding,
-        clearAvatar: clearAvatar,
-        clearNickname: clearNickname,
-        clearBirthday: clearBirthday,
-      ),
+    return _updateProfileAsync(
+      displayName: displayName,
+      firstName: firstName,
+      lastName: lastName,
+      fullName: fullName,
+      nickname: nickname,
+      birthday: birthday,
+      avatarUrl: avatarUrl,
+      hasConsentedTerms: hasConsentedTerms,
+      hasCompletedOnboarding: hasCompletedOnboarding,
+      clearAvatar: clearAvatar,
+      clearNickname: clearNickname,
+      clearBirthday: clearBirthday,
     );
   }
 
@@ -805,10 +739,20 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @visibleForTesting
+  static bool isDuplicateNicknameException(Object error) {
+    if (error is! PostgrestException || error.code != '23505') return false;
+    final combined =
+        '${error.message} ${error.details ?? ''} ${error.hint ?? ''}'
+            .toLowerCase();
+    return combined.contains('uq_profiles_nickname_lower') ||
+        combined.contains('nickname');
+  }
+
+  @visibleForTesting
   static Map<String, dynamic> buildProfileUpdateMap({
     required String displayName,
-    String? explicitHandle,
-    String? existingHandle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -816,19 +760,28 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required bool hasConsentedTerms,
     required bool hasCompletedOnboarding,
   }) {
-    final trimmedExplicit = explicitHandle?.trim();
-    final trimmedExisting = existingHandle?.trim();
-    final resolvedHandle =
-        (trimmedExplicit != null && trimmedExplicit.isNotEmpty)
-            ? trimmedExplicit
-            : (trimmedExisting != null && trimmedExisting.isNotEmpty
-                ? trimmedExisting
-                : null);
+    final trimmedFirst = firstName?.trim();
+    final trimmedLast = lastName?.trim();
+    final normalizedFirst =
+        (trimmedFirst != null && trimmedFirst.isNotEmpty) ? trimmedFirst : null;
+    final normalizedLast =
+        (trimmedLast != null && trimmedLast.isNotEmpty) ? trimmedLast : null;
+    final joined = UserProfile.joinFullName(
+      normalizedFirst ?? '',
+      normalizedLast ?? '',
+    );
+    final trimmedFull = fullName?.trim();
+    final effectiveFull = joined.isNotEmpty
+        ? joined
+        : ((trimmedFull != null && trimmedFull.isNotEmpty)
+            ? trimmedFull
+            : null);
 
     return <String, dynamic>{
       'display_name': displayName,
-      'handle': ?resolvedHandle,
-      'full_name': fullName,
+      'first_name': normalizedFirst,
+      'last_name': normalizedLast,
+      'full_name': effectiveFull,
       'nickname': nickname,
       'birthday': UserProfile.formatDateOnly(birthday),
       'avatar_url': avatarUrl,
@@ -837,9 +790,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     };
   }
 
-  Future<void> _updateProfileAsync({
+  Future<String?> _updateProfileAsync({
     String? displayName,
-    String? handle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -851,20 +805,43 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     bool clearBirthday = false,
   }) async {
     final prevUser = _currentUser;
-    final effectiveFullName = fullName ?? _currentUser.fullName;
-    final effectiveDisplayName = displayName ??
-        (fullName != null && fullName.trim().isNotEmpty
-            ? fullName.trim()
+    final String? effectiveFirstName;
+    final String? effectiveLastName;
+    if (firstName != null || lastName != null) {
+      final f = (firstName ?? _currentUser.firstName ?? '').trim();
+      final l = (lastName ?? _currentUser.lastName ?? '').trim();
+      effectiveFirstName = f.isNotEmpty ? f : null;
+      effectiveLastName = l.isNotEmpty ? l : null;
+    } else if (fullName != null && fullName.trim().isNotEmpty) {
+      final parts = UserProfile.splitFullName(fullName);
+      effectiveFirstName =
+          parts.firstName.isNotEmpty ? parts.firstName : null;
+      effectiveLastName = parts.lastName.isNotEmpty ? parts.lastName : null;
+    } else {
+      effectiveFirstName = _currentUser.firstName;
+      effectiveLastName = _currentUser.lastName;
+    }
+
+    final joinedName = UserProfile.joinFullName(
+      effectiveFirstName ?? '',
+      effectiveLastName ?? '',
+    );
+    final effectiveFullName = joinedName.isNotEmpty
+        ? joinedName
+        : (fullName?.trim().isNotEmpty == true
+            ? fullName!.trim()
+            : _currentUser.fullName);
+    final effectiveDisplayName = displayName?.trim().isNotEmpty == true
+        ? displayName!.trim()
+        : (effectiveFullName != null && effectiveFullName.trim().isNotEmpty
+            ? effectiveFullName.trim()
             : _currentUser.displayName);
+    final trimmedNickname = nickname?.trim();
     final effectiveNickname = clearNickname
         ? null
-        : (nickname ?? _currentUser.nickname);
-    final trimmedExplicitHandle = handle?.trim();
-    final existingHandle = _currentUser.handle.trim();
-    var effectiveHandle =
-        (trimmedExplicitHandle != null && trimmedExplicitHandle.isNotEmpty)
-            ? trimmedExplicitHandle
-            : existingHandle;
+        : ((trimmedNickname != null && trimmedNickname.isNotEmpty)
+            ? trimmedNickname
+            : (nickname != null ? null : _currentUser.nickname));
     final normalizedBirthday = birthday != null
         ? DateTime(birthday.year, birthday.month, birthday.day)
         : null;
@@ -879,24 +856,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final effectiveHasCompletedOnboarding =
         hasCompletedOnboarding ?? _currentUser.hasCompletedOnboarding;
 
-    _currentUser = UserProfile(
-      id: _currentUser.id,
-      displayName: effectiveDisplayName,
-      handle: effectiveHandle,
-      fullName: effectiveFullName,
-      nickname: effectiveNickname,
-      birthday: effectiveBirthday,
-      avatarUrl: effectiveAvatarUrl,
-      hasConsentedTerms: effectiveHasConsentedTerms,
-      hasCompletedOnboarding: effectiveHasCompletedOnboarding,
-    );
-    _syncCurrentUserInMembers(_currentUser);
-    _safeNotify();
-
     final client = _client;
     if (client == null || _currentUser.id.isEmpty) {
       _recordError('Sign in to update your profile.');
-      return;
+      return 'Sign in to update your profile.';
     }
 
     try {
@@ -912,8 +875,8 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
 
       final updates = buildProfileUpdateMap(
         displayName: effectiveDisplayName,
-        explicitHandle: trimmedExplicitHandle,
-        existingHandle: existingHandle,
+        firstName: effectiveFirstName,
+        lastName: effectiveLastName,
         fullName: effectiveFullName,
         nickname: effectiveNickname,
         birthday: effectiveBirthday,
@@ -922,37 +885,16 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         hasCompletedOnboarding: effectiveHasCompletedOnboarding,
       );
 
-      try {
-        await client
-            .from('profiles')
-            .update(updates)
-            .eq('id', _currentUser.id);
-      } on PostgrestException catch (e) {
-        final isHandleCollision =
-            e.code == '23505' &&
-            (e.message.contains('profiles_handle_key') ||
-                e.message.contains('handle'));
-        if (!isHandleCollision) rethrow;
-
-        final retryHandle = UserProfile.buildCollisionRetryHandle(
-          baseHandle:
-              (updates['handle'] as String?) ??
-              effectiveNickname ??
-              effectiveDisplayName,
-          randomSuffix: _uuid.v4().substring(0, 4),
-        );
-        updates['handle'] = retryHandle;
-        effectiveHandle = retryHandle;
-        await client
-            .from('profiles')
-            .update(updates)
-            .eq('id', _currentUser.id);
-      }
+      await client
+          .from('profiles')
+          .update(updates)
+          .eq('id', _currentUser.id);
 
       _currentUser = UserProfile(
         id: _currentUser.id,
         displayName: effectiveDisplayName,
-        handle: effectiveHandle,
+        firstName: effectiveFirstName,
+        lastName: effectiveLastName,
         fullName: effectiveFullName,
         nickname: effectiveNickname,
         birthday: effectiveBirthday,
@@ -962,27 +904,27 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       );
       _syncCurrentUserInMembers(_currentUser);
       _safeNotify();
+      return null;
+    } on PostgrestException catch (e) {
+      _currentUser = prevUser;
+      _syncCurrentUserInMembers(prevUser);
+      if (isDuplicateNicknameException(e)) {
+        return CasamaRepository.duplicateNicknameMessage;
+      }
+      debugPrint('SupabaseRepository updateProfile error: $e');
+      return 'Failed to save profile changes. Please try again.';
     } catch (e) {
       _currentUser = prevUser;
       _syncCurrentUserInMembers(prevUser);
-      _recordError('Failed to save profile changes.', error: e);
+      debugPrint('SupabaseRepository updateProfile error: $e');
+      return 'Failed to save profile changes. Please try again.';
     }
   }
 
   @override
   void recordTermsConsent() {
     final prev = _currentUser;
-    _currentUser = UserProfile(
-      id: _currentUser.id,
-      displayName: _currentUser.displayName,
-      handle: _currentUser.handle,
-      fullName: _currentUser.fullName,
-      nickname: _currentUser.nickname,
-      birthday: _currentUser.birthday,
-      avatarUrl: _currentUser.avatarUrl,
-      hasConsentedTerms: true,
-      hasCompletedOnboarding: _currentUser.hasCompletedOnboarding,
-    );
+    _currentUser = _currentUser.copyWith(hasConsentedTerms: true);
     _safeNotify();
 
     final client = _client;
@@ -1003,17 +945,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   @override
   void completeOnboardingTutorial() {
     final prev = _currentUser;
-    _currentUser = UserProfile(
-      id: _currentUser.id,
-      displayName: _currentUser.displayName,
-      handle: _currentUser.handle,
-      fullName: _currentUser.fullName,
-      nickname: _currentUser.nickname,
-      birthday: _currentUser.birthday,
-      avatarUrl: _currentUser.avatarUrl,
-      hasConsentedTerms: _currentUser.hasConsentedTerms,
-      hasCompletedOnboarding: true,
-    );
+    _currentUser = _currentUser.copyWith(hasCompletedOnboarding: true);
     _safeNotify();
 
     final client = _client;
@@ -1479,7 +1411,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         return LeaderboardStanding(
           userId: p.id,
           displayName: p.preferredName,
-          handle: p.handle,
           avatarUrl: p.avatarUrl,
           points: pointsByUser[p.id] ?? 0,
           isCurrentUser: p.id == userId,
@@ -2209,7 +2140,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required TaskCategory category,
     required TaskUrgency urgency,
     String? description,
-    DateTime? dueDate,
   }) {
     unawaited(
       _addTaskAsync(
@@ -2217,7 +2147,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         category: category,
         urgency: urgency,
         description: description,
-        dueDate: dueDate,
       ),
     );
   }
@@ -2227,7 +2156,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     required TaskCategory category,
     required TaskUrgency urgency,
     String? description,
-    DateTime? dueDate,
   }) async {
     final client = _client;
     if (client == null || _currentHousehold.id.isEmpty || _currentUser.id.isEmpty) {
@@ -2248,7 +2176,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       createdBy: _currentUser.id,
       createdByName: _currentUser.preferredName,
       createdAt: DateTime.now(),
-      dueDate: dueDate,
     );
 
     final prev = List<MaintenanceTask>.from(_tasks);
@@ -2264,7 +2191,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         'category': category.dbValue,
         'urgency': urgency.name,
         'status': 'open',
-        'due_date': toSupabaseUtcIsoOrNull(dueDate),
         'created_by': _currentUser.id,
       });
     } catch (e) {
@@ -3978,23 +3904,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     }
   }
 
-  // =========================================================================
-  // INVITATIONS
-  // =========================================================================
-
-  @override
-  bool sendInvitation({
-    required String inviteeEmailOrHandle,
-    String? inviteeName,
-  }) =>
-      false;
-
-  @override
-  bool acceptInvitation(String invitationId) => false;
-
-  @override
-  bool declineInvitation(String invitationId) => false;
-
   @override
   void resetMembersForNewUserTest() {}
 
@@ -4008,7 +3917,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     for (final m in _members) {
       final p = m.profile;
       if (p.id.toLowerCase() == clean ||
-          p.handle.toLowerCase() == clean ||
           p.preferredName.toLowerCase() == clean ||
           (p.nickname?.trim().toLowerCase() == clean) ||
           (p.fullName?.trim().toLowerCase() == clean) ||

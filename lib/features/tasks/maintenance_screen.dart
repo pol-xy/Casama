@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/dimensions.dart';
@@ -575,12 +574,9 @@ class _TaskCard extends StatelessWidget {
         : const Duration(milliseconds: 200);
 
     final (Color catBg, Color catFg) = uiCategory.badgeColors(pal);
-    final dueSuffix = task.dueDate != null
-        ? ' • Due ${DateFormat('MMM d').format(task.dueDate!)}'
-        : '';
     final semanticSubtitle = isDone
         ? '${uiCategory.shortLabel} • Completed by $completerLabel'
-        : '${uiCategory.shortLabel} • By $creatorLabel$dueSuffix';
+        : '${uiCategory.shortLabel} • By $creatorLabel';
 
     final (ChipVariant urgVariant, String urgLabel) = switch (task.urgency) {
       TaskUrgency.low => (ChipVariant.low, 'Low'),
@@ -650,7 +646,6 @@ class _TaskCard extends StatelessWidget {
                   displayName: isDone ? completerLabel : creatorLabel,
                   avatarName: isDone ? completerName : creatorName,
                   avatarUrl: isDone ? completerAvatarUrl : creatorAvatarUrl,
-                  suffix: isDone ? null : dueSuffix,
                   avatarSize: 16,
                   baseStyle: metaStyle,
                   nameStyle: metaStyle?.copyWith(

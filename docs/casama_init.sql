@@ -63,19 +63,6 @@ CREATE TABLE public.parcels (
   CONSTRAINT parcels_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
   CONSTRAINT parcels_buyer_id_fkey FOREIGN KEY (buyer_id) REFERENCES public.profiles(id)
 );
-CREATE TABLE public.parcel_availability (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  household_id uuid NOT NULL,
-  parcel_id uuid NOT NULL,
-  user_id uuid NOT NULL,
-  is_available boolean NOT NULL,
-  note text,
-  updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT parcel_availability_pkey PRIMARY KEY (id),
-  CONSTRAINT parcel_availability_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
-  CONSTRAINT parcel_availability_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
-  CONSTRAINT parcel_availability_parcel_id_fkey FOREIGN KEY (parcel_id) REFERENCES public.parcels(id)
-);
 CREATE TABLE public.parcel_claims (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   household_id uuid NOT NULL,
@@ -86,9 +73,9 @@ CREATE TABLE public.parcel_claims (
   settled boolean NOT NULL DEFAULT false,
   settled_at timestamp with time zone,
   CONSTRAINT parcel_claims_pkey PRIMARY KEY (id),
+  CONSTRAINT parcel_claims_parcel_id_fkey FOREIGN KEY (parcel_id) REFERENCES public.parcels(id),
   CONSTRAINT parcel_claims_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id),
-  CONSTRAINT parcel_claims_receiver_id_fkey FOREIGN KEY (receiver_id) REFERENCES public.profiles(id),
-  CONSTRAINT parcel_claims_parcel_id_fkey FOREIGN KEY (parcel_id) REFERENCES public.parcels(id)
+  CONSTRAINT parcel_claims_receiver_id_fkey FOREIGN KEY (receiver_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.maintenance_tasks (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

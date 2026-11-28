@@ -6,7 +6,9 @@ import 'package:casama/features/quicksnap/quicksnap_camera_screen.dart';
 import 'package:casama/features/quicksnap/quicksnap_feed_screen.dart';
 import 'package:casama/features/quicksnap/quicksnap_home_widget.dart';
 import 'package:casama/main.dart';
+import 'package:casama/shared/widgets/cas_mascot_view.dart';
 import 'package:casama/shared/widgets/casama_avatar.dart';
+import 'package:casama/shared/widgets/casama_wave_header.dart';
 import 'package:casama/shared/widgets/casama_filter_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,6 +47,22 @@ void main() {
       expect(find.text('Browse all 7 shared shots →'), findsOneWidget);
       expect(find.text('To You'), findsNothing);
       expect(find.text('Direct'), findsNothing);
+
+      // Peeking Migo is rendered behind CasamaCard in the Stack with zero padding on GridView
+      final migoFinder = find.byKey(const ValueKey('casnaps_peeking_migo'));
+      expect(migoFinder, findsOneWidget);
+      expect(
+        tester.widget<CasMascotView>(migoFinder).assetPath,
+        'assets/images/cas/migo_camera_behind_CASnaps.png',
+      );
+      final stack = tester.widget<Stack>(
+        find.ancestor(of: migoFinder, matching: find.byType(Stack)).first,
+      );
+      expect(stack.children.length, 2);
+      expect(find.byType(CasamaCard), findsOneWidget);
+      final grid = tester.widget<GridView>(find.byType(GridView));
+      expect(grid.padding, EdgeInsets.zero);
+      expect((grid.childrenDelegate as SliverChildBuilderDelegate).childCount, 6);
 
       final avatar = tester.widget<CasamaAvatar>(find.byType(CasamaAvatar).first);
       expect(avatar.avatarUrl, repo.currentUser.effectiveAvatarUrl);

@@ -7,6 +7,9 @@ import 'models.dart';
 /// Implemented by [SupabaseRepository] (live cloud runtime)
 /// and [MockRepository] (explicit test overrides).
 abstract class CasamaRepository extends ChangeNotifier {
+  static const String duplicateNicknameMessage =
+      'That nickname is already taken. Please choose another.';
+
   // Authentication & Household
   bool get isAuthenticated;
   bool get hasActiveHousehold;
@@ -34,7 +37,6 @@ abstract class CasamaRepository extends ChangeNotifier {
   List<LeaderboardStanding> get leaderboardStandings;
   List<HouseholdNotificationItem> get notifications;
   NotificationPreferences get notificationPreferences;
-  List<HouseholdInvitation> get invitations;
   List<QuickSnap> get quickSnaps;
   QuickSnap? get latestQuickSnap;
   int get quickSnapStreak;
@@ -46,7 +48,6 @@ abstract class CasamaRepository extends ChangeNotifier {
   List<ChatMessage> getDirectMessages(String contactKey);
   int getDirectUnreadCount(String contactKey);
   bool isHousemateAuthorized(String contactKey);
-  List<UserProfile> searchUsers(String query);
 
   // Auth & Profile operations
   Future<void> restoreSession();
@@ -65,9 +66,10 @@ abstract class CasamaRepository extends ChangeNotifier {
   void login({String? email, String? password});
   void register({required String email, required String password});
   void logout();
-  void updateProfile({
+  Future<String?> updateProfile({
     String? displayName,
-    String? handle,
+    String? firstName,
+    String? lastName,
     String? fullName,
     String? nickname,
     DateTime? birthday,
@@ -126,7 +128,6 @@ abstract class CasamaRepository extends ChangeNotifier {
     required TaskCategory category,
     required TaskUrgency urgency,
     String? description,
-    DateTime? dueDate,
   });
   Future<void> deleteTask(String taskId);
 
@@ -223,13 +224,7 @@ abstract class CasamaRepository extends ChangeNotifier {
   Future<void> updateHousematesAgendaStatus(String invitationId, String status);
   Future<void> deleteHousematesAgendaInvitation(String invitationId);
 
-  // Household Invitations
-  bool sendInvitation({
-    required String inviteeEmailOrHandle,
-    String? inviteeName,
-  });
-  bool acceptInvitation(String invitationId);
-  bool declineInvitation(String invitationId);
+  // Household Management
   void resetMembersForNewUserTest();
 
   // QuickSnap Locket

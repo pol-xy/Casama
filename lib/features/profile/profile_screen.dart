@@ -44,9 +44,8 @@ class ProfileScreen extends ConsumerWidget {
         : double.infinity;
 
     final primaryName = user.preferredName;
-    final displayName =
-        (user.fullName != null && user.fullName!.trim().isNotEmpty)
-        ? user.fullName!.trim()
+    final displayName = user.effectiveFullName.isNotEmpty
+        ? user.effectiveFullName
         : user.preferredName;
     final nicknameText =
         user.nickname != null && user.nickname!.trim().isNotEmpty
@@ -175,8 +174,12 @@ class ProfileScreen extends ConsumerWidget {
                             const SizedBox(height: 3),
                             Text(
                               displayName != primaryName
-                                  ? '$displayName • ${user.handle} • ${repo.hasActiveHousehold ? repo.currentHousehold.name : 'No household yet'}'
-                                  : '${user.handle} • ${repo.hasActiveHousehold ? repo.currentHousehold.name : 'No household yet'}',
+                                  ? (repo.hasActiveHousehold
+                                        ? '$displayName • ${repo.currentHousehold.name}'
+                                        : displayName)
+                                  : (repo.hasActiveHousehold
+                                        ? repo.currentHousehold.name
+                                        : 'No household yet'),
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodySmall?.copyWith(
                                 fontSize: 13.5,
@@ -246,63 +249,19 @@ class ProfileScreen extends ConsumerWidget {
                                               ),
                                         ),
                                         const SizedBox(height: 2),
-                                        Wrap(
-                                          crossAxisAlignment:
-                                              WrapCrossAlignment.center,
-                                          spacing: 8,
-                                          runSpacing: 4,
-                                          children: [
-                                            Text(
-                                              repo.hasActiveHousehold
-                                                  ? '${repo.kasamaPoints} pts'
-                                                  : '0 pts',
-                                              style: theme
-                                                  .textTheme
-                                                  .titleLarge
-                                                  ?.tabular
-                                                  .copyWith(
-                                                    fontSize: 20,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: pal.textPrimary,
-                                                  ),
-                                            ),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 9,
-                                                    vertical: 3,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: repo.hasActiveHousehold
-                                                    ? pal.amberBg
-                                                    : pal.track,
-                                                borderRadius:
-                                                    CasamaSpacing.roundedPill,
-                                                border: Border.all(
-                                                  color: (repo.hasActiveHousehold
-                                                          ? pal.amberFg
-                                                          : pal.textMuted)
-                                                      .withValues(alpha: 0.35),
-                                                ),
+                                        Text(
+                                          repo.hasActiveHousehold
+                                              ? '${repo.kasamaPoints} pts'
+                                              : '0 pts',
+                                          style: theme
+                                              .textTheme
+                                              .titleLarge
+                                              ?.tabular
+                                              .copyWith(
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.w700,
+                                                color: pal.textPrimary,
                                               ),
-                                              child: Text(
-                                                repo.hasActiveHousehold
-                                                    ? 'Gold Tier'
-                                                    : 'No household yet',
-                                                style: theme
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      fontSize: 10.5,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: repo.hasActiveHousehold
-                                                          ? pal.amberFg
-                                                          : pal.textSecondary,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
                                         ),
                                         const SizedBox(height: 3),
                                         Text(
@@ -393,11 +352,6 @@ class ProfileScreen extends ConsumerWidget {
                                   _InfoRow(
                                     label: 'Birthday',
                                     value: birthdayText,
-                                  ),
-                                  Divider(height: 1, color: pal.divider),
-                                  _InfoRow(
-                                    label: 'Handle',
-                                    value: user.handle,
                                     isLast: true,
                                   ),
                                 ],

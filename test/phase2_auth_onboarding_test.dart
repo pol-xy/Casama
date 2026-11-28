@@ -261,7 +261,8 @@ void main() {
       await tester.tap(find.text('Save & Continue'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Please enter your full name'), findsOneWidget);
+      expect(find.text('Please enter your first name'), findsOneWidget);
+      expect(find.text('Please enter your last name'), findsOneWidget);
       expect(find.text('Please enter your nickname'), findsOneWidget);
       expect(find.text('Please select your complete birthday'), findsOneWidget);
       expect(
@@ -270,10 +271,17 @@ void main() {
       );
       expect(find.text('Go Permissions'), findsNothing);
 
-      // Fill Full Name, Nickname, Birthday via calendar picker, and accept Terms
+      // Seed a taken nickname to verify inline duplicate-nickname validation
+      repo.seedTakenNicknamesForTest(['clar']);
+
+      // Fill First Name, Last Name, taken Nickname, Birthday via calendar picker, and accept Terms
       await tester.enterText(
-        find.widgetWithText(TextField, 'e.g., Jon Paul Berana'),
-        'Clara Reyes',
+        find.widgetWithText(TextField, 'e.g., Jon Paul'),
+        'Clara',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'e.g., Berana'),
+        'Reyes',
       );
       await tester.enterText(
         find.widgetWithText(TextField, 'Enter your nickname'),
@@ -298,9 +306,30 @@ void main() {
       await tester.tap(find.text('Save & Continue'));
       await tester.pumpAndSettle();
 
+      // Duplicate nickname blocks navigation and preserves entered fields
+      expect(
+        find.text('That nickname is already taken. Please choose another.'),
+        findsOneWidget,
+      );
+      expect(find.text('Clara'), findsOneWidget);
+      expect(find.text('Reyes'), findsOneWidget);
+      expect(find.text('Go Permissions'), findsNothing);
+
+      // Update to a unique nickname and save
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Enter your nickname'),
+        'ClarR',
+      );
+      await tester.pump();
+      await tester.ensureVisible(find.text('Save & Continue'));
+      await tester.tap(find.text('Save & Continue'));
+      await tester.pumpAndSettle();
+
       expect(find.text('Go Permissions'), findsOneWidget);
+      expect(repo.currentUser.firstName, 'Clara');
+      expect(repo.currentUser.lastName, 'Reyes');
       expect(repo.currentUser.fullName, 'Clara Reyes');
-      expect(repo.currentUser.nickname, 'Clar');
+      expect(repo.currentUser.nickname, 'ClarR');
       expect(repo.currentUser.birthday, isNotNull);
       expect(repo.currentUser.hasConsentedTerms, isTrue);
 
@@ -341,7 +370,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Clara Reyes'), findsWidgets);
-      expect(find.text('Clar'), findsWidgets);
+      expect(find.text('ClarR'), findsWidgets);
       expect(find.text('Birthday'), findsOneWidget);
       expect(find.text('Not specified'), findsNothing);
     },

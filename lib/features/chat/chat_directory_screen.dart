@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,7 +26,9 @@ import 'widgets/create_chat_space_sheet.dart';
 import 'widgets/plan_housemates_agenda_sheet.dart';
 
 class ChatDirectoryScreen extends ConsumerStatefulWidget {
-  const ChatDirectoryScreen({super.key});
+  final bool initialFocusAgendas;
+
+  const ChatDirectoryScreen({super.key, this.initialFocusAgendas = false});
 
   @override
   ConsumerState<ChatDirectoryScreen> createState() =>
@@ -34,11 +37,59 @@ class ChatDirectoryScreen extends ConsumerStatefulWidget {
 
 class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _agendasSectionKey = GlobalKey();
+  ValueListenable<int>? _agendaFocusListenable;
   String _searchQuery = '';
   String _agendaFilter = 'all';
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.initialFocusAgendas) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToAgendas());
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextListenable =
+        CasamaShellScope.maybeOf(context)?.chatAgendaFocusListenable;
+    if (nextListenable != _agendaFocusListenable) {
+      _agendaFocusListenable?.removeListener(_handleExternalAgendaFocus);
+      _agendaFocusListenable = nextListenable;
+      _agendaFocusListenable?.addListener(_handleExternalAgendaFocus);
+      if ((_agendaFocusListenable?.value ?? 0) > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToAgendas());
+      }
+    }
+  }
+
+  void _handleExternalAgendaFocus() {
+    if (!mounted) return;
+    if (_agendaFilter == 'history') {
+      setState(() => _agendaFilter = 'all');
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToAgendas());
+  }
+
+  void _scrollToAgendas() {
+    if (!mounted) return;
+    final ctx = _agendasSectionKey.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: CasamaMotion.resolve(context, CasamaMotion.sheet),
+      curve: CasamaMotion.easeOut,
+      alignment: 0.08,
+    );
+  }
+
+  @override
   void dispose() {
+    _agendaFocusListenable?.removeListener(_handleExternalAgendaFocus);
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -156,7 +207,6 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
       final nickname = (m.profile.nickname ?? '').toLowerCase();
       final fullName = (m.profile.fullName ?? '').toLowerCase();
       final name = m.profile.displayName.toLowerCase();
-      final handle = m.profile.handle.toLowerCase();
       final note = (m.note ?? '').toLowerCase();
       final lastMsg = repo
           .getDirectMessages(m.profile.displayName.toLowerCase())
@@ -166,7 +216,6 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
           nickname.contains(query) ||
           fullName.contains(query) ||
           name.contains(query) ||
-          handle.contains(query) ||
           note.contains(query) ||
           msgContent.contains(query);
     }).toList();
@@ -193,6 +242,7 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
       backgroundColor: pal.scaffoldBg,
       body: CasamaAmbientCanvas(
         child: SingleChildScrollView(
+          controller: _scrollController,
           padding: EdgeInsets.only(bottom: bottomInset + 104),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -564,6 +614,7 @@ class _ChatDirectoryScreenState extends ConsumerState<ChatDirectoryScreen> {
 
                             // 7. Housemates Agenda Card
                             SizedBox(
+                              key: _agendasSectionKey,
                               width: double.infinity,
                               child: Wrap(
                                 alignment: WrapAlignment.spaceBetween,

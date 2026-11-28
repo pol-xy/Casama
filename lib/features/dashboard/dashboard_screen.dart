@@ -18,6 +18,7 @@ import '../../shared/widgets/casama_no_household_card.dart';
 import '../../shared/widgets/casama_sheet_scaffold.dart';
 import '../../shared/widgets/casama_wave_header.dart';
 import '../calendar/household_calendar_view.dart';
+import '../chat/chat_directory_screen.dart';
 import '../quicksnap/quicksnap_home_widget.dart';
 import 'main_navigation_shell.dart';
 import 'widgets/casama_household_drawer.dart';
@@ -39,6 +40,24 @@ class DashboardScreen extends ConsumerWidget {
       return;
     }
     showCasamaHouseholdDrawer(context);
+  }
+
+  void _openChatAgendas(BuildContext context) {
+    final shell = CasamaShellScope.maybeOf(context);
+    if (shell != null) {
+      shell.openChatAgendas();
+      return;
+    }
+    final router = GoRouter.maybeOf(context);
+    if (router != null) {
+      router.go('/chat?section=agendas');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const ChatDirectoryScreen(initialFocusAgendas: true),
+      ),
+    );
   }
 
   void _openBoardTab(BuildContext context, int boardIndex, String routePath) {
@@ -163,7 +182,7 @@ class DashboardScreen extends ConsumerWidget {
                               theme: theme,
                             ),
 
-                            const SizedBox(height: CasamaSpacing.lg),
+                            const SizedBox(height: CasamaSpacing.md),
 
                             // 5. Shared CASnaps Preview Slot (reskinned in Phase 5)
                             const QuickSnapHomeWidget(),
@@ -428,31 +447,36 @@ class DashboardScreen extends ConsumerWidget {
     CasamaPalette pal,
   ) {
     final items = <_AttentionRowData>[];
+    final now = DateTime.now();
+    final nowLocal = now.toLocal();
+    final startOfToday = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
+    final startOfTomorrow = DateTime(
+      nowLocal.year,
+      nowLocal.month,
+      nowLocal.day + 1,
+    );
+    final currentUserId = repo.currentUser.id;
 
-    final pendingTasks =
-        repo.tasks.where((t) => t.status != TaskStatus.done).toList()
-          ..sort((a, b) {
-            if (a.urgency == b.urgency) return 0;
-            if (a.urgency == TaskUrgency.urgent) return -1;
-            if (b.urgency == TaskUrgency.urgent) return 1;
-            return a.urgency.index.compareTo(b.urgency.index);
-          });
-
-    for (final task in pendingTasks) {
-      final isUrgent = task.urgency == TaskUrgency.urgent;
-      final dueOrCreator = task.dueDate != null
-          ? 'Due ${DateFormat('MMM d').format(task.dueDate!)}'
-          : 'By ${repo.resolveHousemateName(task.createdBy, fallback: task.createdByName)}';
+    // 1. Ongoing household tasks with urgency == urgent
+    final urgentTasks = repo.tasks.where(
+      (t) => t.status != TaskStatus.done && t.urgency == TaskUrgency.urgent,
+    );
+    for (final task in urgentTasks) {
+      final isMine = task.createdBy == currentUserId;
+      final creatorName = repo.resolveHousemateName(
+        task.createdBy,
+        fallback: task.createdByName,
+      );
+      final creatorLabel = isMine ? 'You' : creatorName;
       items.add(
         _AttentionRowData(
-          priority: isUrgent ? 1 : 3,
-          icon: Icons.handyman_outlined,
-          iconBg: pal.softSage,
-          iconColor: pal.forestTeal,
+          priority: 1,
+          avatarUrl: repo.resolveHousemateAvatarUrl(task.createdBy),
+          avatarName: creatorName,
           rowBg: pal.softSage.withValues(alpha: 0.65),
           title: task.title,
           subtitle:
-              '${task.category.label} • ${task.urgency.label} • $dueOrCreator',
+              '${task.category.label} • ${task.urgency.label} • By $creatorLabel',
           trailingAction: 'Tasks ›',
           trailingColor: pal.forestTeal,
           onTap: () => _openBoardTab(context, 1, '/boards?tab=tasks'),
@@ -460,24 +484,34 @@ class DashboardScreen extends ConsumerWidget {
       );
     }
 
-    final codParcels = repo.parcels.where(
-      (p) =>
-          p.status != ParcelStatus.received &&
-          p.status != ParcelStatus.cancelled &&
-          p.paymentType == ParcelPaymentType.cod,
-    );
-    for (final parcel in codParcels) {
+    // 2. Unsettled household parcels scheduled for Today
+    final todayParcels = repo.parcels.where((p) {
+      if (p.status == ParcelStatus.cancelled || p.isSettled) return false;
+      final arrivalLocal = p.expectedArrival.toLocal();
+      return !arrivalLocal.isBefore(startOfToday) &&
+          arrivalLocal.isBefore(startOfTomorrow);
+    });
+    for (final parcel in todayParcels) {
+      final isMine = parcel.buyerId == currentUserId;
+      final buyerName = repo.resolveHousemateName(
+        parcel.buyerId,
+        fallback: parcel.buyerName,
+      );
+      final buyerLabel = isMine ? 'You' : buyerName;
+      final isCod = parcel.paymentType == ParcelPaymentType.cod;
       items.add(
         _AttentionRowData(
           priority: 2,
-          icon: Icons.inventory_2_outlined,
-          iconBg: pal.softBlush,
-          iconColor: pal.primaryCoral,
+          avatarUrl: repo.resolveHousemateAvatarUrl(parcel.buyerId),
+          avatarName: buyerName,
           rowBg: pal.softBlush.withValues(alpha: 0.6),
-          title:
-              '${parcel.courier} COD for ${repo.resolveHousemateName(parcel.buyerId, fallback: parcel.buyerName)}',
-          subtitle: 'Status: ${parcel.status.label}',
-          trailingTop: parcel.codAmount != null
+          title: isCod
+              ? '${parcel.courier} COD for $buyerLabel'
+              : '${parcel.courier} for $buyerLabel',
+          subtitle: parcel.isUnsettledClaim
+              ? 'Status: Unsettled'
+              : 'Status: Scheduled Today',
+          trailingTop: isCod && parcel.codAmount != null
               ? '₱${parcel.codAmount!.toStringAsFixed(0)}'
               : null,
           trailingAction: 'Parcels ›',
@@ -487,8 +521,71 @@ class DashboardScreen extends ConsumerWidget {
       );
     }
 
+    // 3. Active/upcoming Housemates Agendas starting in < 24 hours where user is undecided ('maybe' or no RSVP)
+    final upcomingAgendas = repo.housematesAgendaInvitations.where((a) {
+      if (!a.hasValidData || !a.isActive) return false;
+      if (!a.scheduledTime.isAfter(now)) return false;
+      if (a.scheduledTime.difference(now) >= const Duration(hours: 24)) {
+        return false;
+      }
+      final rsvp = a.currentUserResponse?.trim().toLowerCase() ?? '';
+      return rsvp.isEmpty || rsvp == 'maybe';
+    });
+    for (final agenda in upcomingAgendas) {
+      final isMine = agenda.creatorId == currentUserId;
+      final creatorName = repo.resolveHousemateName(
+        agenda.creatorId,
+        fallback: 'Housemate',
+      );
+      final creatorLabel = isMine ? 'You' : creatorName;
+      items.add(
+        _AttentionRowData(
+          priority: 3,
+          avatarUrl: repo.resolveHousemateAvatarUrl(agenda.creatorId),
+          avatarName: creatorName,
+          rowBg: pal.infoBg.withValues(alpha: 0.6),
+          title: agenda.activity,
+          subtitle:
+              '${DateFormat('h:mm a').format(agenda.scheduledTime.toLocal())} • ${agenda.location} • By $creatorLabel',
+          trailingTop: agenda.currentUserResponse == 'maybe' ? 'Maybe' : 'RSVP',
+          trailingAction: 'Agenda ›',
+          trailingColor: pal.infoFg,
+          onTap: () => _openChatAgendas(context),
+        ),
+      );
+    }
+
     items.sort((a, b) => a.priority.compareTo(b.priority));
     return items;
+  }
+
+  void _showAllAttentionSheet(
+    BuildContext context,
+    List<_AttentionRowData> items,
+  ) {
+    showCasamaSheet<void>(
+      context,
+      icon: Icons.notifications_active_outlined,
+      title: 'Live Attention Needed',
+      subtitle:
+          '${items.length} ${items.length == 1 ? 'item' : 'items'} needing your attention',
+      builder: (sheetCtx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(height: CasamaSpacing.xs + 2),
+            _AttentionActionTile(
+              data: items[i].copyWithOnTap(() {
+                Navigator.of(sheetCtx).pop();
+                items[i].onTap();
+              }),
+            ),
+          ],
+          const SizedBox(height: CasamaSpacing.xs),
+        ],
+      ),
+    );
   }
 
   Widget _buildAttentionSection({
@@ -512,18 +609,44 @@ class DashboardScreen extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            Text(
-              items.isEmpty
-                  ? 'All clear'
-                  : '${items.length} ${items.length == 1 ? 'action' : 'actions'}',
-              style: theme.textTheme.labelMedium?.tabular.copyWith(
-                color: items.isEmpty ? pal.successFg : pal.primaryCoral,
-                fontWeight: FontWeight.w700,
+            if (items.isEmpty)
+              Text(
+                'All clear',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: pal.successFg,
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            else
+              Semantics(
+                button: true,
+                label: 'View all live attention items',
+                child: CasamaPressable(
+                  key: const ValueKey('live_attention_view_all_button'),
+                  onTap: () => _showAllAttentionSheet(context, items),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: CasamaSpacing.minTouchTarget,
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Text(
+                          'View all ›',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: pal.primaryCoral,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
           ],
         ),
-        const SizedBox(height: CasamaSpacing.xs + 2),
+        const SizedBox(height: CasamaSpacing.xs),
         if (visible.isEmpty)
           CasamaCard(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -545,7 +668,7 @@ class DashboardScreen extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'All caught up — no urgent tasks or COD handoffs.',
+                    'All caught up — no urgent tasks, today parcels, or pending agendas.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: pal.textSecondary,
                       fontSize: 12.5,
@@ -585,12 +708,16 @@ class DashboardScreen extends ConsumerWidget {
 
   void _showMemberInfoModal(BuildContext context, MemberPresence member) {
     final savedNote = member.note?.trim() ?? '';
+    final fullName = member.profile.effectiveFullName;
+    final subtitle = (fullName.isNotEmpty && fullName != member.preferredName)
+        ? fullName
+        : 'Household Member';
 
     showCasamaSheet<void>(
       context,
       icon: Icons.badge_outlined,
       title: member.preferredName,
-      subtitle: member.profile.handle,
+      subtitle: subtitle,
       builder: (ctx) {
         final pal = ctx.palette;
         final theme = Theme.of(ctx);
@@ -669,9 +796,8 @@ class DashboardScreen extends ConsumerWidget {
 
 class _AttentionRowData {
   final int priority;
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
+  final String? avatarUrl;
+  final String avatarName;
   final Color rowBg;
   final String title;
   final String subtitle;
@@ -682,9 +808,8 @@ class _AttentionRowData {
 
   const _AttentionRowData({
     required this.priority,
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
+    required this.avatarUrl,
+    required this.avatarName,
     required this.rowBg,
     required this.title,
     required this.subtitle,
@@ -693,6 +818,21 @@ class _AttentionRowData {
     required this.trailingColor,
     required this.onTap,
   });
+
+  _AttentionRowData copyWithOnTap(VoidCallback nextOnTap) {
+    return _AttentionRowData(
+      priority: priority,
+      avatarUrl: avatarUrl,
+      avatarName: avatarName,
+      rowBg: rowBg,
+      title: title,
+      subtitle: subtitle,
+      trailingTop: trailingTop,
+      trailingAction: trailingAction,
+      trailingColor: trailingColor,
+      onTap: nextOnTap,
+    );
+  }
 }
 
 class _AttentionActionTile extends StatelessWidget {
@@ -720,14 +860,10 @@ class _AttentionActionTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: data.iconBg,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(data.icon, color: data.iconColor, size: 20),
+              CasamaAvatar(
+                radius: 20,
+                avatarUrl: data.avatarUrl,
+                name: data.avatarName,
               ),
               const SizedBox(width: 12),
               Expanded(

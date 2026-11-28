@@ -22,8 +22,10 @@ class CasamaWaveHeader extends StatelessWidget {
   final Widget? embeddedTabBar;
   final Widget? bottomHero;
   final CasPose? titleMascotPose;
+  final double titleMascotSize;
   final bool extendedWave;
   final bool compact;
+  final double bottomPaddingOffset;
 
   const CasamaWaveHeader({
     super.key,
@@ -38,8 +40,10 @@ class CasamaWaveHeader extends StatelessWidget {
     this.embeddedTabBar,
     this.bottomHero,
     this.titleMascotPose,
+    this.titleMascotSize = 60,
     this.extendedWave = false,
     this.compact = false,
+    this.bottomPaddingOffset = 0,
   });
 
   @override
@@ -48,9 +52,10 @@ class CasamaWaveHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final topPad = MediaQuery.paddingOf(context).top;
     final reduced = CasamaMotion.reduceMotion(context);
-    final double bottomPad = (extendedWave || embeddedTabBar != null)
-        ? 44
-        : (compact ? 26 : 38);
+    final double bottomPad = ((extendedWave || embeddedTabBar != null)
+            ? 44.0
+            : (compact ? 26.0 : 38.0)) +
+        bottomPaddingOffset;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -159,8 +164,8 @@ class CasamaWaveHeader extends StatelessWidget {
                   if (titleMascotPose != null) ...[
                     const SizedBox(width: 12),
                     SizedBox(
-                      width: 60,
-                      height: 60,
+                      width: titleMascotSize,
+                      height: titleMascotSize,
                       child: AnimatedSwitcher(
                         duration: reduced
                             ? Duration.zero
@@ -168,8 +173,8 @@ class CasamaWaveHeader extends StatelessWidget {
                         child: CasMascotView(
                           key: ValueKey(titleMascotPose),
                           pose: titleMascotPose!,
-                          width: 60,
-                          height: 60,
+                          width: titleMascotSize,
+                          height: titleMascotSize,
                         ),
                       ),
                     ),
