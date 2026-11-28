@@ -54,10 +54,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
 
   Future<void> resendSignupVerificationEmail(String email) async {}
 
-  Future<void> signInWithDemoAccount() async {
-    login();
-  }
-
   Future<void> signOut() async {
     await flushPendingSnapReactions();
     logout();

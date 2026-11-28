@@ -60,7 +60,6 @@ abstract class CasamaRepository extends ChangeNotifier {
     required String password,
   });
   Future<void> resendSignupVerificationEmail(String email);
-  Future<void> signInWithDemoAccount();
   Future<void> signOut();
 
   void login({String? email, String? password});

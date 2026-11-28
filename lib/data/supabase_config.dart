@@ -15,14 +15,6 @@ class SupabaseConfig {
     'SUPABASE_ANON_KEY',
     defaultValue: '',
   );
-  static const String _envDemoEmail = String.fromEnvironment(
-    'SUPABASE_DEMO_EMAIL',
-    defaultValue: '',
-  );
-  static const String _envDemoPassword = String.fromEnvironment(
-    'SUPABASE_DEMO_PASSWORD',
-    defaultValue: '',
-  );
 
   static bool _initialized = false;
 
@@ -39,17 +31,11 @@ class SupabaseConfig {
   static String get defaultUrl => _readEnv('SUPABASE_URL', _envUrl);
   static String get defaultAnonKey =>
       _readEnv('SUPABASE_ANON_KEY', _envAnonKey);
-  static String get demoEmail => _readEnv('SUPABASE_DEMO_EMAIL', _envDemoEmail);
-  static String get demoPassword =>
-      _readEnv('SUPABASE_DEMO_PASSWORD', _envDemoPassword);
 
   static bool get isConfigured =>
       defaultUrl.isNotEmpty && defaultAnonKey.isNotEmpty;
 
   static bool get isInitialized => _initialized;
-
-  static bool get hasDemoCredentials =>
-      demoEmail.isNotEmpty && demoPassword.isNotEmpty;
 
   static Future<void> initialize() async {
     if (!dotenv.isInitialized) {

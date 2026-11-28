@@ -384,19 +384,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @override
-  Future<void> signInWithDemoAccount() async {
-    if (!SupabaseConfig.isConfigured || !SupabaseConfig.hasDemoCredentials) {
-      throw StateError(
-        'Demo login is not configured. Set SUPABASE_DEMO_EMAIL and SUPABASE_DEMO_PASSWORD via --dart-define or .env.',
-      );
-    }
-    await signInWithPassword(
-      email: SupabaseConfig.demoEmail,
-      password: SupabaseConfig.demoPassword,
-    );
-  }
-
-  @override
   Future<void> signOut() async {
     await flushPendingSnapReactions();
     _teardownRealtime();
@@ -419,11 +406,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         }),
       );
     } else {
-      unawaited(
-        signInWithDemoAccount().catchError((Object e) {
-          _recordError(e.toString(), error: e);
-        }),
-      );
+      _recordError('Email and password are required to sign in.');
     }
   }
 
@@ -3145,13 +3128,29 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final client = _client;
     if (client != null && _currentUser.id.isNotEmpty) {
       unawaited(
-        client
-            .from('notifications')
-            .update({'read_at': toSupabaseUtcIso(now)})
-            .eq('id', notificationId)
-            .eq('user_id', _currentUser.id)
-            .isFilter('read_at', null),
+        _markNotificationAsReadAsync(
+          client: client,
+          notificationId: notificationId,
+          readAt: now,
+        ),
       );
+    }
+  }
+
+  Future<void> _markNotificationAsReadAsync({
+    required SupabaseClient client,
+    required String notificationId,
+    required DateTime readAt,
+  }) async {
+    try {
+      await client
+          .from('notifications')
+          .update({'read_at': toSupabaseUtcIso(readAt)})
+          .eq('id', notificationId)
+          .eq('user_id', _currentUser.id)
+          .isFilter('read_at', null);
+    } catch (e, st) {
+      debugPrint('Supabase markNotificationAsRead error: $e\n$st');
     }
   }
 
@@ -3166,13 +3165,24 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
     final client = _client;
     if (client != null && _currentUser.id.isNotEmpty && _currentHousehold.id.isNotEmpty) {
       unawaited(
-        client
-            .from('notifications')
-            .update({'read_at': toSupabaseUtcIso(now)})
-            .eq('household_id', _currentHousehold.id)
-            .eq('user_id', _currentUser.id)
-            .isFilter('read_at', null),
+        _markAllNotificationsAsReadAsync(client: client, readAt: now),
       );
+    }
+  }
+
+  Future<void> _markAllNotificationsAsReadAsync({
+    required SupabaseClient client,
+    required DateTime readAt,
+  }) async {
+    try {
+      await client
+          .from('notifications')
+          .update({'read_at': toSupabaseUtcIso(readAt)})
+          .eq('household_id', _currentHousehold.id)
+          .eq('user_id', _currentUser.id)
+          .isFilter('read_at', null);
+    } catch (e, st) {
+      debugPrint('Supabase markAllNotificationsAsRead error: $e\n$st');
     }
   }
 
