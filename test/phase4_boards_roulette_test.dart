@@ -268,21 +268,21 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_spun_by_pill_t1')),
-          matching: find.textContaining('Spun by You', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Spun by You')),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_chosen_pill_t1')),
-          matching: find.textContaining('Chosen: Maria', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Chosen: Maria')),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_chosen_pill_t2')),
-          matching: find.textContaining('Chosen: You', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Chosen: You')),
         ),
         findsOneWidget,
       );
@@ -298,14 +298,14 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_spun_by_pill_t1')),
-          matching: find.textContaining('Spun by JP', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Spun by JP')),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('task_chosen_pill_t1')),
-          matching: find.textContaining('Chosen: You', findRichText: true),
+          matching: find.bySemanticsLabel(RegExp('^Chosen: You')),
         ),
         findsOneWidget,
       );
@@ -470,13 +470,13 @@ void main() {
   );
 
   testWidgets(
-    'ParcelsBoardView auto-settles own parcel (0 points -> History) and keeps housemate claim unsettled (+5 points -> History after settle)',
+    'ParcelsBoardView auto-settles own parcel (0 points -> History) and keeps housemate claim unsettled (0 pts on claim, +5 pts -> History after settle)',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final repo = MockRepository()..login();
       repo.addParcel(
         courier: 'LBC',
-        arrival: DateTime.now(),
+        arrival: DateTime.now().subtract(const Duration(minutes: 5)),
         paymentType: ParcelPaymentType.cod,
         codAmount: 420,
         notes: 'Own parcel test',
@@ -494,41 +494,51 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 3 subtabs exist
+      // 4 subtabs exist
       expect(find.text('My Parcels'), findsOneWidget);
+      expect(find.text('Today'), findsOneWidget);
       expect(find.text('Upcoming'), findsOneWidget);
       expect(find.text('History'), findsOneWidget);
 
-      // Claim own parcel from Upcoming -> 0 points awarded, no celebration dialog, auto-settled
+      // Expand and claim own parcel (LBC) from Today -> 0 points awarded, no celebration dialog, auto-settled
+      await tester.tap(find.text('LBC'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('I Got It').first);
       await tester.pumpAndSettle();
       expect(find.text('+5 Good Kasama Points!'), findsNothing);
       expect(repo.kasamaPoints, initialPoints);
       expect(find.text('Own parcel test'), findsNothing);
 
-      // Claim housemate parcel ('p1') from Upcoming -> +5 points awarded, stays unsettled in Upcoming
+      // Expand and claim housemate parcel ('p1', J&T Express) from Today -> 0 points immediately, no celebration dialog, stays unsettled in Today
+      await tester.tap(find.text('J&T Express'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('I Got It').first);
       await tester.pumpAndSettle();
-      expect(find.text('+5 Good Kasama Points!'), findsOneWidget);
-      expect(repo.kasamaPoints, initialPoints + 5);
-      await tester.tap(find.text('Awesome!'));
-      await tester.pumpAndSettle();
+      expect(find.text('+5 Good Kasama Points!'), findsNothing);
+      expect(repo.kasamaPoints, initialPoints);
 
+      // Re-expand p1 to verify Claimed by ... • Unsettled pill
+      await tester.tap(find.text('J&T Express'));
+      await tester.pumpAndSettle();
       expect(
-        find.textContaining('Claimed by ${repo.currentUser.preferredName} • Unsettled'),
+        find.bySemanticsLabel(RegExp('Claimed by You • Unsettled')),
         findsOneWidget,
       );
 
       // Switch to History -> own parcel is already Settled; housemate parcel not there yet
       await tester.tap(find.text('History'));
       await tester.pumpAndSettle();
-      expect(find.text('Own parcel test'), findsOneWidget);
+      expect(find.text('LBC'), findsOneWidget);
       expect(find.text('Settled'), findsOneWidget);
+      await tester.tap(find.text('LBC'));
+      await tester.pumpAndSettle();
+      expect(find.text('Own parcel test'), findsOneWidget);
 
-      // Settle housemate parcel -> appears in History as well
+      // Settle housemate parcel -> awards +5 pts and appears in History as well
       await repo.settleParcelClaim('p1');
       await tester.pumpAndSettle();
-      expect(find.text('Settled'), findsNWidgets(2));
+      expect(repo.kasamaPoints, initialPoints + 5);
+      expect(find.text('Settled'), findsAtLeastNWidgets(2));
       expect(tester.takeException(), isNull);
     },
   );

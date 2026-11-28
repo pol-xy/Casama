@@ -327,8 +327,6 @@ class ParcelItem {
   final String currency;
   final ParcelStatus status;
   final String? notes;
-  final List<String> availableMemberNames;
-  final bool isAllUnavailable;
 
   const ParcelItem({
     required this.id,
@@ -342,8 +340,6 @@ class ParcelItem {
     this.currency = 'PHP',
     required this.status,
     this.notes,
-    this.availableMemberNames = const [],
-    this.isAllUnavailable = false,
     this.codSettled = false,
     this.claimedById,
     this.claimedByName,
@@ -393,11 +389,6 @@ class ParcelItem {
       currency: json['currency'] as String? ?? 'PHP',
       status: parseStatus(json['status'] as String?),
       notes: json['notes'] as String?,
-      availableMemberNames: (json['available_members'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
-      isAllUnavailable: json['is_all_unavailable'] as bool? ?? false,
       codSettled: json['cod_settled'] as bool? ?? false,
       claimedById: json['claimed_by_id'] as String?,
       claimedByName: json['claimed_by_name'] as String?,

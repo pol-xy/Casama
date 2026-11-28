@@ -171,7 +171,7 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
     final inShell = CasamaShellScope.maybeOf(context) != null;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final fabBottomOffset = inShell ? 84.0 + bottomInset : 20.0 + bottomInset;
-    final bodyBottomPadding = inShell ? 156.0 + bottomInset : 96.0 + bottomInset;
+    final bodyBottomPadding = inShell ? 156.0 + bottomInset : 104.0 + bottomInset;
 
     return Scaffold(
       backgroundColor: pal.scaffoldBg,

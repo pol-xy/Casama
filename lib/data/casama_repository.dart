@@ -116,7 +116,7 @@ abstract class CasamaRepository extends ChangeNotifier {
   });
   Future<void> cancelParcel(String parcelId);
   Future<void> settleParcelClaim(String parcelId);
-  void toggleParcelAvailability(String parcelId);
+  Future<void> deleteParcel(String parcelId);
 
   // Maintenance & Tasks
   void completeTask(String taskId);
@@ -128,6 +128,7 @@ abstract class CasamaRepository extends ChangeNotifier {
     String? description,
     DateTime? dueDate,
   });
+  Future<void> deleteTask(String taskId);
 
   // Task Roulette
   Future<ChoreRouletteRecord> spinTaskRoulette(
@@ -156,6 +157,8 @@ abstract class CasamaRepository extends ChangeNotifier {
   Future<String?> rejectLostItemFind(String foundItemId);
   Future<String?> resolveOwnLostItem(String lostItemId);
   Future<String?> claimStandaloneFoundItem(String foundItemId);
+  Future<void> deleteLostItem(String lostItemId);
+  Future<void> deleteFoundItem(String foundItemId);
 
   // Chat & Messaging
   void markGroupChatAsRead();
@@ -270,5 +273,19 @@ extension CasamaRepositoryNameX on CasamaRepository {
       return fb;
     }
     return 'Housemate';
+  }
+
+  /// Resolves a housemate's live avatar URL by [userId] from [currentUser]
+  /// and active [members]. Returns `null` if not found.
+  String? resolveHousemateAvatarUrl(String? userId) {
+    final cleanId = userId?.trim() ?? '';
+    if (cleanId.isEmpty) return null;
+    if (cleanId == currentUser.id) return currentUser.avatarUrl;
+    for (final member in members) {
+      if (member.profile.id == cleanId) {
+        return member.profile.avatarUrl;
+      }
+    }
+    return null;
   }
 }

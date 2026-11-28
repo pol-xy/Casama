@@ -119,6 +119,7 @@ void main() {
       expect(find.text('+10 to +14 pts'), findsOneWidget);
       expect(find.text('Task Roulette bonus (chosen housemate)'), findsOneWidget);
       expect(find.text('+4 bonus pts'), findsOneWidget);
+      expect(find.text("Receive a housemate's parcel (once settled)"), findsOneWidget);
       expect(find.text("Find & return a housemate's lost item"), findsOneWidget);
       expect(find.text('+5 pts'), findsNWidgets(2));
       expect(find.text('Post a found item claimed by a housemate'), findsOneWidget);

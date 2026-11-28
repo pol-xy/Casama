@@ -123,7 +123,7 @@ void main() {
       expect(repo.members.first.note, 'Out for lunch');
     });
 
-    test('receiveParcel marks parcel received and awards +5 Kasama Points', () {
+    test('receiveParcel marks parcel claimed with 0 immediate points, and settleParcelClaim awards +5 pts', () async {
       final initialPoints = repo.kasamaPoints;
       final targetParcel = repo.parcels.first;
       expect(targetParcel.status, ParcelStatus.expected);
@@ -137,10 +137,13 @@ void main() {
       expect(updatedParcel.isUnsettledClaim, isTrue);
       expect(updatedParcel.claimedById, repo.currentUser.id);
       expect(updatedParcel.claimedAt, isNotNull);
+      expect(repo.kasamaPoints, initialPoints);
+
+      await repo.settleParcelClaim(targetParcel.id);
       expect(repo.kasamaPoints, initialPoints + 5);
     });
 
-    test('receiveParcel auto-settles own parcel with 0 points, and housemate claim awards +5 points until settled', () async {
+    test('receiveParcel auto-settles own parcel with 0 points, and housemate claim awards +5 points only on settle', () async {
       repo.addParcel(
         courier: 'J&T Express',
         arrival: DateTime.now(),
@@ -159,12 +162,12 @@ void main() {
       expect(selfClaimed.isUnsettledClaim, isFalse);
       expect(selfClaimed.settledAt, isNotNull);
 
-      // Housemate parcel ('p1') awards +5 points and starts unsettled until settled
+      // Housemate parcel ('p1') awards 0 points on claim, +5 points only once settled
       final housemateParcel = repo.parcels.firstWhere((p) => p.id == 'p1');
       expect(housemateParcel.buyerId, isNot(repo.currentUser.id));
 
       repo.receiveParcel('p1');
-      expect(repo.kasamaPoints, pointsBefore + 5);
+      expect(repo.kasamaPoints, pointsBefore);
 
       final claimed = repo.parcels.firstWhere((p) => p.id == 'p1');
       expect(claimed.isUnsettledClaim, isTrue);
@@ -174,6 +177,11 @@ void main() {
       final settled = repo.parcels.firstWhere((p) => p.id == 'p1');
       expect(settled.isSettled, isTrue);
       expect(settled.settledAt, isNotNull);
+      expect(repo.kasamaPoints, pointsBefore + 5);
+
+      // Duplicate settle is idempotent
+      await repo.settleParcelClaim('p1');
+      expect(repo.kasamaPoints, pointsBefore + 5);
     });
 
     test('addParcel prepends new expected delivery', () {
@@ -714,13 +722,15 @@ void main() {
       expect(repo.currentUser.avatarUrl, null);
     });
 
-    test('pointHistory tracks initial balance and records new audit entries upon earning points', () {
+    test('pointHistory tracks initial balance and records new audit entries upon earning points', () async {
       expect(repo.pointHistory.isNotEmpty, true);
       final initialEntries = repo.pointHistory.length;
       final initialPoints = repo.kasamaPoints;
 
-      // Receive a parcel (+5 pts)
+      // Receive a parcel (0 pts until settled -> +5 pts on settle)
       repo.receiveParcel('p1');
+      expect(repo.kasamaPoints, initialPoints);
+      await repo.settleParcelClaim('p1');
       expect(repo.kasamaPoints, initialPoints + 5);
       expect(repo.pointHistory.length, initialEntries + 1);
       expect(repo.pointHistory.first.category, 'parcel');

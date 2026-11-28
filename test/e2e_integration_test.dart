@@ -469,17 +469,25 @@ void main() {
       expect(repo.isHousemateAuthorized('ria'), true);
     });
 
-    test('F2. Duplicate reward prevention: Receiving same parcel multiple times is rejected', () {
+    test('F2. Duplicate reward prevention: Receiving and settling same parcel multiple times awards +5 pts once', () async {
       final repo = MockRepository();
       final initialPoints = repo.kasamaPoints;
 
-      // First claim succeeds and awards +5
+      // First claim awards 0 pts immediately
       repo.receiveParcel('p1');
+      expect(repo.kasamaPoints, initialPoints);
+
+      // Duplicate claim is idempotent
+      repo.receiveParcel('p1');
+      expect(repo.kasamaPoints, initialPoints);
+
+      // Settling awards +5 pts once
+      await repo.settleParcelClaim('p1');
       expect(repo.kasamaPoints, initialPoints + 5);
 
-      // Attempting to receive again is idempotent and does not award duplicate points
+      // Attempting to settle again is idempotent and does not award duplicate points
       final historyCountBefore = repo.pointHistory.length;
-      repo.receiveParcel('p1');
+      await repo.settleParcelClaim('p1');
       expect(repo.kasamaPoints, initialPoints + 5); // Unchanged
       expect(
         repo.pointHistory.length,
@@ -545,6 +553,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('J&T Express'), findsOneWidget);
+        await tester.tap(find.text('Upcoming'));
+        await tester.pumpAndSettle();
         expect(find.text('Flash Express'), findsOneWidget);
 
         // 2. Lost & Found Board
@@ -588,7 +598,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('3 Open Tasks'), findsOneWidget);
         expect(find.text('16 pts'), findsOneWidget);
-        expect(find.text('Across ongoing tasks'), findsOneWidget);
+        expect(find.text('Available to you'), findsOneWidget);
         expect(find.text('Leaking Faucet'), findsOneWidget);
         expect(find.text('Buy Drinking Water'), findsOneWidget);
         expect(find.text('Defrost Freezer'), findsOneWidget);

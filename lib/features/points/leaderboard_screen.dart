@@ -234,7 +234,8 @@ class LeaderboardScreen extends ConsumerWidget {
                                   ),
                                   const SizedBox(height: CasamaSpacing.sm),
                                   const _PointRuleRow(
-                                    label: 'Receive & confirm a delivery',
+                                    label:
+                                        "Receive a housemate's parcel (once settled)",
                                     points: '+5 pts',
                                   ),
                                   const _PointRuleRow(

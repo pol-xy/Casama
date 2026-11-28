@@ -296,9 +296,18 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.textContaining('By Jon Paul Berana'), findsOneWidget);
-        expect(find.text('Spun by Jon Paul Berana'), findsOneWidget);
-        expect(find.text('Chosen: You'), findsOneWidget);
+        expect(
+          find.bySemanticsLabel(RegExp('By Jon Paul Berana')),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsLabel(RegExp('^Spun by Jon Paul Berana')),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsLabel(RegExp('^Chosen: You')),
+          findsOneWidget,
+        );
         expect(find.textContaining('beranajonpaul14'), findsNothing);
         expect(find.textContaining('lanzdonatos212006'), findsNothing);
       },

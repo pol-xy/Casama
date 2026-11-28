@@ -1234,16 +1234,12 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           .order('created_at', ascending: false)
           .limit(200);
 
-      // 2. Parcels + Availability + Claims
+      // 2. Parcels + Claims
       final parcelsFuture = client
           .from('parcels')
           .select()
           .eq('household_id', householdId)
           .order('expected_arrival', ascending: true);
-      final availFuture = client
-          .from('parcel_availability')
-          .select()
-          .eq('household_id', householdId);
       final claimsFuture = client
           .from('parcel_claims')
           .select()
@@ -1307,7 +1303,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         membersFuture,
         presenceFuture,
         parcelsFuture,
-        availFuture,
         claimsFuture,
         tasksFuture,
         rouletteFuture,
@@ -1322,16 +1317,15 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       final membersRes = results[0] as List<dynamic>;
       final presenceRes = results[1] as List<dynamic>;
       final parcelsRes = results[2] as List<dynamic>;
-      final availRes = results[3] as List<dynamic>;
-      final claimsRes = results[4] as List<dynamic>;
-      final tasksRes = results[5] as List<dynamic>;
-      final rouletteRes = results[6] as List<dynamic>;
-      final lostRes = results[7] as List<dynamic>;
-      final foundRes = results[8] as List<dynamic>;
-      final snapsRes = results[9] as List<dynamic>;
-      final pointsRes = results[10] as List<dynamic>;
-      final notifRes = results[11] as List<dynamic>;
-      final convRes = results[12] as List<dynamic>;
+      final claimsRes = results[3] as List<dynamic>;
+      final tasksRes = results[4] as List<dynamic>;
+      final rouletteRes = results[5] as List<dynamic>;
+      final lostRes = results[6] as List<dynamic>;
+      final foundRes = results[7] as List<dynamic>;
+      final snapsRes = results[8] as List<dynamic>;
+      final pointsRes = results[9] as List<dynamic>;
+      final notifRes = results[10] as List<dynamic>;
+      final convRes = results[11] as List<dynamic>;
 
       // Build profile lookup
       final profileMap = <String, UserProfile>{};
@@ -1366,22 +1360,7 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       _currentHousehold = _currentHousehold.copyWith(memberCount: _members.length);
       _upsertUserHousehold(_currentHousehold);
 
-      // Parcels + Availability + Claims
-      final availByParcel = <String, List<String>>{};
-      final unavailCountByParcel = <String, int>{};
-      for (final row in availRes) {
-        final map = row as Map<String, dynamic>;
-        final pid = map['parcel_id'] as String? ?? '';
-        final uid = map['user_id'] as String? ?? '';
-        final isAvail = map['is_available'] as bool? ?? false;
-        if (pid.isEmpty) continue;
-        if (isAvail) {
-          final name = profileMap[uid]?.effectiveGreetingName ?? 'Housemate';
-          availByParcel.putIfAbsent(pid, () => []).add(name);
-        } else {
-          unavailCountByParcel[pid] = (unavailCountByParcel[pid] ?? 0) + 1;
-        }
-      }
+      // Parcels + Claims
       final claimByParcel = <String, Map<String, dynamic>>{};
       for (final row in claimsRes) {
         final map = row as Map<String, dynamic>;
@@ -1396,10 +1375,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
         final receiverId = claim?['receiver_id'] as String?;
         map['buyer_name'] =
             profileMap[buyerId]?.preferredName ?? 'Housemate';
-        map['available_members'] = availByParcel[pid] ?? const <String>[];
-        map['is_all_unavailable'] =
-            _members.isNotEmpty &&
-            (unavailCountByParcel[pid] ?? 0) >= _members.length;
         map['cod_settled'] = claim?['settled'] as bool? ?? false;
         map['claimed_by_id'] = receiverId;
         map['claimed_by_name'] = receiverId != null
@@ -1811,7 +1786,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       'household_members',
       'presence_events',
       'parcels',
-      'parcel_availability',
       'parcel_claims',
       'maintenance_tasks',
       'chore_roulette_records',
@@ -2114,12 +2088,14 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       throw ArgumentError('COD parcels require an amount greater than 0.');
     }
 
+    final normalizedNotes =
+        notes == null ? current.notes : (notes.trim().isEmpty ? null : notes.trim());
     final updates = <String, dynamic>{
       'courier': courier ?? current.courier,
       'expected_arrival': toSupabaseUtcIso(arrival ?? current.expectedArrival),
       'payment_type': nextPay == ParcelPaymentType.cod ? 'cod' : 'paid',
       'cod_amount': nextCod,
-      'notes': notes ?? current.notes,
+      'notes': normalizedNotes,
       'status': (status ?? current.status).name,
     };
     await client.from('parcels').update(updates).eq('id', parcelId);
@@ -2133,38 +2109,29 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   }
 
   @override
-  void toggleParcelAvailability(String parcelId) {
-    unawaited(_toggleParcelAvailabilityAsync(parcelId));
-  }
+  Future<void> deleteParcel(String parcelId) async {
+    final client = _requireClient();
+    final prevParcels = List<ParcelItem>.from(_parcels);
+    final prevNotifications = List<HouseholdNotificationItem>.from(_notifications);
 
-  Future<void> _toggleParcelAvailabilityAsync(String parcelId) async {
-    final client = _client;
-    if (client == null || _currentHousehold.id.isEmpty || _currentUser.id.isEmpty) {
-      _recordError('Join a household to update availability.');
-      return;
-    }
-
-    final idx = _parcels.indexWhere((p) => p.id == parcelId);
-    final myName = _currentUser.effectiveGreetingName;
-    final currentlyAvailable = idx != -1 &&
-        _parcels[idx].availableMemberNames.contains(myName);
-    final nextAvailable = !currentlyAvailable;
+    _parcels = _parcels.where((p) => p.id != parcelId).toList();
+    _notifications = _notifications
+        .where(
+          (n) => !n.matchesEntity(entityType: 'parcel', entityId: parcelId),
+        )
+        .toList();
+    _safeNotify();
 
     try {
-      await client.from('parcel_availability').upsert(
-        {
-          'household_id': _currentHousehold.id,
-          'parcel_id': parcelId,
-          'user_id': _currentUser.id,
-          'is_available': nextAvailable,
-          'updated_at': nowSupabaseUtcIso(),
-        },
-        onConflict: 'parcel_id,user_id',
-      );
+      await client.from('parcels').delete().eq('id', parcelId);
       await _fetchHouseholdData();
       _safeNotify();
     } catch (e) {
-      _recordError('Could not update parcel availability.', error: e);
+      _parcels = prevParcels;
+      _notifications = prevNotifications;
+      _recordError('Could not delete parcel.', error: e);
+      _safeNotify();
+      rethrow;
     }
   }
 
@@ -2210,15 +2177,6 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
           .update({'status': 'received'})
           .eq('id', parcelId);
 
-      if (!isSelfClaim && parcel.buyerId.isNotEmpty) {
-        await _awardPoints(
-          userId: _currentUser.id,
-          actionType: 'parcel_received',
-          points: 5,
-          referenceId: parcelId,
-        );
-      }
-
       await _fetchHouseholdData();
       _safeNotify();
     } catch (e) {
@@ -2233,13 +2191,10 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
   @override
   Future<void> settleParcelClaim(String parcelId) async {
     final client = _requireClient();
-    await client
-        .from('parcel_claims')
-        .update({
-          'settled': true,
-          'settled_at': nowSupabaseUtcIso(),
-        })
-        .eq('parcel_id', parcelId);
+    await client.rpc(
+      'settle_parcel_claim',
+      params: {'p_parcel_id': parcelId},
+    );
     await _fetchHouseholdData();
     _safeNotify();
   }
@@ -2405,6 +2360,36 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       _tasks = prev;
       _rouletteRecords = prevRoulette;
       _recordError('Could not update task.', error: e);
+    }
+  }
+
+  @override
+  Future<void> deleteTask(String taskId) async {
+    final client = _requireClient();
+    final prevTasks = List<MaintenanceTask>.from(_tasks);
+    final prevRoulette = List<ChoreRouletteRecord>.from(_rouletteRecords);
+    final prevNotifications = List<HouseholdNotificationItem>.from(_notifications);
+
+    _tasks = _tasks.where((t) => t.id != taskId).toList();
+    _rouletteRecords = _rouletteRecords
+        .where((r) => r.taskId != taskId)
+        .toList();
+    _notifications = _notifications
+        .where((n) => !n.matchesEntity(entityType: 'task', entityId: taskId))
+        .toList();
+    _safeNotify();
+
+    try {
+      await client.from('maintenance_tasks').delete().eq('id', taskId);
+      await _fetchHouseholdData();
+      _safeNotify();
+    } catch (e) {
+      _tasks = prevTasks;
+      _rouletteRecords = prevRoulette;
+      _notifications = prevNotifications;
+      _recordError('Could not delete task.', error: e);
+      _safeNotify();
+      rethrow;
     }
   }
 
@@ -2734,6 +2719,70 @@ class SupabaseRepository extends ChangeNotifier implements CasamaRepository {
       const msg = 'Could not claim this found item.';
       _recordError(msg, error: e);
       return msg;
+    }
+  }
+
+  @override
+  Future<void> deleteLostItem(String lostItemId) async {
+    final client = _requireClient();
+    final prevItems = List<LostFoundItem>.from(_items);
+    final prevNotifications = List<HouseholdNotificationItem>.from(_notifications);
+    final linkedIds = _items
+        .where((i) => i.lostItemId == lostItemId)
+        .map((i) => i.id)
+        .toSet();
+
+    _items = _items
+        .where((i) => i.id != lostItemId && i.lostItemId != lostItemId)
+        .toList();
+    _notifications = _notifications
+        .where(
+          (n) =>
+              !n.matchesEntity(entityType: 'lost_item', entityId: lostItemId) &&
+              !linkedIds.any(
+                (fid) => n.matchesEntity(entityType: 'found_item', entityId: fid),
+              ),
+        )
+        .toList();
+    _safeNotify();
+
+    try {
+      await client.from('lost_items').delete().eq('id', lostItemId);
+      await _fetchHouseholdData();
+      _safeNotify();
+    } catch (e) {
+      _items = prevItems;
+      _notifications = prevNotifications;
+      _recordError('Could not delete item.', error: e);
+      _safeNotify();
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteFoundItem(String foundItemId) async {
+    final client = _requireClient();
+    final prevItems = List<LostFoundItem>.from(_items);
+    final prevNotifications = List<HouseholdNotificationItem>.from(_notifications);
+
+    _items = _items.where((i) => i.id != foundItemId).toList();
+    _notifications = _notifications
+        .where(
+          (n) => !n.matchesEntity(entityType: 'found_item', entityId: foundItemId),
+        )
+        .toList();
+    _safeNotify();
+
+    try {
+      await client.from('found_items').delete().eq('id', foundItemId);
+      await _fetchHouseholdData();
+      _safeNotify();
+    } catch (e) {
+      _items = prevItems;
+      _notifications = prevNotifications;
+      _recordError('Could not delete item.', error: e);
+      _safeNotify();
+      rethrow;
     }
   }
 

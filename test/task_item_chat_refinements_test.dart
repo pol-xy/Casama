@@ -50,7 +50,7 @@ void main() {
       // Summary card: Open Tasks + color-only urgency counts (no words) + viewer-specific ongoing points (0 + 9 + 7 = 16 pts)
       expect(find.text('3 Open Tasks'), findsOneWidget);
       expect(find.text('16 pts'), findsOneWidget);
-      expect(find.text('Across ongoing tasks'), findsOneWidget);
+      expect(find.text('Available to you'), findsOneWidget);
       expect(
         find.bySemanticsLabel('1 low, 1 medium, 1 urgent'),
         findsOneWidget,
@@ -109,11 +109,11 @@ void main() {
       expect(find.text(housemateTask.title), findsOneWidget);
       expect(find.text(ownTask.title), findsOneWidget);
       expect(
-        find.textContaining('Completed by ${repo.currentUser.preferredName}'),
+        find.bySemanticsLabel(RegExp('Completed by You')),
         findsNWidgets(2),
       );
       expect(find.text('Done'), findsNWidgets(2));
-      expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
+      expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
       expect(find.text('Mark Undone'), findsNothing);
 
       // Tapping completed task does NOT reveal Mark Undone
@@ -340,10 +340,16 @@ void main() {
       await tester.tap(find.text('Silver Keychain'));
       await tester.pumpAndSettle();
       expect(find.text('Resolution History'), findsOneWidget);
-      expect(find.textContaining('Maria reported item lost'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp('Maria reported item lost')),
+        findsOneWidget,
+      );
       expect(find.text('Rejected by Poster'), findsOneWidget);
       expect(find.text('Accepted • +5 pts'), findsOneWidget);
-      expect(find.textContaining('Confirmed by Maria'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp('Confirmed by Maria')),
+        findsOneWidget,
+      );
       expect(find.text('I Found It'), findsNothing);
       expect(find.text('Confirm (+5 pts)'), findsNothing);
       expect(find.text('Reject'), findsNothing);
@@ -353,14 +359,23 @@ void main() {
       // Expand Lost AirPods -> self-resolved 0 pts milestone
       await tester.tap(find.text('Lost AirPods'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('found it themselves'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp('found it themselves')),
+        findsOneWidget,
+      );
       expect(find.text('Self-resolved • 0 pts'), findsOneWidget);
 
       // Expand Found Backpack -> standalone found claim w/ +2 pts to Maria
       await tester.tap(find.text('Found Backpack'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Maria posted found item'), findsOneWidget);
-      expect(find.textContaining("That's Mine"), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp('Maria posted found item')),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp("That's Mine")),
+        findsOneWidget,
+      );
       expect(find.text('+2 pts to Maria'), findsOneWidget);
 
       // Verify Light Mode rendering & My Activity filter pills

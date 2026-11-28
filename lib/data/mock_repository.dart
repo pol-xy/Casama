@@ -528,6 +528,77 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     notifyListeners();
   }
 
+  @override
+  Future<void> deleteTask(String taskId) async {
+    final idx = _tasks.indexWhere((t) => t.id == taskId);
+    if (idx == -1) return;
+    if (_tasks[idx].createdBy != _currentUser.id) return;
+    _tasks.removeAt(idx);
+    _rouletteRecords.removeWhere((r) => r.taskId == taskId);
+    _purgeNotificationsForEntity(entityType: 'task', entityId: taskId);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> deleteLostItem(String lostItemId) async {
+    final idx = _items.indexWhere(
+      (i) => i.id == lostItemId && i.type == ItemType.lost,
+    );
+    if (idx == -1) return;
+    if (_items[idx].ownerId != _currentUser.id) return;
+    final linkedFoundIds = _items
+        .where((i) => i.lostItemId == lostItemId)
+        .map((i) => i.id)
+        .toList();
+    _items.removeWhere((i) => i.id == lostItemId || i.lostItemId == lostItemId);
+    _purgeNotificationsForEntity(entityType: 'lost_item', entityId: lostItemId);
+    for (final fid in linkedFoundIds) {
+      _purgeNotificationsForEntity(entityType: 'found_item', entityId: fid);
+    }
+    notifyListeners();
+  }
+
+  @override
+  Future<void> deleteFoundItem(String foundItemId) async {
+    final idx = _items.indexWhere(
+      (i) => i.id == foundItemId && i.type == ItemType.found,
+    );
+    if (idx == -1) return;
+    if (_items[idx].finderId != _currentUser.id) return;
+    _items.removeAt(idx);
+    for (var i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      if (item.type == ItemType.lost &&
+          item.resolvedFoundItemId == foundItemId) {
+        _items[i] = LostFoundItem(
+          id: item.id,
+          householdId: item.householdId,
+          type: item.type,
+          title: item.title,
+          description: item.description,
+          location: item.location,
+          imageUrl: item.imageUrl,
+          status: item.status,
+          reportedBy: item.reportedBy,
+          reportedByName: item.reportedByName,
+          foundById: item.foundById,
+          foundByName: item.foundByName,
+          claimedById: item.claimedById,
+          claimedByName: item.claimedByName,
+          lostItemId: item.lostItemId,
+          resolvedFoundItemId: null,
+          foundAt: item.foundAt,
+          claimedAt: item.claimedAt,
+          returnedAt: item.returnedAt,
+          rejectedAt: item.rejectedAt,
+          createdAt: item.createdAt,
+        );
+      }
+    }
+    _purgeNotificationsForEntity(entityType: 'found_item', entityId: foundItemId);
+    notifyListeners();
+  }
+
   void setNotificationsForTest(List<HouseholdNotificationItem> items) {
     _notifications
       ..clear()
@@ -700,7 +771,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         codAmount: 350.00,
         status: ParcelStatus.expected,
         notes: 'Fragile - Handle with care!',
-        availableMemberNames: ['You', 'Alex', 'Ria'],
       ),
       ParcelItem(
         id: 'p2',
@@ -712,7 +782,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         paymentType: ParcelPaymentType.paid,
         status: ParcelStatus.expected,
         notes: 'For group use',
-        availableMemberNames: ['You', 'Maria'],
       ),
     ]);
 
@@ -1419,33 +1488,18 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         codAmount: p.codAmount,
         status: ParcelStatus.received,
         notes: p.notes,
-        availableMemberNames: p.availableMemberNames,
-        isAllUnavailable: p.isAllUnavailable,
         codSettled: isSelfClaim,
         claimedById: _currentUser.id,
         claimedByName: _currentUser.displayName,
         claimedAt: now,
         settledAt: isSelfClaim ? now : null,
       );
-      if (!isSelfClaim) {
-        _kasamaPoints += 5;
-        _pointHistory.insert(
-          0,
-          PointAuditEntry(
-            id: 'pa_${now.millisecondsSinceEpoch}',
-            title: 'Received parcel: ${p.courier} for ${p.buyerName}',
-            points: 5,
-            timestamp: now,
-            category: 'parcel',
-          ),
-        );
-      }
       _pushNotification(
         type: 'parcel_claimed',
         title: '${_currentUser.displayName} received ${p.courier} parcel',
         subtitle: isSelfClaim
             ? 'Marked your ${p.courier} delivery as received.'
-            : 'Earned +5 pts claiming ${p.buyerName}\'s ${p.courier} delivery.',
+            : 'Claimed ${p.buyerName}\'s ${p.courier} delivery — awaiting settlement.',
         payload: {
           'entity_type': 'parcel',
           'entity_id': p.id,
@@ -1453,7 +1507,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
           'courier': p.courier,
           'receiver_id': _currentUser.id,
           'receiver_name': _currentUser.displayName,
-          if (!isSelfClaim) 'points': 5,
         },
       );
       notifyListeners();
@@ -1481,7 +1534,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
         codAmount: codAmount,
         status: ParcelStatus.expected,
         notes: notes,
-        availableMemberNames: [_currentUser.displayName],
       ),
     );
     _pushNotification(
@@ -1489,7 +1541,7 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       title: 'New $courier parcel for ${_currentUser.displayName}',
       subtitle: paymentType == ParcelPaymentType.cod && codAmount != null
           ? 'COD ₱${codAmount.toStringAsFixed(0)} — check if you can receive it.'
-          : 'Prepaid delivery — tap to mark availability.',
+          : 'Prepaid delivery — expected soon.',
       payload: {
         'entity_type': 'parcel',
         'entity_id': parcelId,
@@ -1573,7 +1625,17 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     if (index == -1) return;
     final p = _parcels[index];
     final nextPay = paymentType ?? p.paymentType;
+    final nextCod = nextPay == ParcelPaymentType.cod
+        ? (codAmount ?? p.codAmount)
+        : null;
+    if ((paymentType != null || codAmount != null) &&
+        nextPay == ParcelPaymentType.cod &&
+        (nextCod == null || nextCod <= 0)) {
+      throw ArgumentError('COD parcels require an amount greater than 0.');
+    }
     final nextStatus = status ?? p.status;
+    final normalizedNotes =
+        notes == null ? p.notes : (notes.trim().isEmpty ? null : notes.trim());
     _parcels[index] = ParcelItem(
       id: p.id,
       householdId: p.householdId,
@@ -1582,13 +1644,9 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       courier: courier ?? p.courier,
       expectedArrival: arrival ?? p.expectedArrival,
       paymentType: nextPay,
-      codAmount: nextPay == ParcelPaymentType.cod
-          ? (codAmount ?? p.codAmount)
-          : null,
+      codAmount: nextCod,
       status: nextStatus,
-      notes: notes ?? p.notes,
-      availableMemberNames: p.availableMemberNames,
-      isAllUnavailable: p.isAllUnavailable,
+      notes: normalizedNotes,
       codSettled: p.codSettled,
       claimedById: p.claimedById,
       claimedByName: p.claimedByName,
@@ -1626,10 +1684,23 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
   Future<void> cancelParcel(String parcelId) =>
       updateParcel(parcelId: parcelId, status: ParcelStatus.cancelled);
 
+  @override
+  Future<void> deleteParcel(String parcelId) async {
+    final index = _parcels.indexWhere((p) => p.id == parcelId);
+    if (index == -1) return;
+    if (_parcels[index].buyerId != _currentUser.id) return;
+    _parcels.removeAt(index);
+    _purgeNotificationsForEntity(entityType: 'parcel', entityId: parcelId);
+    notifyListeners();
+  }
+
   Future<void> settleParcelClaim(String parcelId) async {
     final index = _parcels.indexWhere((p) => p.id == parcelId);
     if (index == -1) return;
     final p = _parcels[index];
+    if (!p.isClaimed || p.isSettled) return;
+
+    final now = DateTime.now();
     _parcels[index] = ParcelItem(
       id: p.id,
       householdId: p.householdId,
@@ -1641,14 +1712,25 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
       codAmount: p.codAmount,
       status: p.status,
       notes: p.notes,
-      availableMemberNames: p.availableMemberNames,
-      isAllUnavailable: p.isAllUnavailable,
       codSettled: true,
       claimedById: p.claimedById,
       claimedByName: p.claimedByName,
       claimedAt: p.claimedAt,
-      settledAt: DateTime.now(),
+      settledAt: now,
     );
+
+    final receiverId = p.claimedById;
+    if (receiverId != null &&
+        receiverId.isNotEmpty &&
+        receiverId != p.buyerId) {
+      _awardPointsToUser(
+        userId: receiverId,
+        points: 5,
+        title: 'Received parcel: ${p.courier} for ${p.buyerName}',
+        category: 'parcel',
+      );
+    }
+
     _pushNotification(
       type: 'parcel_settled',
       title: '${p.courier} parcel settled',
@@ -2666,42 +2748,6 @@ class MockRepository extends ChangeNotifier implements CasamaRepository {
     );
     notifyListeners();
     return null;
-  }
-
-  void toggleParcelAvailability(String parcelId) {
-    final index = _parcels.indexWhere((p) => p.id == parcelId);
-    if (index != -1) {
-      final p = _parcels[index];
-      final currentList = List<String>.from(p.availableMemberNames);
-      final myName = _currentUser.displayName.split(' ').first;
-
-      if (currentList.contains('You') || currentList.contains(myName)) {
-        currentList.remove('You');
-        currentList.remove(myName);
-      } else {
-        currentList.add('You');
-      }
-
-      // Check if all non-buyer members are unavailable
-      final isConflict = currentList.isEmpty;
-
-      _parcels[index] = ParcelItem(
-        id: p.id,
-        householdId: p.householdId,
-        buyerId: p.buyerId,
-        buyerName: p.buyerName,
-        courier: p.courier,
-        expectedArrival: p.expectedArrival,
-        paymentType: p.paymentType,
-        codAmount: p.codAmount,
-        currency: p.currency,
-        status: p.status,
-        notes: p.notes,
-        availableMemberNames: currentList,
-        isAllUnavailable: isConflict,
-      );
-      notifyListeners();
-    }
   }
 
   // ==========================================

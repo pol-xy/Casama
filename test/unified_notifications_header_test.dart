@@ -792,8 +792,13 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // Switch to Upcoming -> arrived future parcel appears at top with Arriving Now badge & I Got It when expanded
+        await tester.tap(find.text('Upcoming'));
+        await tester.pumpAndSettle();
         expect(find.byKey(ValueKey('parcel_arriving_now_$createdId')), findsOneWidget);
         expect(find.text('Arriving Now'), findsOneWidget);
+        await tester.tap(find.text('Ninja Van'));
+        await tester.pumpAndSettle();
         expect(find.text('I Got It'), findsWidgets);
 
         // Switch to My Parcels -> arrived parcel is visible there too
